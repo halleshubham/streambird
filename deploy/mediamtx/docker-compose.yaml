@@ -21,7 +21,7 @@ services:
       # Bind-mounting the exact host path Coolify's file-storage API wrote
       # the config to keeps the real content (incl. the API password) out
       # of git, same as before.
-      - /data/coolify/applications/ke9ra2k9ovcjancgamo3bdfv/mediamtx.yml:/mediamtx.yml:ro
+      - /data/coolify/applications/owu27ugzcewyf9yd9eopxjx2/mediamtx.yml:/mediamtx.yml:ro
       # The mediamtx image's minimal base has no CA trust store, so its own
       # outbound RTMPS forward to Cloudflare failed on every attempt with
       # "x509: certificate signed by unknown authority" -- mount the host's
