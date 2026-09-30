@@ -9,6 +9,8 @@
   const toggleMicBtn = document.getElementById('toggleMicBtn');
   const toggleCameraBtn = document.getElementById('toggleCameraBtn');
   const leaveBtn = document.getElementById('leaveBtn');
+  const broadcastPanel = document.getElementById('broadcastPanel');
+  const broadcastIframe = document.getElementById('broadcastIframe');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -99,6 +101,8 @@
       localStream.getTracks().forEach((t) => t.stop());
     }
     socket?.disconnect();
+    broadcastIframe.src = '';
+    broadcastPanel.style.display = 'none';
   }
 
   function handleKicked() {
@@ -136,13 +140,22 @@
     joinBtn.disabled = true;
     joinStatus.textContent = 'Checking invite…';
 
+    let invite;
     try {
-      await validateInvite();
+      invite = await validateInvite();
     } catch (err) {
       joinStatus.textContent = err.message;
       joinStatus.classList.add('error');
       joinBtn.disabled = false;
       return;
+    }
+
+    // Cloudflare's own hosted player for the live input -- it shows
+    // "offline" on its own until the host actually goes live, so this can
+    // just be shown right away rather than waiting for any signal.
+    if (invite.playbackUrl) {
+      broadcastIframe.src = invite.playbackUrl;
+      broadcastPanel.style.display = 'block';
     }
 
     const displayName = document.getElementById('displayName').value.trim() || 'Guest';

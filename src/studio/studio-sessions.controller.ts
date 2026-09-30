@@ -35,6 +35,9 @@ export class StudioSessionsController {
       studioSessionId: invite.studioSessionId,
       label: invite.label,
       expiresAt: invite.expiresAt,
+      playbackUrl: this.studioSessionsService.buildPlaybackIframeUrl(
+        invite.studioSession?.liveStream?.relayLiveInputId,
+      ),
     };
   }
 

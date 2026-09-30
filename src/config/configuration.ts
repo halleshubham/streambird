@@ -5,6 +5,8 @@ export interface AppConfig {
   cloudflare: {
     accountId: string;
     apiToken: string;
+    /** The "customer-<code>.cloudflarestream.com" subdomain code for this account's Stream delivery -- fixed per account, not per stream. */
+    customerCode: string;
   };
   twitchClientId: string;
   twitchClientSecret: string;
@@ -22,6 +24,7 @@ export default (): AppConfig => ({
   cloudflare: {
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? '',
     apiToken: process.env.CLOUDFLARE_API_TOKEN ?? '',
+    customerCode: process.env.CLOUDFLARE_CUSTOMER_CODE ?? '',
   },
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',
