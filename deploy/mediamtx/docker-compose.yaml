@@ -11,6 +11,17 @@ services:
       # way to express this (its ports_mappings field is TCP-only), which is
       # why this service is deployed via docker-compose instead.
       - "8189:8189/udp"
+    volumes:
+      # Coolify's file-storage feature only auto-mounts into a
+      # Coolify-*generated* compose file -- it doesn't inject a volume into
+      # a raw compose file supplied from git like this one, so without this
+      # the container silently falls back to the image's baked-in default
+      # config (api: no by default, which is exactly what was observed:
+      # every other listener started, but never "[API] started ... :9997").
+      # Bind-mounting the exact host path Coolify's file-storage API wrote
+      # the config to keeps the real content (incl. the API password) out
+      # of git, same as before.
+      - /data/coolify/applications/ke9ra2k9ovcjancgamo3bdfv/mediamtx.yml:/mediamtx.yml:ro
     networks:
       - coolify
     labels:
