@@ -12,6 +12,7 @@ export function AppShell() {
         </Link>
         <nav>
           <Link to="/">Dashboard</Link>
+          <Link to="/connections">Connections</Link>
         </nav>
         <div className="app-header-right">
           {user && <span className="user-email">{user.email}</span>}

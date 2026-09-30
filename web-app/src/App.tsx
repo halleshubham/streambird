@@ -3,6 +3,8 @@ import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginPage } from './routes/LoginPage';
 import { DashboardPage } from './routes/DashboardPage';
+import { ConnectionsPage } from './routes/ConnectionsPage';
+import { CreateStreamPage } from './routes/CreateStreamPage';
 import { NotFoundPage } from './routes/NotFoundPage';
 
 export function App() {
@@ -13,6 +15,8 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/streams/new" element={<CreateStreamPage />} />
         </Route>
       </Route>
 
