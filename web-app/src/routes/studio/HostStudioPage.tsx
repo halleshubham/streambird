@@ -122,7 +122,7 @@ export function HostStudioPage() {
         type="number"
         min={16}
         max={240}
-        defaultValue={60}
+        defaultValue={90}
         onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
       />
 

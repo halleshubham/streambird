@@ -79,7 +79,7 @@ export function useHostStudio(streamId: string | undefined) {
   const drawingRef = useRef(false);
   const brandingRef = useRef<Branding & { logoImg: HTMLImageElement | null }>({
     logoImg: null,
-    logoSize: 60,
+    logoSize: 90,
     newsText: '',
     nameFontSize: 14,
   });
@@ -297,7 +297,23 @@ export function useHostStudio(streamId: string | undefined) {
 
   function drawCell(p: Participant, x: number, y: number, w: number, h: number) {
     const ctx = ctxRef.current!;
-    ctx.drawImage(p.videoEl, x, y, w, h);
+    const vw = p.videoEl.videoWidth;
+    const vh = p.videoEl.videoHeight;
+    if (vw > 0 && vh > 0) {
+      // "Contain" fit (like CSS object-fit: contain): scale the video's
+      // native aspect ratio to fit entirely within the cell, centered, so
+      // it's never stretched/squished -- any leftover space is left
+      // undrawn, which naturally letterboxes/pillarboxes to the black
+      // background the frame loop already filled behind everything.
+      const scale = Math.min(w / vw, h / vh);
+      const drawW = vw * scale;
+      const drawH = vh * scale;
+      const drawX = x + (w - drawW) / 2;
+      const drawY = y + (h - drawH) / 2;
+      ctx.drawImage(p.videoEl, drawX, drawY, drawW, drawH);
+    }
+    // else: video metadata not loaded yet -- skip drawing this frame rather
+    // than stretching to fill or drawing garbage.
 
     const fontSize = brandingRef.current.nameFontSize;
     const boxH = Math.min(h, fontSize + 14);
