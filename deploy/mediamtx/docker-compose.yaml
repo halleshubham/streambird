@@ -4,12 +4,7 @@ services:
     restart: unless-stopped
     ports:
       - "8889:8889"
-      # The Control API never needs to be public -- this app now runs on
-      # the same Coolify server (SM-L4) as the streambird backend, so it's
-      # reached over the internal "coolify" Docker network by container
-      # name instead (see MEDIAMTX_API_URL). Binding to loopback only means
-      # it's not reachable from outside this host at all, on top of that.
-      - "127.0.0.1:9997:9997"
+      - "9997:9997"
       # WebRTC/WHIP media (ICE/DTLS/SRTP) is UDP -- it can't be proxied by
       # Traefik like the HTTP ports above, so this needs a real host-level
       # UDP port publish. Coolify's structured "dockerimage" app type has no
@@ -35,9 +30,18 @@ services:
     networks:
       - coolify
     labels:
-      # Only the WHIP/WebRTC port is publicly routed -- the browser has to
-      # reach it directly. The Control API stays off the public internet
-      # entirely (see the ports section above); no Traefik router for it.
+      # Two Coolify *Applications* (even on the same server, even with
+      # connect_to_docker_network on both) don't reliably resolve each
+      # other by container name -- confirmed live, twice, on two different
+      # servers ("getaddrinfo ENOTFOUND"). Real internal service discovery
+      # only works for containers defined together inside one Coolify
+      # *Service*'s own compose file (a different resource type -- see e.g.
+      # the "forms" service, where opnform-api reaches "redis"/"postgresql"
+      # directly because they're one compose project). Restructuring this
+      # deployment as part of such a Service would mean moving the backend
+      # off its current GHCR-image Application model -- out of scope here,
+      # so the Control API is public instead, secured by MediaMTX's own
+      # Basic Auth (an api-only authInternalUsers entry, see mediamtx.yml).
       - coolify.managed=true
       - traefik.enable=true
       - traefik.http.routers.mtx-whip.rule=Host(`mediamtx.shackyapps.in`)
@@ -46,6 +50,12 @@ services:
       - traefik.http.routers.mtx-whip.tls.certresolver=letsencrypt
       - traefik.http.routers.mtx-whip.service=mtx-whip-svc
       - traefik.http.services.mtx-whip-svc.loadbalancer.server.port=8889
+      - traefik.http.routers.mtx-api.rule=Host(`mtx-api.103.108.220.14.sslip.io`)
+      - traefik.http.routers.mtx-api.entrypoints=https
+      - traefik.http.routers.mtx-api.tls=true
+      - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.mtx-api.service=mtx-api-svc
+      - traefik.http.services.mtx-api-svc.loadbalancer.server.port=9997
 
 networks:
   coolify:
