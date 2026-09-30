@@ -28,29 +28,27 @@ services:
       # Explicit Traefik labels rather than Coolify's docker_compose_domains
       # field: that field silently drops the ":<port>" suffix needed to
       # route two different domains to this one service's two different
-      # HTTP ports. A second hostname (api-sbmtx...) also 502'd outright
-      # even with hand-written labels -- rather than debug Traefik/ACME
-      # state for a brand-new hostname further, route the Control API
-      # through the SAME domain (already proven working for WHIP) on a
-      # path prefix instead, stripped before reaching MediaMTX.
+      # HTTP ports. An earlier attempt at a second hostname for the API
+      # 502'd, which looked like a routing problem but was actually the
+      # API server not running at all yet (see the volumes comment above);
+      # a same-domain path-prefix workaround hit its own StripPrefix/
+      # redirect quirks in MediaMTX's own trailing-slash handling. Now that
+      # the API genuinely starts, two clean separate hostnames -- one router
+      # each, no path games -- is the simplest correct answer.
       - coolify.managed=true
       - traefik.enable=true
-      - traefik.http.routers.mtx-api.rule=Host(`mtx1.103.160.107.190.sslip.io`) && PathPrefix(`/__mtxapi__`)
-      - traefik.http.routers.mtx-api.entrypoints=https
-      - traefik.http.routers.mtx-api.tls=true
-      - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
-      - traefik.http.routers.mtx-api.priority=10
-      - traefik.http.routers.mtx-api.middlewares=mtx-api-strip
-      - traefik.http.middlewares.mtx-api-strip.stripprefix.prefixes=/__mtxapi__
-      - traefik.http.routers.mtx-api.service=mtx-api-svc
-      - traefik.http.services.mtx-api-svc.loadbalancer.server.port=9997
       - traefik.http.routers.mtx-whip.rule=Host(`mtx1.103.160.107.190.sslip.io`)
       - traefik.http.routers.mtx-whip.entrypoints=https
       - traefik.http.routers.mtx-whip.tls=true
       - traefik.http.routers.mtx-whip.tls.certresolver=letsencrypt
-      - traefik.http.routers.mtx-whip.priority=1
       - traefik.http.routers.mtx-whip.service=mtx-whip-svc
       - traefik.http.services.mtx-whip-svc.loadbalancer.server.port=8889
+      - traefik.http.routers.mtx-api.rule=Host(`mtx2.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-api.entrypoints=https
+      - traefik.http.routers.mtx-api.tls=true
+      - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.mtx-api.service=mtx-api-svc
+      - traefik.http.services.mtx-api-svc.loadbalancer.server.port=9997
 
 networks:
   coolify:
