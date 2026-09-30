@@ -309,8 +309,24 @@
         : null;
 
       whipPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      whipPc.addTrack(videoTrack);
-      if (audioTrack) whipPc.addTrack(audioTrack);
+      const videoTransceiver = whipPc.addTransceiver(videoTrack, { direction: 'sendonly' });
+      if (audioTrack) whipPc.addTransceiver(audioTrack, { direction: 'sendonly' });
+
+      // Cloudflare's WHIP ingest accepts VP8 at the SDP/ICE/transport level
+      // (the connection "succeeds" and RTP flows) but its live-transcode
+      // pipeline -- the one that feeds the preview and RTMP-relay outputs --
+      // only processes H264. Without forcing this, Chrome's default codec
+      // offer order can pick VP8, which negotiates fine but silently never
+      // reaches anything downstream. Force H264 first, keep the rest as a
+      // fallback in case a given browser doesn't support it at all.
+      if (typeof RTCRtpSender.getCapabilities === 'function') {
+        const { codecs } = RTCRtpSender.getCapabilities('video');
+        const h264 = codecs.filter((c) => c.mimeType.toLowerCase() === 'video/h264');
+        const rest = codecs.filter((c) => c.mimeType.toLowerCase() !== 'video/h264');
+        if (h264.length > 0) {
+          videoTransceiver.setCodecPreferences([...h264, ...rest]);
+        }
+      }
 
       const offer = await whipPc.createOffer();
       await whipPc.setLocalDescription(offer);
