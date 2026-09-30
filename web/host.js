@@ -50,6 +50,14 @@
   // feature unreliable (see git history); two simple one-directional
   // connections are easier to reason about.
   const monitorConnections = new Map();
+  // socketId -> an incrementing counter, bumped on every startMonitorFeed()
+  // call for that guest. refreshAllMonitorFeeds() can fire from several
+  // trigger points in quick succession (camera start, a guest's video
+  // arriving, another guest joining/leaving) -- if an older call's offer
+  // finishes negotiating after a newer one already replaced it, this lets
+  // it recognize it's stale and bail instead of clobbering the current
+  // connection or answering for a pc that's already been replaced.
+  const monitorFeedGeneration = new Map();
 
   let audioContext = null;
   let audioDestination = null;
@@ -156,6 +164,7 @@
       });
       connectAudioTrack('local', audioTrack);
       renderParticipantList();
+      refreshAllMonitorFeeds();
     } catch (err) {
       setStatus(els.studioStatus, `Could not start camera: ${err.message}`, true);
       els.startCameraBtn.disabled = false;
@@ -212,6 +221,7 @@
       pendingDisplayNames.delete(socketId);
       stopMonitorFeed(socketId);
       removeParticipantAudio(socketId);
+      refreshAllMonitorFeeds();
     });
 
     socket.on('signal', async (msg) => {
@@ -228,7 +238,17 @@
         }
       } else if (msg.type === 'monitor-answer') {
         const monitorPc = monitorConnections.get(msg.from);
-        if (monitorPc) await monitorPc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+        if (monitorPc) {
+          try {
+            await monitorPc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+          } catch (err) {
+            // Can legitimately happen if a newer refreshAllMonitorFeeds()
+            // already replaced this guest's connection by the time their
+            // answer to an older offer arrives back -- the stale answer
+            // just doesn't match the current connection's own offer.
+            console.warn('Failed to apply a room monitor answer (likely a superseded refresh)', err);
+          }
+        }
       } else if (msg.type === 'monitor-ice-candidate') {
         const monitorPc = monitorConnections.get(msg.from);
         if (monitorPc) {
@@ -271,6 +291,11 @@
           p.videoTrack = event.track;
           event.track.enabled = p.videoEnabled;
         }
+        // A guest's video can arrive well after their own monitor feed was
+        // first established (it's a separate, independently-negotiated
+        // track) -- refresh every guest's monitor feed so this one's video
+        // actually reaches everyone else, not just whoever joins later.
+        refreshAllMonitorFeeds();
       } else if (event.track.kind === 'audio') {
         connectAudioTrack(fromSocketId, event.track);
         if (p) {
@@ -292,24 +317,42 @@
     await pc.setLocalDescription(answer);
     socket.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
 
-    startMonitorFeed(fromSocketId);
+    refreshAllMonitorFeeds();
   }
 
   // ---- 3c. Room monitor: give each guest a personal mix-minus audio feed
-  // -- everyone else currently in the room, but never their own voice --
-  // on its own dedicated connection (see monitorConnections above for why).
-  // This replaces an earlier attempt that relayed the full composited
-  // canvas + mixed audio back to guests: that needed its own video encode
-  // and consistently hit ICE/negotiation trouble in practice (see git
-  // history), and StreamYard/Zoom-style tools don't do that either --
-  // participants just hear each other directly, same as any group call.
-  // Mix-minus (see ensureGuestMixMinus below) also makes echo structurally
-  // impossible regardless of latency or headphone use: a guest's own voice
-  // is never in what they receive, so there's nothing of theirs to loop
-  // back. Started once a guest's own upload connection is up, and torn
-  // down whenever they leave or get dropped.
+  // (everyone else's mic, never their own) plus every other participant's
+  // video, on its own dedicated connection per guest (see monitorConnections
+  // above for why). This replaces an earlier attempt that relayed the full
+  // composited canvas + mixed audio back to guests: that needed its own
+  // video encode and consistently hit ICE/negotiation trouble in practice
+  // (see git history), and StreamYard/Zoom-style tools don't do that either
+  // -- participants just see/hear each other directly, same as any group
+  // call. Mix-minus also makes echo structurally impossible regardless of
+  // latency or headphone use: a guest's own voice is never in what they
+  // receive, so there's nothing of theirs to loop back.
+  //
+  // Video has no equivalent "mix": unlike audio, there's no single stable
+  // track that can represent "everyone else" -- the set of video tracks a
+  // guest needs changes every time someone joins, leaves, or starts their
+  // camera. Rather than renegotiate an already-connected monitor connection
+  // in place (exactly the class of fragility that made an even earlier
+  // version of this feature unreliable -- see git history again),
+  // refreshAllMonitorFeeds() below fully tears down and recreates every
+  // guest's monitor connection from scratch whenever the room's video
+  // roster changes. That costs a brief reconnect blip for every guest each
+  // time, but it's the same fresh-offer/answer path already proven to work
+  // reliably tonight, rather than a second, riskier code path.
+  //
+  // Each video transceiver's RTCRtpTransceiver.mid (stable once
+  // setLocalDescription resolves) is the correlation key sent alongside the
+  // offer so the guest's page knows whose video is whose -- track/stream
+  // ordering across separate ontrack events isn't a safe thing to rely on.
 
   async function startMonitorFeed(socketId) {
+    const generation = (monitorFeedGeneration.get(socketId) ?? 0) + 1;
+    monitorFeedGeneration.set(socketId, generation);
+
     try {
       stopMonitorFeed(socketId);
       const dest = ensureGuestMixMinus(socketId);
@@ -321,48 +364,76 @@
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       monitorConnections.set(socketId, pc);
 
-      // Root cause of "connected but ontrack delivers streams=0" (confirmed
-      // live 2026-10-01, cross-checked against VDO.Ninja's own source):
-      // addTransceiver(track, init) with no `streams` in init gives the
-      // track msid stream-id "-" (an anonymous/no-stream placeholder) in
-      // the SDP -- the connection negotiates and reaches "connected" just
-      // fine, but the receiving side's ontrack fires with an *empty*
-      // event.streams, so `event.streams[0]` is always undefined. Passing
-      // the mix-minus destination's own stream here is exactly what
-      // VDO.Ninja does for every one of its own addTransceiver calls.
-      const transceiver = pc.addTransceiver(audioTrack, { direction: 'sendonly', streams: [dest.stream] });
-      console.log(`[monitor->${socketId}] transceiver added, track readyState=${audioTrack.readyState} enabled=${audioTrack.enabled} direction=${transceiver.direction}`);
+      // See the class doc above for why `streams` must always be passed
+      // explicitly -- without it, addTransceiver gives the track an
+      // anonymous msid and the receiver's ontrack fires with an *empty*
+      // event.streams (confirmed live 2026-10-01, matches VDO.Ninja's own
+      // addTransceiver usage).
+      pc.addTransceiver(audioTrack, { direction: 'sendonly', streams: [dest.stream] });
+
+      const videoParticipants = [];
+      for (const [participantId, p] of participants) {
+        if (participantId === socketId) continue; // never send a guest their own video back
+        if (!p.videoTrack || p.videoTrack.readyState !== 'live') continue;
+        const transceiver = pc.addTransceiver(p.videoTrack, {
+          direction: 'sendonly',
+          streams: [new MediaStream([p.videoTrack])],
+        });
+        videoParticipants.push({ transceiver, participantId, displayName: p.displayName });
+      }
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
-        } else {
-          console.log(`[monitor->${socketId}] ICE gathering complete`);
         }
       };
       pc.onconnectionstatechange = () => {
         console.log(`[monitor->${socketId}] connectionState: ${pc.connectionState}`);
       };
-      pc.oniceconnectionstatechange = () => {
-        console.log(`[monitor->${socketId}] iceConnectionState: ${pc.iceConnectionState}`);
-      };
-      pc.onsignalingstatechange = () => {
-        console.log(`[monitor->${socketId}] signalingState: ${pc.signalingState}`);
-      };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      socket.emit('signal', { to: socketId, type: 'monitor-offer', payload: offer });
+
+      if (monitorFeedGeneration.get(socketId) !== generation) {
+        // A newer refresh already replaced us while we were negotiating --
+        // abandon quietly rather than emit a stale offer or touch whatever
+        // connection is current now.
+        pc.close();
+        return;
+      }
+
+      // mid is assigned once setLocalDescription resolves -- build the
+      // lookup guest.js uses to label each incoming video tile.
+      const participantsByMid = {};
+      for (const { transceiver, participantId, displayName } of videoParticipants) {
+        if (transceiver.mid) participantsByMid[transceiver.mid] = { participantId, displayName };
+      }
+
+      socket.emit('signal', {
+        to: socketId,
+        type: 'monitor-offer',
+        payload: { sdp: offer, participantsByMid },
+      });
     } catch (err) {
       console.warn('Failed to start the room monitor feed for a guest', err);
-      setStatus(els.studioStatus, `Room monitor failed for a guest: ${err.message}`, true);
-      stopMonitorFeed(socketId);
+      if (monitorFeedGeneration.get(socketId) === generation) {
+        setStatus(els.studioStatus, `Room monitor failed for a guest: ${err.message}`, true);
+        stopMonitorFeed(socketId);
+      }
     }
   }
 
   function stopMonitorFeed(socketId) {
     monitorConnections.get(socketId)?.close();
     monitorConnections.delete(socketId);
+  }
+
+  /** Re-establishes every currently-connected guest's monitor feed -- see the class doc above for why a full recreate, not an in-place renegotiation. */
+  function refreshAllMonitorFeeds() {
+    for (const id of participants.keys()) {
+      if (id === 'local') continue;
+      startMonitorFeed(id);
+    }
   }
 
   // ---- 3b. Per-participant controls (mute / camera / drop) ----
@@ -429,6 +500,7 @@
     renderParticipantList();
     stopMonitorFeed(id);
     removeParticipantAudio(id);
+    refreshAllMonitorFeeds();
   }
 
   // ---- 4. Audio mixing ----
