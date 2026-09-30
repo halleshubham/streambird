@@ -428,12 +428,37 @@
     monitorConnections.delete(socketId);
   }
 
-  /** Re-establishes every currently-connected guest's monitor feed -- see the class doc above for why a full recreate, not an in-place renegotiation. */
-  function refreshAllMonitorFeeds() {
+  function runMonitorFeedsRefresh() {
     for (const id of participants.keys()) {
       if (id === 'local') continue;
       startMonitorFeed(id);
     }
+  }
+
+  let monitorRefreshTimer = null;
+
+  /**
+   * Re-establishes every currently-connected guest's monitor feed -- see
+   * the class doc above for why a full recreate, not an in-place
+   * renegotiation. Debounced: a guest joining, starting their camera, and
+   * their video track arriving can all trigger this within milliseconds of
+   * each other, and running it immediately every time meant each new round
+   * reset connections that hadn't even finished negotiating the *previous*
+   * round yet -- confirmed live (2026-10-01) via "Called in wrong state:
+   * stable" errors, where a guest's answer for a just-superseded offer
+   * landed on the brand-new pc that replaced it instead. The per-socketId
+   * generation guard in startMonitorFeed stops a stale round from ever
+   * being *sent*, but can't stop an already-sent offer's answer from
+   * arriving after the round that sent it has already been superseded --
+   * only giving each round room to actually finish (by not starting the
+   * next one until triggers settle) fixes that.
+   */
+  function refreshAllMonitorFeeds() {
+    if (monitorRefreshTimer) clearTimeout(monitorRefreshTimer);
+    monitorRefreshTimer = setTimeout(() => {
+      monitorRefreshTimer = null;
+      runMonitorFeedsRefresh();
+    }, 400);
   }
 
   // ---- 3b. Per-participant controls (mute / camera / drop) ----
@@ -849,6 +874,11 @@
     els.endBtn.disabled = true;
     endingStream = true;
     setStatus(els.studioStatus, 'Ending stream…');
+
+    if (monitorRefreshTimer) {
+      clearTimeout(monitorRefreshTimer);
+      monitorRefreshTimer = null;
+    }
 
     if (keyFrameInterval) {
       clearInterval(keyFrameInterval);
