@@ -340,8 +340,22 @@ export function useHostStudio(streamId: string | undefined) {
 
     function frame(now: number) {
       const canvas = canvasRef.current;
+      if (!canvas) {
+        requestAnimationFrame(frame);
+        return;
+      }
+      // Lazily (re-)acquired here rather than in a one-time mount effect:
+      // startDrawLoop() is kicked off from the stream-loading effect, which
+      // runs while the page is still showing "Loading…" -- the <canvas>
+      // element (gated on that same loading state) doesn't exist in the
+      // DOM yet at that point, so an effect that only ever runs once on
+      // mount grabs a null context and never retries. This self-heals the
+      // moment the real canvas actually mounts.
+      if (!ctxRef.current) {
+        ctxRef.current = canvas.getContext('2d');
+      }
       const ctx = ctxRef.current;
-      if (!canvas || !ctx) {
+      if (!ctx) {
         requestAnimationFrame(frame);
         return;
       }
@@ -543,11 +557,6 @@ export function useHostStudio(streamId: string | undefined) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamId]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) ctxRef.current = canvas.getContext('2d');
-  }, []);
 
   // ---- 2. Actions exposed to the page ----------------------------------
 
