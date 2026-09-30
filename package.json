@@ -14,7 +14,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "migrate": "ts-node -r tsconfig-paths/register src/config/migrate.ts"
+    "migrate": "ts-node -r tsconfig-paths/register src/config/migrate.ts",
+    "migrate:prod": "node dist/config/migrate.js"
   },
   "dependencies": {
     "@nestjs/axios": "^3.1.3",
