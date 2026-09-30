@@ -8,10 +8,11 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.use(cookieParser());
-  // '/' and '/health' stay unprefixed: '/' is the old status blurb until
-  // the React SPA takes over that path (a later phase), '/health' is
-  // Coolify's configured health-check path and must not move.
-  app.setGlobalPrefix('api', { exclude: ['/', 'health'] });
+  // '/health' is Coolify's configured health-check path and must not move.
+  // '/' itself needs no exclude: it's served by ServeStaticModule's
+  // dist-web/ middleware now, which sits outside Nest's controller
+  // routing/prefix entirely (see app.module.ts).
+  app.setGlobalPrefix('api', { exclude: ['health'] });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

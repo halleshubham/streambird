@@ -20,6 +20,16 @@ import { AppController } from './app.controller';
       rootPath: join(__dirname, '..', 'web'),
       serveRoot: '/studio',
     }),
+    // The React SPA build (see web-app/, built to dist-web/ by the
+    // Dockerfile's web-builder stage). Its own client-side routes (e.g.
+    // /streams/new) fall through to index.html via this module's standard
+    // SPA-fallback behavior for any unmatched, non-excluded GET -- which is
+    // exactly why every real API route lives under /api (see main.ts's
+    // setGlobalPrefix) and /studio's static files are excluded here too.
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'dist-web'),
+      exclude: ['/api/(.*)', '/studio/(.*)', '/health'],
+    }),
     DatabaseModule,
     CommonModule,
     AccountsModule,
