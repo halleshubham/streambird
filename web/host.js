@@ -565,7 +565,16 @@
       });
       if (!res.ok) throw new Error(`Failed to create invite (${res.status})`);
       const { joinUrl } = await res.json();
-      setStatus(els.inviteStatus, `Guest link (60 min): ${joinUrl}`);
+
+      try {
+        await navigator.clipboard.writeText(joinUrl);
+        setStatus(els.inviteStatus, `Guest link (60 min), copied to clipboard: ${joinUrl}`);
+      } catch (clipboardErr) {
+        // Clipboard access can be denied (permissions, non-HTTPS, etc.) --
+        // the link itself is still usable, just not auto-copied.
+        console.warn('Could not copy invite link to clipboard', clipboardErr);
+        setStatus(els.inviteStatus, `Guest link (60 min): ${joinUrl}`);
+      }
     } catch (err) {
       setStatus(els.inviteStatus, err.message, true);
     }
@@ -697,19 +706,28 @@
       }
     }
 
+    let ended = false;
     try {
       const res = await fetch(`/api/streams/${session.stream.id}/end`, {
         method: 'POST',
         credentials: 'include',
       });
       if (!res.ok) throw new Error(`Failed to end stream (${res.status})`);
-      setStatus(els.studioStatus, 'Stream ended.');
+      ended = true;
+      setStatus(els.studioStatus, 'Stream ended. Returning to your dashboard…');
     } catch (err) {
       setStatus(els.studioStatus, err.message, true);
+      els.endBtn.disabled = false;
     }
 
     whipPc?.close();
     for (const p of participants.values()) p.pc?.close();
     socket?.disconnect();
+
+    if (ended) {
+      setTimeout(() => {
+        location.href = '/';
+      }, 1500);
+    }
   });
 })();
