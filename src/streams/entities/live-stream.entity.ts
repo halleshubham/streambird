@@ -20,7 +20,7 @@ export class LiveStream {
   @Column()
   title!: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   description!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
@@ -29,15 +29,19 @@ export class LiveStream {
   @Column({ type: 'enum', enum: StreamStatus, default: StreamStatus.SCHEDULED })
   status!: StreamStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   relayLiveInputId!: string | null;
 
   /** Cloudflare's single ingest endpoint — the only ingestUrl/streamKey ever returned to a client. */
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   ingestUrl!: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   streamKey!: string | null;
+
+  /** Cloudflare's WHIP (WebRTC) publish URL — what the host's browser compositor publishes to. */
+  @Column({ type: 'text', nullable: true })
+  whipUrl!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   startedAt!: Date | null;
@@ -47,6 +51,13 @@ export class LiveStream {
 
   @OneToMany(() => LiveStreamDestination, (d) => d.liveStream)
   destinations!: LiveStreamDestination[];
+
+  /**
+   * Not persisted on this table (studio_sessions.live_stream_id is the FK,
+   * the reverse direction) — StreamsService attaches it after creating the
+   * StudioSession so callers don't need a second round-trip.
+   */
+  studioSessionId?: string;
 
   @CreateDateColumn()
   createdAt!: Date;

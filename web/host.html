@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio host — StreamBird</title>
+<link rel="stylesheet" href="./shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>StreamBird studio host</h1>
+
+  <div class="panel" id="loadPanel">
+    <label for="apiKey">Account API key</label>
+    <input type="password" id="apiKey" placeholder="sb_...">
+    <label for="streamId">Stream ID</label>
+    <input type="text" id="streamId" placeholder="the id returned by POST /streams">
+    <button id="loadBtn">Load stream</button>
+    <div class="status" id="loadStatus"></div>
+  </div>
+
+  <div class="panel" id="studioPanel" style="display:none">
+    <canvas id="canvas" width="1280" height="720" style="width:100%;background:#000;border-radius:8px"></canvas>
+
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <button id="startCameraBtn">Start my camera</button>
+      <button id="createInviteBtn">Create guest invite</button>
+      <button id="toggleLayoutBtn">Toggle layout (grid/spotlight)</button>
+      <button id="goLiveBtn" disabled>Go live</button>
+      <button id="endBtn" class="danger" disabled>End stream</button>
+    </div>
+
+    <div class="status" id="studioStatus"></div>
+    <div class="status" id="inviteStatus"></div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="./host.js"></script>
+</body>
+</html>

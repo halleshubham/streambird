@@ -10,6 +10,10 @@ import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.gua
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],
   providers: [ApiKeyGuard, StreamCreateThrottlerGuard],
-  exports: [ApiKeyGuard, StreamCreateThrottlerGuard, ThrottlerModule],
+  // Re-exporting AccountsModule (not just the guards) so any module that
+  // imports CommonModule can resolve ApiKeyGuard's own AccountsService
+  // dependency too — Nest resolves a guard's constructor deps in the
+  // consuming module's scope, not the exporting module's.
+  exports: [ApiKeyGuard, StreamCreateThrottlerGuard, ThrottlerModule, AccountsModule],
 })
 export class CommonModule {}

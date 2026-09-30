@@ -8,6 +8,8 @@ export interface RelayLiveInput {
   uid: string;
   ingestUrl: string;
   streamKey: string;
+  /** Cloudflare's WebRTC(WHIP) publish URL for this Live Input, if available. */
+  whipUrl: string | null;
 }
 
 export interface RelayLiveInputStatus {

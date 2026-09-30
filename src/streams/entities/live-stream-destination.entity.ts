@@ -30,14 +30,14 @@ export class LiveStreamDestination {
   @JoinColumn({ name: 'platform_connection_id' })
   platformConnection!: PlatformConnection;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   platformBroadcastId!: string | null;
 
   /** Platform-side ingest — server-side only, never returned to a client. */
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   ingestUrl!: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   streamKey!: string | null;
 
   @Column({ type: 'enum', enum: DestinationStatus, default: DestinationStatus.PENDING })
@@ -46,10 +46,10 @@ export class LiveStreamDestination {
   @Column({ type: 'int', nullable: true })
   viewerCount!: number | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   errorMessage!: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   cloudflareOutputUid!: string | null;
 
   @Column({ type: 'smallint', default: 0 })

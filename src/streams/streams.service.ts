@@ -16,6 +16,7 @@ import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { StreamProvider } from '../providers/stream-provider.interface';
 import { CLOUDFLARE_RELAY } from '../relay/cloudflare-relay.interface';
 import { CloudflareRelay } from '../relay/cloudflare-relay.interface';
+import { StudioSessionsService } from '../studio/studio-sessions.service';
 
 @Injectable()
 export class StreamsService {
@@ -30,6 +31,7 @@ export class StreamsService {
     private readonly providers: StreamProvider[],
     @Inject(CLOUDFLARE_RELAY)
     private readonly relay: CloudflareRelay,
+    private readonly studioSessions: StudioSessionsService,
   ) {}
 
   private resolveProvider(connection: PlatformConnection): StreamProvider {
@@ -61,6 +63,12 @@ export class StreamsService {
       status: StreamStatus.SCHEDULED,
     });
     await this.liveStreams.save(stream);
+
+    // Every stream gets a studio session up front, independent of whether
+    // destination fan-out below ultimately succeeds — the guest-join room
+    // is a property of "this go-live attempt," not of any one destination.
+    const studioSession = await this.studioSessions.createForStream(stream);
+    stream.studioSessionId = studioSession.id;
 
     // Fan out createBroadcast() in parallel; a rejection here never blocks
     // the destinations that succeeded — that is the whole point of
@@ -115,6 +123,7 @@ export class StreamsService {
     stream.relayLiveInputId = liveInput.uid;
     stream.ingestUrl = liveInput.ingestUrl;
     stream.streamKey = liveInput.streamKey;
+    stream.whipUrl = liveInput.whipUrl;
 
     for (const row of destinationRows) {
       if (row.status !== DestinationStatus.READY) continue;
@@ -132,7 +141,9 @@ export class StreamsService {
     stream.startedAt = new Date();
     await this.liveStreams.save(stream);
 
-    return this.findByIdOrThrow(stream.id, accountId);
+    const result = await this.findByIdOrThrow(stream.id, accountId);
+    result.studioSessionId = studioSession.id; // not persisted on this table, see entity comment
+    return result;
   }
 
   async findByIdOrThrow(id: string, accountId: string): Promise<LiveStream> {

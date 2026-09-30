@@ -8,6 +8,7 @@ export interface AppConfig {
   };
   twitchClientId: string;
   twitchClientSecret: string;
+  publicBaseUrl: string;
 }
 
 export default (): AppConfig => ({
@@ -20,4 +21,5 @@ export default (): AppConfig => ({
   },
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',
+  publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`,
 });

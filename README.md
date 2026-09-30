@@ -26,10 +26,35 @@ Early scaffold. Working so far:
   (no OAuth-review wait, no broadcast-object complexity — see the plan's
   build order for why it's first). YouTube, Facebook, and LinkedIn adapters
   land once their respective OAuth/app-review processes clear.
+- **Studio (guest-join + client-side compositing)** — `POST /streams` now
+  also creates a `StudioSession`. `POST /studio-sessions/:id/invites`
+  issues a single-use, short-TTL guest join link; a `web/guest.html` +
+  `web/host.html` pair (plain JS, no build step, served at `/studio/*`)
+  implements the actual WebRTC flow: guests publish their camera/mic to
+  the host's browser over a **direct P2P mesh** (no SFU vendor yet — that
+  was an open decision in the plan; mesh is the right MVP default since it
+  costs nothing server-side and is a clean, swappable seam for a real SFU
+  later, at up to a handful of guests). The host composites every
+  participant onto a `<canvas>` (grid or spotlight layout, toggleable),
+  mixes all audio tracks via the Web Audio API, and publishes the
+  composited result to Cloudflare via **WHIP** — the exact flow (build
+  offer, wait for ICE gathering, POST `application/sdp`, parse the answer)
+  follows VDO.Ninja's proven implementation, referenced rather than
+  copied (its code is AGPL and not otherwise reused; ShackyApps has
+  separately decided this repo itself is open source, so that obligation
+  isn't a concern here regardless). The signaling layer
+  (`StudioSignalingGateway`, Socket.IO) only relays SDP/ICE JSON —
+  no media ever touches the server, keeping the default path's server
+  cost near zero, per the plan's architecture decision.
+  **Not yet verified**: the `whipUrl` field name returned by Cloudflare
+  (`result.webRTC.url`) is inferred from their documented WHIP support,
+  not confirmed against a real API response — flagged in
+  `cloudflare-relay.service.ts` pending the empirical spike.
 
-Not yet built: the studio/guest layer (client-side compositing, guest
-invites), platform OAuth connect/callback flows, and the paid server-side
-"Guaranteed Quality" compositing fallback.
+Not yet built: platform OAuth connect/callback flows, YouTube/Facebook/
+LinkedIn `StreamProvider` adapters, and the paid server-side "Guaranteed
+Quality" compositing fallback (`compositing_mode='server_egress'` exists
+in the schema but has no implementation yet).
 
 ## Running locally
 
@@ -50,10 +75,18 @@ npm test
 
 Every `StreamProvider` and the `CloudflareRelayService` are tested against
 mocked HTTP calls — no live credentials needed. `StreamsService`'s
-orchestration (including the partial-failure fan-out) is tested against a
-`FakeCloudflareRelay` and fake providers. What genuinely can't be tested
-without live credentials: an actual Cloudflare billing/output-count check,
-and a real end-to-end OBS/browser → Cloudflare → platform smoke test.
+orchestration (including the partial-failure fan-out) and
+`StudioSessionsService` (invite issuance/expiry/single-use consumption)
+are tested against fakes, no real Postgres or Cloudflare required.
+
+Manually verified against a real local Postgres and a running server in
+this session: migrations apply cleanly, the app boots with no DI wiring
+errors, and the full account → platform-connection → stream-create →
+studio-session → invite-issuance → public-token-resolution chain works
+end-to-end. It only fails at the genuinely external dependency — a real
+Cloudflare API call, which 404s with no live account configured. What
+still needs real credentials: the Cloudflare billing/`whipUrl` empirical
+spike, and a real browser-to-browser WHIP→Cloudflare→platform smoke test.
 
 ## License
 

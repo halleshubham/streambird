@@ -10,6 +10,8 @@ export class StreamResponseDto {
   /** Cloudflare's single ingest endpoint — always this, never any platform's. */
   @Expose() ingestUrl!: string | null;
   @Expose() streamKey!: string | null;
+  @Expose() whipUrl!: string | null;
+  @Expose() studioSessionId?: string;
 
   @Expose()
   @Type(() => DestinationResponseDto)

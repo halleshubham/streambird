@@ -6,6 +6,9 @@ import { Account } from '../accounts/entities/account.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
+import { StudioSession } from '../studio/entities/studio-session.entity';
+import { StudioGuestInvite } from '../studio/entities/studio-guest-invite.entity';
+import { StudioParticipant } from '../studio/entities/studio-participant.entity';
 
 @Module({
   imports: [
@@ -15,7 +18,15 @@ import { LiveStreamDestination } from '../streams/entities/live-stream-destinati
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('databaseUrl'),
-        entities: [Account, PlatformConnection, LiveStream, LiveStreamDestination],
+        entities: [
+          Account,
+          PlatformConnection,
+          LiveStream,
+          LiveStreamDestination,
+          StudioSession,
+          StudioGuestInvite,
+          StudioParticipant,
+        ],
         namingStrategy: new SnakeNamingStrategy(),
         // Schema is owned by migrations/*.sql (see src/config/migrate.ts), never by TypeORM.
         synchronize: false,

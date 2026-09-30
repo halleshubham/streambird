@@ -30,7 +30,7 @@ export class Account {
   @Column({ type: 'date', nullable: true })
   billingPeriodStart!: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   razorpayCustomerId!: string | null;
 
   @CreateDateColumn()

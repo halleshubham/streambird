@@ -6,6 +6,7 @@ import { PlatformConnectionsController } from './platform-connections.controller
 import { CommonModule } from '../common/common.module';
 
 @Module({
+  // CommonModule re-exports AccountsModule too, which ApiKeyGuard needs.
   imports: [TypeOrmModule.forFeature([PlatformConnection]), CommonModule],
   providers: [PlatformConnectionsService],
   controllers: [PlatformConnectionsController],

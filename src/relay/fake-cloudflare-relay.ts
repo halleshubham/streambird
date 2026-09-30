@@ -19,7 +19,12 @@ export class FakeCloudflareRelay implements CloudflareRelay {
   async createLiveInput(): Promise<RelayLiveInput> {
     const uid = crypto.randomUUID();
     this.liveInputs.set(uid, { outputs: new Map() });
-    return { uid, ingestUrl: `rtmps://fake.local/${uid}`, streamKey: 'fake-stream-key' };
+    return {
+      uid,
+      ingestUrl: `rtmps://fake.local/${uid}`,
+      streamKey: 'fake-stream-key',
+      whipUrl: `https://fake.local/${uid}/webRTC/publish`,
+    };
   }
 
   async addOutput(

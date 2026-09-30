@@ -22,7 +22,11 @@ describe('CloudflareRelayService', () => {
     const post = jest.fn().mockReturnValue(
       of({
         data: {
-          result: { uid: 'input-1', rtmps: { url: 'rtmps://x', streamKey: 'key-1' } },
+          result: {
+            uid: 'input-1',
+            rtmps: { url: 'rtmps://x', streamKey: 'key-1' },
+            webRTC: { url: 'https://x/input-1/webRTC/publish' },
+          },
         },
       }),
     );
@@ -35,7 +39,12 @@ describe('CloudflareRelayService', () => {
       { meta: { name: 'test stream' }, recording: { mode: 'off' } },
       { headers: { Authorization: 'Bearer test-token' } },
     );
-    expect(result).toEqual({ uid: 'input-1', ingestUrl: 'rtmps://x', streamKey: 'key-1' });
+    expect(result).toEqual({
+      uid: 'input-1',
+      ingestUrl: 'rtmps://x',
+      streamKey: 'key-1',
+      whipUrl: 'https://x/input-1/webRTC/publish',
+    });
   });
 
   it('addOutput posts to the outputs sub-resource for the given live input', async () => {

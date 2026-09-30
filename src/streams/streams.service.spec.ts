@@ -12,6 +12,7 @@ import { Platform } from '../common/enums/platform.enum';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { StreamProvider } from '../providers/stream-provider.interface';
+import { StudioSessionsService } from '../studio/studio-sessions.service';
 
 function inMemoryRepo<T extends { id?: string }>() {
   const rows = new Map<string, T>();
@@ -95,6 +96,10 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
         { provide: CLOUDFLARE_RELAY, useValue: relay },
+        {
+          provide: StudioSessionsService,
+          useValue: { createForStream: jest.fn(async () => ({ id: 'studio_session_1' })) },
+        },
       ],
     }).compile();
 
@@ -132,6 +137,7 @@ describe('StreamsService', () => {
 
     expect(stream.status).toBe(StreamStatus.LIVE);
     expect(stream.ingestUrl).toMatch(/^rtmps:\/\/fake\.local\//);
+    expect(stream.studioSessionId).toBe('studio_session_1');
 
     const statuses = stream.destinations.map((d) => d.status).sort();
     expect(statuses).toEqual(

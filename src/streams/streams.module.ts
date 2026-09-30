@@ -8,6 +8,7 @@ import { StreamsController } from './streams.controller';
 import { ProvidersModule } from '../providers/providers.module';
 import { RelayModule } from '../relay/relay.module';
 import { CommonModule } from '../common/common.module';
+import { StudioModule } from '../studio/studio.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CommonModule } from '../common/common.module';
     ProvidersModule,
     RelayModule,
     CommonModule, // ApiKeyGuard, StreamCreateThrottlerGuard
+    StudioModule,
   ],
   providers: [StreamsService],
   controllers: [StreamsController],

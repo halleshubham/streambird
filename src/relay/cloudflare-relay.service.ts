@@ -44,6 +44,12 @@ export class CloudflareRelayService implements CloudflareRelay {
       uid: result.uid,
       ingestUrl: result.rtmps.url,
       streamKey: result.rtmps.streamKey,
+      // TODO(empirical-spike): confirm this field name against a real
+      // Cloudflare Live Input response before relying on it in production —
+      // this matches Cloudflare's documented WHIP publish URL shape
+      // (result.webRTC.url) but hasn't been verified against a live account
+      // yet (see the implementation plan's Build Order step 3).
+      whipUrl: result.webRTC?.url ?? null,
     };
   }
 

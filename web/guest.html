@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join stream — StreamBird</title>
+<link rel="stylesheet" href="./shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Join as a guest</h1>
+
+  <div class="panel" id="joinPanel">
+    <label for="displayName">Your name</label>
+    <input type="text" id="displayName" placeholder="e.g. Alex" maxlength="100">
+    <button id="joinBtn">Join</button>
+    <div class="status" id="joinStatus"></div>
+  </div>
+
+  <div class="panel" id="callPanel" style="display:none">
+    <video id="localVideo" autoplay muted playsinline></video>
+    <div class="status" id="callStatus">Connecting…</div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="./guest.js"></script>
+</body>
+</html>
