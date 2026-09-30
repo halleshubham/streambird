@@ -2,12 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import {
-  RelayProvider,
-  RelayLiveInput,
-  RelayLiveInputStatus,
-  RelayOutput,
-} from './relay-provider.interface';
+import { RelayProvider, RelayLiveInput, RelayLiveInputStatus } from './relay-provider.interface';
 
 // Mux's RTMP(S) ingest endpoint is the same fixed URL for every account --
 // only the per-live-stream stream_key varies (unlike Cloudflare, which
@@ -51,6 +46,12 @@ export class MuxRelayService implements RelayProvider {
     };
   }
 
+  isConfigured(): boolean {
+    return (
+      !!this.config.get<string>('mux.tokenId') && !!this.config.get<string>('mux.tokenSecret')
+    );
+  }
+
   async createLiveInput(opts: { name: string; recording?: boolean }): Promise<RelayLiveInput> {
     const { data } = await firstValueFrom(
       this.http.post(
@@ -75,27 +76,6 @@ export class MuxRelayService implements RelayProvider {
       streamKey: result.stream_key,
       whipUrl: null,
     };
-  }
-
-  async addOutput(
-    liveInputUid: string,
-    dest: { url: string; streamKey: string },
-  ): Promise<RelayOutput> {
-    const { data } = await firstValueFrom(
-      this.http.post(
-        `${this.baseUrl}/${liveInputUid}/simulcast-targets`,
-        { url: dest.url, stream_key: dest.streamKey },
-        this.authConfig,
-      ),
-    );
-
-    return { uid: data.data.id, url: dest.url, streamKey: dest.streamKey };
-  }
-
-  async removeOutput(liveInputUid: string, outputUid: string): Promise<void> {
-    await firstValueFrom(
-      this.http.delete(`${this.baseUrl}/${liveInputUid}/simulcast-targets/${outputUid}`, this.authConfig),
-    );
   }
 
   async deleteLiveInput(liveInputUid: string): Promise<void> {

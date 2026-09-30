@@ -1,11 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
-import {
-  RelayProvider,
-  RelayLiveInput,
-  RelayLiveInputStatus,
-  RelayOutput,
-} from './relay-provider.interface';
+import { RelayProvider, RelayLiveInput, RelayLiveInputStatus } from './relay-provider.interface';
 
 /**
  * In-memory stand-in for a real RelayProvider (Cloudflare or Mux), used in
@@ -14,11 +9,16 @@ import {
  */
 @Injectable()
 export class FakeRelayProvider implements RelayProvider {
-  readonly liveInputs = new Map<string, { outputs: Map<string, RelayOutput> }>();
+  readonly liveInputs = new Set<string>();
+
+  /** Always "configured" in tests -- there's no env var to be missing. */
+  isConfigured(): boolean {
+    return true;
+  }
 
   async createLiveInput(): Promise<RelayLiveInput> {
     const uid = crypto.randomUUID();
-    this.liveInputs.set(uid, { outputs: new Map() });
+    this.liveInputs.add(uid);
     return {
       uid,
       ingestUrl: `rtmps://fake.local/${uid}`,
@@ -27,34 +27,14 @@ export class FakeRelayProvider implements RelayProvider {
     };
   }
 
-  async addOutput(
-    liveInputUid: string,
-    dest: { url: string; streamKey: string },
-  ): Promise<RelayOutput> {
-    const input = this.liveInputs.get(liveInputUid);
-    if (!input) throw new Error(`Unknown live input ${liveInputUid}`);
-    const uid = crypto.randomUUID();
-    const output = { uid, url: dest.url, streamKey: dest.streamKey };
-    input.outputs.set(uid, output);
-    return output;
-  }
-
-  async removeOutput(liveInputUid: string, outputUid: string): Promise<void> {
-    this.liveInputs.get(liveInputUid)?.outputs.delete(outputUid);
-  }
-
   async deleteLiveInput(liveInputUid: string): Promise<void> {
     this.liveInputs.delete(liveInputUid);
   }
 
   async getLiveInputStatus(liveInputUid: string): Promise<RelayLiveInputStatus> {
-    const input = this.liveInputs.get(liveInputUid);
     return {
-      status: input ? 'connected' : 'idle',
-      outputs: [...(input?.outputs.values() ?? [])].map((o) => ({
-        uid: o.uid,
-        status: 'live',
-      })),
+      status: this.liveInputs.has(liveInputUid) ? 'connected' : 'idle',
+      outputs: [],
     };
   }
 }

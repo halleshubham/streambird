@@ -14,7 +14,7 @@ import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { StreamProvider } from '../providers/stream-provider.interface';
-import { RELAY_PROVIDER, RelayProvider } from '../relay/relay-provider.interface';
+import { RELAY_PROVIDER, RelayProvider, RelayLiveInput } from '../relay/relay-provider.interface';
 import { MediaMtxService } from '../relay/mediamtx.service';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
 
@@ -120,29 +120,37 @@ export class StreamsService {
       );
     }
 
-    const liveInput = await this.relay.createLiveInput({ name: stream.id });
-    stream.relayLiveInputId = liveInput.uid;
-    stream.ingestUrl = liveInput.ingestUrl;
-    stream.streamKey = liveInput.streamKey;
+    // A RelayProvider is optional and only used for its own value-add
+    // (hosted preview, recording) -- skip creating a live input at all
+    // when it isn't actually configured, rather than let every call to an
+    // unconfigured provider's API fail.
+    let liveInput: RelayLiveInput | null = null;
+    if (this.relay.isConfigured()) {
+      liveInput = await this.relay.createLiveInput({ name: stream.id });
+      stream.relayLiveInputId = liveInput.uid;
+      stream.ingestUrl = liveInput.ingestUrl;
+      stream.streamKey = liveInput.streamKey;
+    }
 
     // The browser host studio always publishes WHIP through our own
-    // MediaMTX instance, never straight to the active RelayProvider --
-    // see MediaMtxService for why (neither Cloudflare's WHIP ingest nor
-    // Mux's ingest can be trusted/used directly for this). MediaMTX
-    // forwards the same stream on as RTMP to this exact ingest URL/key.
-    stream.whipUrl = await this.mediaMtx.registerForward(
-      stream.id,
-      `${liveInput.ingestUrl.replace(/\/$/, '')}/${liveInput.streamKey}`,
-    );
+    // MediaMTX instance, never straight to a platform or RelayProvider --
+    // see MediaMtxService for why. MediaMTX forwards the same stream on as
+    // RTMP directly to every ready destination's own ingest, plus the
+    // configured RelayProvider's ingest too, if there is one.
+    const forwardDests = destinationRows
+      .filter((row) => row.status === DestinationStatus.READY)
+      .map((row) => `${row.ingestUrl!.replace(/\/$/, '')}/${row.streamKey}`);
+
+    if (liveInput) {
+      forwardDests.push(`${liveInput.ingestUrl.replace(/\/$/, '')}/${liveInput.streamKey}`);
+    }
+
+    stream.whipUrl = await this.mediaMtx.registerForward(stream.id, forwardDests);
 
     for (const row of destinationRows) {
-      if (row.status !== DestinationStatus.READY) continue;
-      const output = await this.relay.addOutput(liveInput.uid, {
-        url: row.ingestUrl!,
-        streamKey: row.streamKey!,
-      });
-      row.cloudflareOutputUid = output.uid;
-      row.status = DestinationStatus.LIVE;
+      if (row.status === DestinationStatus.READY) {
+        row.status = DestinationStatus.LIVE;
+      }
     }
 
     await this.destinations.save(destinationRows);
@@ -208,31 +216,29 @@ export class StreamsService {
         }),
     );
 
-    // Cloudflare's own per-output connection status (e.g. whether the RTMP
-    // relay to a platform has actually connected) -- surfaced here instead
-    // of only being visible by digging through the Cloudflare dashboard.
-    let cloudflareOutputStatus = new Map<string, string>();
+    // Whether the optional RelayProvider's own live input is connected --
+    // platform destinations are delivered by MediaMTX directly now (see
+    // create()), so this is just the RelayProvider's own preview/recording
+    // health, not a per-destination status.
+    let relayInputStatus: 'idle' | 'connected' | null = null;
     if (stream.relayLiveInputId) {
       try {
-        const relayStatus = await this.relay.getLiveInputStatus(stream.relayLiveInputId);
-        cloudflareOutputStatus = new Map(relayStatus.outputs.map((o) => [o.uid, o.status]));
+        relayInputStatus = (await this.relay.getLiveInputStatus(stream.relayLiveInputId)).status;
       } catch {
-        // Best-effort -- a Cloudflare API hiccup here shouldn't break the
-        // whole status response, it just omits this extra detail.
+        // Best-effort -- a RelayProvider API hiccup here shouldn't break
+        // the whole status response, it just omits this extra detail.
       }
     }
 
     return {
       status: stream.status,
+      relayInputStatus,
       destinations: stream.destinations.map((d) => ({
         id: d.id,
         platformConnectionId: d.platformConnectionId,
         status: d.status,
         viewerCount: d.viewerCount,
         errorMessage: d.errorMessage,
-        cloudflareOutputStatus: d.cloudflareOutputUid
-          ? (cloudflareOutputStatus.get(d.cloudflareOutputUid) ?? null)
-          : null,
       })),
     };
   }
@@ -256,17 +262,21 @@ export class StreamsService {
       destination.streamKey = result.streamKey;
       destination.errorMessage = null;
       destination.retryCount += 1;
+      destination.status = DestinationStatus.LIVE;
 
-      if (stream.relayLiveInputId) {
-        const output = await this.relay.addOutput(stream.relayLiveInputId, {
-          url: result.ingestUrl,
-          streamKey: result.streamKey,
-        });
-        destination.cloudflareOutputUid = output.uid;
-        destination.status = DestinationStatus.LIVE;
-      } else {
-        destination.status = DestinationStatus.READY;
+      // MediaMTX's forward list is a full replace, not an append -- so a
+      // retry recomputes every currently-live destination's ingest (this
+      // one included, with its freshly minted key) plus the RelayProvider's
+      // ingest if one is configured, same as create().
+      const forwardDests = stream.destinations
+        .filter((d) => d.ingestUrl && d.streamKey && d.status !== DestinationStatus.FAILED)
+        .map((d) => `${d.ingestUrl!.replace(/\/$/, '')}/${d.streamKey}`);
+
+      if (stream.relayLiveInputId && stream.ingestUrl && stream.streamKey) {
+        forwardDests.push(`${stream.ingestUrl.replace(/\/$/, '')}/${stream.streamKey}`);
       }
+
+      await this.mediaMtx.updateForward(stream.id, forwardDests);
     } catch (err) {
       destination.status = DestinationStatus.FAILED;
       destination.errorMessage = this.describeError(err);

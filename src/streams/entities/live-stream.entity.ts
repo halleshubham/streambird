@@ -29,17 +29,18 @@ export class LiveStream {
   @Column({ type: 'enum', enum: StreamStatus, default: StreamStatus.SCHEDULED })
   status!: StreamStatus;
 
+  /** Set only when a RelayProvider is actually configured (see RelayProvider.isConfigured()) — null otherwise. */
   @Column({ type: 'text', nullable: true })
   relayLiveInputId!: string | null;
 
-  /** Cloudflare's single ingest endpoint — the only ingestUrl/streamKey ever returned to a client. */
+  /** The configured RelayProvider's own ingest endpoint, if any — not used for platform delivery (see MediaMtxService). */
   @Column({ type: 'text', nullable: true })
   ingestUrl!: string | null;
 
   @Column({ type: 'text', nullable: true })
   streamKey!: string | null;
 
-  /** Cloudflare's WHIP (WebRTC) publish URL — what the host's browser compositor publishes to. */
+  /** Always our own MediaMTX instance's WHIP path — what the host's browser compositor publishes to (see MediaMtxService). */
   @Column({ type: 'text', nullable: true })
   whipUrl!: string | null;
 

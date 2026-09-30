@@ -47,34 +47,6 @@ describe('CloudflareRelayService', () => {
     });
   });
 
-  it('addOutput posts to the outputs sub-resource for the given live input', async () => {
-    const post = jest.fn().mockReturnValue(of({ data: { result: { uid: 'output-1' } } }));
-    const service = buildService({ post });
-
-    const result = await service.addOutput('input-1', {
-      url: 'rtmp://dest', streamKey: 'dest-key',
-    });
-
-    expect(post).toHaveBeenCalledWith(
-      'https://api.cloudflare.com/client/v4/accounts/test-account/stream/live_inputs/input-1/outputs',
-      { url: 'rtmp://dest', streamKey: 'dest-key', enabled: true },
-      { headers: { Authorization: 'Bearer test-token' } },
-    );
-    expect(result).toEqual({ uid: 'output-1', url: 'rtmp://dest', streamKey: 'dest-key' });
-  });
-
-  it('removeOutput deletes the specific output resource', async () => {
-    const del = jest.fn().mockReturnValue(of({}));
-    const service = buildService({ delete: del });
-
-    await service.removeOutput('input-1', 'output-1');
-
-    expect(del).toHaveBeenCalledWith(
-      'https://api.cloudflare.com/client/v4/accounts/test-account/stream/live_inputs/input-1/outputs/output-1',
-      { headers: { Authorization: 'Bearer test-token' } },
-    );
-  });
-
   it('getLiveInputStatus maps a connected status and outputs list', async () => {
     const get = jest.fn().mockReturnValue(
       of({

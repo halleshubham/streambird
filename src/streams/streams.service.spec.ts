@@ -101,6 +101,7 @@ describe('StreamsService', () => {
           provide: MediaMtxService,
           useValue: {
             registerForward: jest.fn(async () => 'https://fake.local/whip'),
+            updateForward: jest.fn(async () => undefined),
             removeForward: jest.fn(async () => undefined),
           },
         },

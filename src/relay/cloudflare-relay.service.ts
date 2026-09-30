@@ -2,12 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import {
-  RelayProvider,
-  RelayLiveInput,
-  RelayLiveInputStatus,
-  RelayOutput,
-} from './relay-provider.interface';
+import { RelayProvider, RelayLiveInput, RelayLiveInputStatus } from './relay-provider.interface';
 
 @Injectable()
 export class CloudflareRelayService implements RelayProvider {
@@ -25,6 +20,13 @@ export class CloudflareRelayService implements RelayProvider {
     return {
       Authorization: `Bearer ${this.config.get<string>('cloudflare.apiToken')}`,
     };
+  }
+
+  isConfigured(): boolean {
+    return (
+      !!this.config.get<string>('cloudflare.accountId') &&
+      !!this.config.get<string>('cloudflare.apiToken')
+    );
   }
 
   async createLiveInput(opts: { name: string; recording?: boolean }): Promise<RelayLiveInput> {
@@ -51,29 +53,6 @@ export class CloudflareRelayService implements RelayProvider {
       // yet (see the implementation plan's Build Order step 3).
       whipUrl: result.webRTC?.url ?? null,
     };
-  }
-
-  async addOutput(
-    liveInputUid: string,
-    dest: { url: string; streamKey: string },
-  ): Promise<RelayOutput> {
-    const { data } = await firstValueFrom(
-      this.http.post(
-        `${this.baseUrl}/${liveInputUid}/outputs`,
-        { url: dest.url, streamKey: dest.streamKey, enabled: true },
-        { headers: this.authHeaders },
-      ),
-    );
-
-    return { uid: data.result.uid, url: dest.url, streamKey: dest.streamKey };
-  }
-
-  async removeOutput(liveInputUid: string, outputUid: string): Promise<void> {
-    await firstValueFrom(
-      this.http.delete(`${this.baseUrl}/${liveInputUid}/outputs/${outputUid}`, {
-        headers: this.authHeaders,
-      }),
-    );
   }
 
   async deleteLiveInput(liveInputUid: string): Promise<void> {

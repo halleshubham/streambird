@@ -49,6 +49,7 @@ export class LiveStreamDestination {
   @Column({ type: 'text', nullable: true })
   errorMessage!: string | null;
 
+  /** Legacy -- no longer written. Platform delivery goes through MediaMtxService's direct forward now, not a RelayProvider output. Column kept to avoid a migration for old rows; safe to drop in a future cleanup. */
   @Column({ type: 'text', nullable: true })
   cloudflareOutputUid!: string | null;
 
