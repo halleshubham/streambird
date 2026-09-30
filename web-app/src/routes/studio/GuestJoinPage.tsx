@@ -24,7 +24,9 @@ export function GuestJoinPage() {
 
   return (
     <div className="studio-page studio-page--narrow">
-      <h1>Join as a guest</h1>
+      <h1 className="brand-heading">
+        <img src="/logo.png" alt="" className="brand-logo" /> Join as a guest
+      </h1>
 
       {mode === 'checking-invite' && <p className="status">Checking invite…</p>}
 

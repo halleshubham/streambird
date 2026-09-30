@@ -62,7 +62,9 @@ export function HostStudioPage() {
 
   return (
     <div className="studio-page">
-      <h1>StreamBird studio host</h1>
+      <h1 className="brand-heading">
+        <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
+      </h1>
 
       <canvas ref={canvasRef} width={1280} height={720} className="studio-canvas" />
 

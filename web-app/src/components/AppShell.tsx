@@ -9,6 +9,7 @@ export function AppShell() {
     <div className="app-shell">
       <header className="app-header">
         <Link to="/" className="brand">
+          <img src="/logo.png" alt="" className="brand-logo" />
           StreamBird
         </Link>
         <nav>

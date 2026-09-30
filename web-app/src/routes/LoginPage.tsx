@@ -50,6 +50,7 @@ export function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <img src="/logo.png" alt="StreamBird" className="auth-logo" />
         <h1>StreamBird</h1>
 
         {step === 'email' && (

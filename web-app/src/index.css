@@ -133,6 +133,13 @@ input {
   padding: 32px;
 }
 
+.auth-logo {
+  width: 56px;
+  height: 56px;
+  display: block;
+  margin-bottom: 12px;
+}
+
 /* ---- App shell ---- */
 
 .app-shell {
@@ -151,9 +158,28 @@ input {
 }
 
 .app-header .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   color: var(--text-h);
   text-decoration: none;
+}
+
+.brand-logo {
+  width: 24px;
+  height: 24px;
+}
+
+.brand-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-heading .brand-logo {
+  width: 28px;
+  height: 28px;
 }
 
 .app-header nav {
