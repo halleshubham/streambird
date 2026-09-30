@@ -339,7 +339,14 @@
       });
       if (!res.ok) throw new Error(`WHIP publish failed (${res.status})`);
 
-      whipResourceUrl = res.headers.get('Location');
+      // Cloudflare's WHIP Location header is relative (e.g.
+      // "/<uid>/webRTC/publish/<session>") -- resolving it with plain
+      // fetch(location) would resolve against *this page's* origin
+      // (streambird.shackyapps.in), not Cloudflare's, which is why the
+      // end-stream teardown DELETE was hitting our own backend and 404ing.
+      // Resolve it against the WHIP endpoint's own origin instead.
+      const location = res.headers.get('Location');
+      whipResourceUrl = location ? new URL(location, session.stream.whipUrl).toString() : null;
       const answerSdp = await res.text();
       await whipPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
