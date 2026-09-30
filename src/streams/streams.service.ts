@@ -15,6 +15,7 @@ import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { StreamProvider } from '../providers/stream-provider.interface';
 import { RELAY_PROVIDER, RelayProvider } from '../relay/relay-provider.interface';
+import { MediaMtxService } from '../relay/mediamtx.service';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
 
 @Injectable()
@@ -30,6 +31,7 @@ export class StreamsService {
     private readonly providers: StreamProvider[],
     @Inject(RELAY_PROVIDER)
     private readonly relay: RelayProvider,
+    private readonly mediaMtx: MediaMtxService,
     private readonly studioSessions: StudioSessionsService,
   ) {}
 
@@ -122,7 +124,16 @@ export class StreamsService {
     stream.relayLiveInputId = liveInput.uid;
     stream.ingestUrl = liveInput.ingestUrl;
     stream.streamKey = liveInput.streamKey;
-    stream.whipUrl = liveInput.whipUrl;
+
+    // The browser host studio always publishes WHIP through our own
+    // MediaMTX instance, never straight to the active RelayProvider --
+    // see MediaMtxService for why (neither Cloudflare's WHIP ingest nor
+    // Mux's ingest can be trusted/used directly for this). MediaMTX
+    // forwards the same stream on as RTMP to this exact ingest URL/key.
+    stream.whipUrl = await this.mediaMtx.registerForward(
+      stream.id,
+      `${liveInput.ingestUrl.replace(/\/$/, '')}/${liveInput.streamKey}`,
+    );
 
     for (const row of destinationRows) {
       if (row.status !== DestinationStatus.READY) continue;
@@ -285,6 +296,9 @@ export class StreamsService {
 
     if (stream.relayLiveInputId) {
       await this.relay.deleteLiveInput(stream.relayLiveInputId);
+    }
+    if (stream.whipUrl) {
+      await this.mediaMtx.removeForward(stream.id);
     }
 
     // A host token can't outlive the stream it authenticates studio access

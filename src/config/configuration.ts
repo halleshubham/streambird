@@ -14,6 +14,14 @@ export interface AppConfig {
     tokenId: string;
     tokenSecret: string;
   };
+  mediamtx: {
+    /** Internal Control API base URL (container-to-container, not public) -- e.g. http://streambird-mediamtx:9997 */
+    apiUrl: string;
+    apiUser: string;
+    apiPassword: string;
+    /** Public base URL the host's browser publishes WHIP to -- e.g. https://<mediamtx-domain> (port 8889). */
+    whipBaseUrl: string;
+  };
   twitchClientId: string;
   twitchClientSecret: string;
   publicBaseUrl: string;
@@ -36,6 +44,12 @@ export default (): AppConfig => ({
   mux: {
     tokenId: process.env.MUX_TOKEN_ID ?? '',
     tokenSecret: process.env.MUX_TOKEN_SECRET ?? '',
+  },
+  mediamtx: {
+    apiUrl: process.env.MEDIAMTX_API_URL ?? '',
+    apiUser: process.env.MEDIAMTX_API_USER ?? '',
+    apiPassword: process.env.MEDIAMTX_API_PASSWORD ?? '',
+    whipBaseUrl: process.env.MEDIAMTX_WHIP_BASE_URL ?? '',
   },
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',

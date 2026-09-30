@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { CloudflareRelayService } from './cloudflare-relay.service';
 import { MuxRelayService } from './mux-relay.service';
+import { MediaMtxService } from './mediamtx.service';
 import { RELAY_PROVIDER } from './relay-provider.interface';
 
 // Which RelayProvider backs RELAY_PROVIDER is a config value (RELAY_PROVIDER
@@ -15,6 +16,7 @@ import { RELAY_PROVIDER } from './relay-provider.interface';
   providers: [
     CloudflareRelayService,
     MuxRelayService,
+    MediaMtxService,
     {
       provide: RELAY_PROVIDER,
       useFactory: (config: ConfigService, cloudflare: CloudflareRelayService, mux: MuxRelayService) =>
@@ -22,6 +24,6 @@ import { RELAY_PROVIDER } from './relay-provider.interface';
       inject: [ConfigService, CloudflareRelayService, MuxRelayService],
     },
   ],
-  exports: [RELAY_PROVIDER],
+  exports: [RELAY_PROVIDER, MediaMtxService],
 })
 export class RelayModule {}

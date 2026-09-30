@@ -8,6 +8,7 @@ import { PlatformConnection } from '../platform-connections/entities/platform-co
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { RELAY_PROVIDER } from '../relay/relay-provider.interface';
 import { FakeRelayProvider } from '../relay/fake-relay-provider';
+import { MediaMtxService } from '../relay/mediamtx.service';
 import { Platform } from '../common/enums/platform.enum';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
@@ -96,6 +97,13 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
         { provide: RELAY_PROVIDER, useValue: relay },
+        {
+          provide: MediaMtxService,
+          useValue: {
+            registerForward: jest.fn(async () => 'https://fake.local/whip'),
+            removeForward: jest.fn(async () => undefined),
+          },
+        },
         {
           provide: StudioSessionsService,
           useValue: {
