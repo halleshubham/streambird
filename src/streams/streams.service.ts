@@ -141,9 +141,7 @@ export class StreamsService {
     stream.startedAt = new Date();
     await this.liveStreams.save(stream);
 
-    const result = await this.findByIdOrThrow(stream.id, accountId);
-    result.studioSessionId = studioSession.id; // not persisted on this table, see entity comment
-    return result;
+    return this.findByIdOrThrow(stream.id, accountId);
   }
 
   async findByIdOrThrow(id: string, accountId: string): Promise<LiveStream> {
@@ -154,6 +152,14 @@ export class StreamsService {
     if (!stream) {
       throw new NotFoundException(`LiveStream ${id} not found`);
     }
+
+    // studioSessionId isn't a persisted column on this table (see the entity
+    // comment) — look it up by liveStreamId every time so it survives a
+    // reload, not just the one create() response that happened to set it
+    // on this in-memory instance.
+    const studioSession = await this.studioSessions.findByLiveStreamId(stream.id);
+    stream.studioSessionId = studioSession?.id;
+
     return stream;
   }
 

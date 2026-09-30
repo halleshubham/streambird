@@ -35,6 +35,10 @@ export class StudioSessionsService {
     return this.sessions.save(session);
   }
 
+  async findByLiveStreamId(liveStreamId: string): Promise<StudioSession | null> {
+    return this.sessions.findOne({ where: { liveStreamId } });
+  }
+
   /** Account-scoped: verifies the session's LiveStream belongs to this account. */
   async findByIdOrThrow(sessionId: string, accountId: string): Promise<StudioSession> {
     const session = await this.sessions.findOne({

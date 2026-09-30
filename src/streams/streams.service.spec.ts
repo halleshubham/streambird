@@ -98,7 +98,10 @@ describe('StreamsService', () => {
         { provide: CLOUDFLARE_RELAY, useValue: relay },
         {
           provide: StudioSessionsService,
-          useValue: { createForStream: jest.fn(async () => ({ id: 'studio_session_1' })) },
+          useValue: {
+            createForStream: jest.fn(async () => ({ id: 'studio_session_1' })),
+            findByLiveStreamId: jest.fn(async () => ({ id: 'studio_session_1' })),
+          },
         },
       ],
     }).compile();
