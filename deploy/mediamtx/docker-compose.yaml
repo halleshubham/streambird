@@ -42,13 +42,13 @@ services:
       # each, no path games -- is the simplest correct answer.
       - coolify.managed=true
       - traefik.enable=true
-      - traefik.http.routers.mtx-whip.rule=Host(`mtx1.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-whip.rule=Host(`mediamtx.shackyapps.in`)
       - traefik.http.routers.mtx-whip.entrypoints=https
       - traefik.http.routers.mtx-whip.tls=true
       - traefik.http.routers.mtx-whip.tls.certresolver=letsencrypt
       - traefik.http.routers.mtx-whip.service=mtx-whip-svc
       - traefik.http.services.mtx-whip-svc.loadbalancer.server.port=8889
-      - traefik.http.routers.mtx-api.rule=Host(`mtx2.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-api.rule=Host(`mtx2.103.108.220.14.sslip.io`)
       - traefik.http.routers.mtx-api.entrypoints=https
       - traefik.http.routers.mtx-api.tls=true
       - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
