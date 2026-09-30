@@ -16,6 +16,7 @@
     inviteStatus: document.getElementById('inviteStatus'),
     participantList: document.getElementById('participantList'),
     logoInput: document.getElementById('logoInput'),
+    logoSizeInput: document.getElementById('logoSizeInput'),
     newsInput: document.getElementById('newsInput'),
     nameFontSizeInput: document.getElementById('nameFontSizeInput'),
   };
@@ -47,6 +48,7 @@
 
   const branding = {
     logoImg: null,
+    logoSize: 60,
     newsText: '',
     nameFontSize: 14,
   };
@@ -471,7 +473,7 @@
 
   function drawLogo(canvasW) {
     if (!branding.logoImg) return;
-    const maxH = 60;
+    const maxH = branding.logoSize;
     const scale = maxH / branding.logoImg.naturalHeight;
     const w = branding.logoImg.naturalWidth * scale;
     ctx.drawImage(branding.logoImg, 16, 16, w, maxH);
@@ -522,11 +524,25 @@
 
   function drawCell(p, x, y, w, h) {
     ctx.drawImage(p.videoEl, x, y, w, h);
+
+    // The name label box grows with the configured font size (clamped to
+    // the cell's own height) instead of a fixed 24px -- otherwise a larger
+    // font just draws taller than its background box and spills up over
+    // the video instead of staying inside it.
+    const fontSize = branding.nameFontSize;
+    const boxH = Math.min(h, fontSize + 14);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(x, y + h - 24, w, 24);
+    ctx.fillRect(x, y + h - boxH, w, boxH);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y + h - boxH, w, boxH);
+    ctx.clip();
     ctx.fillStyle = '#fff';
-    ctx.font = `${branding.nameFontSize}px sans-serif`;
-    ctx.fillText(p.displayName, x + 6, y + h - 6);
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.displayName, x + 6, y + h - boxH / 2);
+    ctx.restore();
   }
 
   // ---- 5b. Branding overlays (logo, news ticker, name label size) ----
@@ -540,6 +556,11 @@
       URL.revokeObjectURL(img.src);
     };
     img.src = URL.createObjectURL(file);
+  });
+
+  els.logoSizeInput.addEventListener('input', () => {
+    const size = parseInt(els.logoSizeInput.value, 10);
+    if (Number.isFinite(size) && size > 0) branding.logoSize = size;
   });
 
   els.newsInput.addEventListener('input', () => {
