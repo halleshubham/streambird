@@ -301,27 +301,37 @@
   }
 
   async function startMonitorFeed(socketId) {
-    stopMonitorFeed(socketId);
-    ensureAudioMix();
-
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    monitorConnections.set(socketId, pc);
-
-    pc.addTransceiver(getMonitorVideoTrack(), { direction: 'sendonly' });
-    pc.addTransceiver(audioDestination.stream.getAudioTracks()[0], { direction: 'sendonly' });
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
-      }
-    };
-
     try {
+      stopMonitorFeed(socketId);
+      ensureAudioMix();
+
+      const videoTrack = getMonitorVideoTrack();
+      const audioTrack = audioDestination.stream.getAudioTracks()[0];
+      if (!videoTrack || !audioTrack) {
+        throw new Error(`missing track(s) for room monitor (video=${!!videoTrack}, audio=${!!audioTrack})`);
+      }
+
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      monitorConnections.set(socketId, pc);
+
+      pc.addTransceiver(videoTrack, { direction: 'sendonly' });
+      pc.addTransceiver(audioTrack, { direction: 'sendonly' });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        console.log(`Room monitor feed for ${socketId}: ${pc.connectionState}`);
+      };
+
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit('signal', { to: socketId, type: 'monitor-offer', payload: offer });
     } catch (err) {
       console.warn('Failed to start the room monitor feed for a guest', err);
+      setStatus(els.studioStatus, `Room monitor failed for a guest: ${err.message}`, true);
       stopMonitorFeed(socketId);
     }
   }

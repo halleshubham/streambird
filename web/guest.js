@@ -11,6 +11,7 @@
   const leaveBtn = document.getElementById('leaveBtn');
   const monitorPanel = document.getElementById('monitorPanel');
   const monitorVideo = document.getElementById('monitorVideo');
+  const monitorStatus = document.getElementById('monitorStatus');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -105,38 +106,47 @@
   // roughly a few hundred ms) -- a real WebRTC feed keeps that loop at
   // normal WebRTC latency, where AEC actually has a chance.
   async function handleMonitorOffer(fromSocketId, offer) {
-    monitorPc?.close();
-    monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-
-    monitorPc.ontrack = (event) => {
-      if (monitorVideo.srcObject !== event.streams[0]) {
-        monitorVideo.srcObject = event.streams[0];
-        // Unmuted autoplay can be blocked without a fresh-enough user
-        // gesture -- the join button click that got us here usually still
-        // counts, but fall back to a one-tap prompt if a browser disagrees
-        // rather than silently leaving the guest with no audio at all.
-        monitorVideo.play().catch(() => {
-          const resume = () => {
-            monitorVideo.play().catch(() => {});
-            document.removeEventListener('click', resume);
-          };
-          document.addEventListener('click', resume, { once: true });
-          callStatus.textContent = 'Tap anywhere to enable room monitor audio.';
-        });
-      }
-    };
-    monitorPc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit('signal', { to: fromSocketId, type: 'monitor-ice-candidate', payload: event.candidate });
-      }
-    };
-
-    await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await monitorPc.createAnswer();
-    await monitorPc.setLocalDescription(answer);
-    socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
-
     monitorPanel.style.display = 'block';
+    monitorStatus.textContent = 'Room monitor offer received — connecting…';
+
+    try {
+      monitorPc?.close();
+      monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+      monitorPc.ontrack = (event) => {
+        if (monitorVideo.srcObject !== event.streams[0]) {
+          monitorVideo.srcObject = event.streams[0];
+          // Unmuted autoplay can be blocked without a fresh-enough user
+          // gesture -- the join button click that got us here usually still
+          // counts, but fall back to a one-tap prompt if a browser disagrees
+          // rather than silently leaving the guest with no audio at all.
+          monitorVideo.play().catch(() => {
+            const resume = () => {
+              monitorVideo.play().catch(() => {});
+              document.removeEventListener('click', resume);
+            };
+            document.addEventListener('click', resume, { once: true });
+            monitorStatus.textContent = 'Tap anywhere to enable room monitor audio.';
+          });
+        }
+      };
+      monitorPc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal', { to: fromSocketId, type: 'monitor-ice-candidate', payload: event.candidate });
+        }
+      };
+      monitorPc.onconnectionstatechange = () => {
+        monitorStatus.textContent = `Room monitor: ${monitorPc.connectionState}`;
+      };
+
+      await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await monitorPc.createAnswer();
+      await monitorPc.setLocalDescription(answer);
+      socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
+    } catch (err) {
+      monitorStatus.textContent = `Room monitor failed to connect: ${err.message}`;
+      console.error('Room monitor negotiation failed', err);
+    }
   }
 
   async function handleMonitorIceCandidate(payload) {
