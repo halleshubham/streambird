@@ -1,4 +1,11 @@
 (() => {
+  // Explicit rather than relying on browser defaults -- VDO.Ninja (a mature
+  // WebRTC production tool) leans on exactly these three constraints as its
+  // primary defense for guests on speakers rather than headphones, alongside
+  // a "use headphones" prompt like ours. AEC/NS/AGC defaults vary across
+  // browsers; being explicit means we always get them.
+  const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
   const token = new URLSearchParams(location.search).get('token');
   const joinStatus = document.getElementById('joinStatus');
   const callStatus = document.getElementById('callStatus');
@@ -242,7 +249,7 @@
     const displayName = document.getElementById('displayName').value.trim() || 'Guest';
 
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
     } catch (err) {
       joinStatus.textContent = `Could not access camera/mic: ${err.message}`;
       joinStatus.classList.add('error');

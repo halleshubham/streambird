@@ -1,5 +1,8 @@
 (() => {
   const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+  // Explicit rather than relying on browser defaults -- see the matching
+  // constant in guest.js for why.
+  const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
   const els = {
     loadStatus: document.getElementById('loadStatus'),
@@ -129,7 +132,7 @@
   els.startCameraBtn.addEventListener('click', async () => {
     els.startCameraBtn.disabled = true;
     try {
-      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
       const videoEl = document.createElement('video');
       videoEl.srcObject = localStream;
       videoEl.muted = true;
