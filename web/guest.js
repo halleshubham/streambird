@@ -9,6 +9,9 @@
   const toggleMicBtn = document.getElementById('toggleMicBtn');
   const toggleCameraBtn = document.getElementById('toggleCameraBtn');
   const leaveBtn = document.getElementById('leaveBtn');
+  const broadcastVideo = document.getElementById('broadcastVideo');
+  const broadcastPanel = document.getElementById('broadcastPanel');
+  const broadcastStatus = document.getElementById('broadcastStatus');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -56,6 +59,14 @@
       callStatus.textContent = `Connection: ${conn.connectionState}`;
     };
 
+    // Fires once the host renegotiates in its "backstage" monitor feed (the
+    // composited canvas + mixed audio) -- the guest never adds any tracks
+    // beyond its own camera/mic, so any track arriving here is that feed.
+    conn.ontrack = (event) => {
+      broadcastVideo.srcObject = event.streams[0];
+      broadcastPanel.style.display = 'block';
+    };
+
     return conn;
   }
 
@@ -72,6 +83,17 @@
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(payload));
     callStatus.textContent = 'Connected — you are live in the studio.';
+  }
+
+  // The host only ever sends an 'offer' here as a renegotiation, to add its
+  // backstage monitor feed after the initial connection is up -- respond
+  // with our own answer on the same pc, same as any WebRTC renegotiation.
+  async function handleHostOffer(payload) {
+    if (!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('signal', { to: hostSocketId, type: 'answer', payload: answer });
   }
 
   async function handleIceCandidate(payload) {
@@ -169,6 +191,10 @@
         await handleIceCandidate(msg.payload);
       } else if (msg.type === 'kicked') {
         handleKicked();
+      } else if (msg.type === 'offer') {
+        await handleHostOffer(msg.payload);
+      } else if (msg.type === 'broadcast-toggle') {
+        broadcastStatus.textContent = msg.payload.enabled ? '' : 'Host has paused the broadcast preview.';
       }
     });
 
