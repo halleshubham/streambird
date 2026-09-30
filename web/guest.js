@@ -116,18 +116,32 @@
       monitorPc.ontrack = (event) => {
         if (monitorVideo.srcObject !== event.streams[0]) {
           monitorVideo.srcObject = event.streams[0];
-          // Unmuted autoplay can be blocked without a fresh-enough user
-          // gesture -- the join button click that got us here usually still
-          // counts, but fall back to a one-tap prompt if a browser disagrees
-          // rather than silently leaving the guest with no audio at all.
-          monitorVideo.play().catch(() => {
-            const resume = () => {
-              monitorVideo.play().catch(() => {});
-              document.removeEventListener('click', resume);
-            };
-            document.addEventListener('click', resume, { once: true });
-            monitorStatus.textContent = 'Tap anywhere to enable room monitor audio.';
-          });
+          // Starting muted and unmuting right after is the standard
+          // workaround for unmuted-autoplay blocking: browsers always allow
+          // muted autoplay, and (unlike *starting* unmuted playback) simply
+          // flipping .muted off on already-rolling media generally isn't
+          // re-blocked. This is what was silently failing before -- the
+          // play() rejection was caught, but the connectionstatechange
+          // handler below then overwrote the resulting "tap to enable"
+          // prompt with "Room monitor: connected" moments later, so the
+          // guest never actually saw it and the video just sat paused on a
+          // black frame with no console error at all.
+          monitorVideo.muted = true;
+          monitorVideo
+            .play()
+            .then(() => {
+              monitorVideo.muted = false;
+              monitorStatus.textContent = 'Room monitor: connected';
+            })
+            .catch(() => {
+              const resume = () => {
+                monitorVideo.muted = false;
+                monitorVideo.play().catch(() => {});
+                document.removeEventListener('click', resume);
+              };
+              document.addEventListener('click', resume, { once: true });
+              monitorStatus.textContent = 'Tap anywhere to enable the room monitor.';
+            });
         }
       };
       monitorPc.onicecandidate = (event) => {
@@ -136,6 +150,10 @@
         }
       };
       monitorPc.onconnectionstatechange = () => {
+        // 'connected' is reported once ontrack's own play()/mute-unmute
+        // settles, so as not to clobber a still-pending tap-to-enable
+        // prompt with a falsely-reassuring "connected".
+        if (monitorPc.connectionState === 'connected') return;
         monitorStatus.textContent = `Room monitor: ${monitorPc.connectionState}`;
       };
 
