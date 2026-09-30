@@ -32,6 +32,7 @@
 
   let whipPc = null;
   let whipResourceUrl = null;
+  let keyFrameInterval = null;
 
   function setStatus(el, text, isError) {
     el.textContent = text;
@@ -350,6 +351,30 @@
       const answerSdp = await res.text();
       await whipPc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
+      // WebRTC encoders default to a long keyframe interval (keyframes are
+      // much larger than delta frames, and low-latency P2P contexts lean on
+      // retransmission instead of frequent keyframes) -- observed here as
+      // one roughly every ~47s. Cloudflare's own WebRTC preview tolerates
+      // that fine (it just waits for the next one), but RTMP broadcast
+      // destinations (Twitch, YouTube) expect a keyframe every ~2s for
+      // their ingest/transcode pipeline to recognize and process the
+      // stream at all -- without this, the WHIP ingest and Cloudflare
+      // preview both work perfectly while every RTMP output silently never
+      // connects. Two different browsers/versions have shipped two
+      // different APIs for requesting one explicitly -- try both,
+      // whichever exists.
+      const sender = videoTransceiver.sender;
+      keyFrameInterval = setInterval(() => {
+        if (typeof sender.generateKeyFrame === 'function') {
+          sender.generateKeyFrame().catch(() => {});
+          return;
+        }
+        const params = sender.getParameters();
+        if (params.encodings && params.encodings.length > 0) {
+          sender.setParameters(params, { encodingOptions: [{ keyFrame: true }] }).catch(() => {});
+        }
+      }, 2000);
+
       setStatus(els.studioStatus, 'LIVE — publishing to Cloudflare.');
     } catch (err) {
       setStatus(els.studioStatus, `Failed to go live: ${err.message}`, true);
@@ -378,6 +403,11 @@
   els.endBtn.addEventListener('click', async () => {
     els.endBtn.disabled = true;
     setStatus(els.studioStatus, 'Ending stream…');
+
+    if (keyFrameInterval) {
+      clearInterval(keyFrameInterval);
+      keyFrameInterval = null;
+    }
 
     if (whipResourceUrl) {
       try {
