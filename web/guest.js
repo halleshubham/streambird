@@ -19,6 +19,7 @@
   const monitorPanel = document.getElementById('monitorPanel');
   const monitorAudio = document.getElementById('monitorAudio');
   const monitorStatus = document.getElementById('monitorStatus');
+  const monitorVideoGrid = document.getElementById('monitorVideoGrid');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -101,10 +102,10 @@
   }
 
   // ---- Room monitor: a second, dedicated peer connection carrying this
-  // guest's personal mix-minus audio feed -- everyone else currently in the
-  // room, but never their own voice -- back from the host. Kept entirely
-  // separate from `pc` (this guest's own camera/mic upload) rather than
-  // renegotiating one shared connection -- two simple one-directional
+  // guest's personal mix-minus audio feed (everyone else's mic, never their
+  // own) plus every other participant's video, back from the host. Kept
+  // entirely separate from `pc` (this guest's own camera/mic upload) rather
+  // than renegotiating one shared connection -- two simple one-directional
   // connections are easier to reason about, and a shared-connection
   // renegotiation is exactly what made an earlier version of this feature
   // unreliable. This replaced two earlier approaches: a Cloudflare-hosted-
@@ -116,22 +117,70 @@
   // echo problem entirely, regardless of latency or headphone use: a
   // guest's own voice is never in what they receive, so there's nothing of
   // theirs to loop back.
-  async function handleMonitorOffer(fromSocketId, offer) {
+  //
+  // The host fully recreates this connection (new offer) every time the
+  // room's video roster changes rather than renegotiating in place -- see
+  // host.js's refreshAllMonitorFeeds() for why -- so the video tile grid is
+  // wiped and rebuilt from scratch on every offer rather than tracked
+  // incrementally.
+  const videoTiles = new Map(); // participantId -> { container, videoEl, nameEl }
+
+  function clearVideoTiles() {
+    monitorVideoGrid.innerHTML = '';
+    videoTiles.clear();
+  }
+
+  function renderVideoTile(participantId, displayName, stream) {
+    let tile = videoTiles.get(participantId);
+    if (!tile) {
+      const container = document.createElement('div');
+      container.className = 'monitor-video-tile';
+      const videoEl = document.createElement('video');
+      videoEl.autoplay = true;
+      videoEl.playsInline = true;
+      videoEl.muted = true; // these are camera feeds, not audio sources -- the mix-minus audio element carries all sound
+      const nameEl = document.createElement('span');
+      nameEl.className = 'monitor-video-tile-name';
+      container.appendChild(videoEl);
+      container.appendChild(nameEl);
+      monitorVideoGrid.appendChild(container);
+      tile = { container, videoEl, nameEl };
+      videoTiles.set(participantId, tile);
+    }
+    tile.nameEl.textContent = displayName;
+    if (tile.videoEl.srcObject !== stream) {
+      tile.videoEl.srcObject = stream;
+      tile.videoEl.play().catch(() => {});
+    }
+  }
+
+  async function handleMonitorOffer(fromSocketId, payload) {
+    const offer = payload.sdp;
+    const participantsByMid = payload.participantsByMid || {};
+
     monitorPanel.style.display = 'block';
     monitorStatus.textContent = 'Room monitor offer received — connecting…';
+    clearVideoTiles();
 
     try {
       monitorPc?.close();
       monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
       monitorPc.ontrack = (event) => {
-        console.log(`[monitor] ontrack fired: kind=${event.track.kind} readyState=${event.track.readyState} streams=${event.streams.length}`);
-        // Confirmed live: event.streams is empty here whenever the sender
-        // didn't pass an explicit `streams` array to addTransceiver (fixed
+        // Confirmed live: event.streams can be empty if the sender didn't
+        // pass an explicit `streams` array to addTransceiver (fixed
         // host-side too, but staying defensive on the receiver is exactly
         // what VDO.Ninja's own ontrack handler does -- never trust
         // event.streams[0] to be populated, fall back to the bare track).
         const incomingStream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+
+        if (event.track.kind === 'video') {
+          const mid = event.transceiver && event.transceiver.mid;
+          const info = mid ? participantsByMid[mid] : null;
+          renderVideoTile(info ? info.participantId : event.track.id, info ? info.displayName : 'Participant', incomingStream);
+          return;
+        }
+
         if (monitorAudio.srcObject !== incomingStream) {
           monitorAudio.srcObject = incomingStream;
           // Starting muted and unmuting right after is the standard
@@ -163,22 +212,14 @@
         }
       };
       monitorPc.onconnectionstatechange = () => {
-        console.log(`[monitor] connectionState: ${monitorPc.connectionState}`);
         // 'connected' is reported once ontrack's own play()/mute-unmute
         // settles, so as not to clobber a still-pending tap-to-enable
         // prompt with a falsely-reassuring "connected".
         if (monitorPc.connectionState === 'connected') return;
         monitorStatus.textContent = `Room monitor: ${monitorPc.connectionState}`;
       };
-      monitorPc.oniceconnectionstatechange = () => {
-        console.log(`[monitor] iceConnectionState: ${monitorPc.iceConnectionState}`);
-      };
-      monitorPc.onsignalingstatechange = () => {
-        console.log(`[monitor] signalingState: ${monitorPc.signalingState}`);
-      };
 
       await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
-      console.log('[monitor] after setRemoteDescription, receivers:', monitorPc.getReceivers().map((r) => ({ kind: r.track?.kind, readyState: r.track?.readyState })));
       const answer = await monitorPc.createAnswer();
       await monitorPc.setLocalDescription(answer);
       socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
@@ -212,6 +253,7 @@
     }
     socket?.disconnect();
     monitorAudio.srcObject = null;
+    clearVideoTiles();
     monitorPanel.style.display = 'none';
   }
 
