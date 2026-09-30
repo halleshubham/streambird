@@ -8,7 +8,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { StudioSessionsService } from './studio-sessions.service';
 
 interface SocketState {
@@ -31,8 +31,15 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   private readonly logger = new Logger(StudioSignalingGateway.name);
   private readonly socketState = new Map<string, SocketState>();
 
+  // Typed as Namespace, not the root Server -- NestJS's IoAdapter binds a
+  // namespaced gateway's server to server.of(namespace), so this really is
+  // a Namespace instance at runtime. Namespace.sockets is already the flat
+  // Map<string, Socket>; Server.sockets is a Namespace (the default '/'
+  // one) with its own nested .sockets Map, which is a different shape --
+  // typing this as Server let a call site silently target the wrong,
+  // always-undefined property (see handleSignal below).
   @WebSocketServer()
-  server!: Server;
+  server!: Namespace;
 
   constructor(private readonly studioSessionsService: StudioSessionsService) {}
 
@@ -142,7 +149,13 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     @MessageBody() body: { to: string; type: 'offer' | 'answer' | 'ice-candidate'; payload: unknown },
   ) {
     const senderState = this.socketState.get(client.id);
-    const targetSocket = this.server.sockets.sockets.get(body.to);
+    // this.server is the '/studio' Namespace (NestJS's IoAdapter binds a
+    // namespaced gateway's server to server.of(namespace)), whose own
+    // .sockets is already the flat Map<string, Socket> -- not the extra
+    // nesting Server.sockets.sockets has for the *default* namespace. The
+    // extra .sockets here was always undefined, so every signal relay
+    // (offer/answer/ice-candidate) silently failed to find its target.
+    const targetSocket = this.server.sockets.get(body.to);
     if (!senderState || !targetSocket) return;
 
     const targetState = this.socketState.get(body.to);

@@ -33,6 +33,7 @@
   let whipPc = null;
   let whipResourceUrl = null;
   let keyFrameInterval = null;
+  let endingStream = false;
 
   function setStatus(el, text, isError) {
     el.textContent = text;
@@ -132,8 +133,12 @@
     // and stayed stuck: the host's signaling socket was gone, and nothing
     // ever surfaced that. socket.io-client auto-reconnects and resends the
     // same auth payload, so 'joined' firing again after 'disconnect' is
-    // the normal, expected recovery path here, not an error on its own.
+    // the normal, expected recovery path here, not an error on its own --
+    // except for the endBtn handler's own deliberate socket.disconnect(),
+    // which never reconnects (that's the point), so it's excluded via
+    // endingStream rather than shown as a scary, misleading "reconnecting".
     socket.on('disconnect', (reason) => {
+      if (endingStream) return;
       setStatus(els.studioStatus, `Lost connection to studio signaling (${reason}) — reconnecting…`, true);
     });
     socket.on('connect_error', (err) => {
@@ -418,6 +423,7 @@
 
   els.endBtn.addEventListener('click', async () => {
     els.endBtn.disabled = true;
+    endingStream = true;
     setStatus(els.studioStatus, 'Ending stream…');
 
     if (keyFrameInterval) {
