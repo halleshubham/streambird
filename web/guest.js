@@ -120,16 +120,20 @@
     monitorPanel.style.display = 'block';
     monitorStatus.textContent = 'Room monitor offer received — connecting…';
 
-    console.log(`[monitor] offer SDP:\n${offer.sdp}`);
-
     try {
       monitorPc?.close();
       monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
       monitorPc.ontrack = (event) => {
         console.log(`[monitor] ontrack fired: kind=${event.track.kind} readyState=${event.track.readyState} streams=${event.streams.length}`);
-        if (monitorAudio.srcObject !== event.streams[0]) {
-          monitorAudio.srcObject = event.streams[0];
+        // Confirmed live: event.streams is empty here whenever the sender
+        // didn't pass an explicit `streams` array to addTransceiver (fixed
+        // host-side too, but staying defensive on the receiver is exactly
+        // what VDO.Ninja's own ontrack handler does -- never trust
+        // event.streams[0] to be populated, fall back to the bare track).
+        const incomingStream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+        if (monitorAudio.srcObject !== incomingStream) {
+          monitorAudio.srcObject = incomingStream;
           // Starting muted and unmuting right after is the standard
           // workaround for unmuted-autoplay blocking: browsers always allow
           // muted autoplay, and (unlike *starting* unmuted playback) simply
@@ -177,7 +181,6 @@
       console.log('[monitor] after setRemoteDescription, receivers:', monitorPc.getReceivers().map((r) => ({ kind: r.track?.kind, readyState: r.track?.readyState })));
       const answer = await monitorPc.createAnswer();
       await monitorPc.setLocalDescription(answer);
-      console.log(`[monitor] answer SDP:\n${answer.sdp}`);
       socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
     } catch (err) {
       monitorStatus.textContent = `Room monitor failed to connect: ${err.message}`;
