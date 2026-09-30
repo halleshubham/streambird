@@ -9,8 +9,10 @@ import { AccountsModule } from './accounts/accounts.module';
 import { PlatformConnectionsModule } from './platform-connections/platform-connections.module';
 import { StreamsModule } from './streams/streams.module';
 import { StudioModule } from './studio/studio.module';
+import { AppController } from './app.controller';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     ServeStaticModule.forRoot({
