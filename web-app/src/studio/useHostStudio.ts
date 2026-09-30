@@ -70,6 +70,7 @@ export function useHostStudio(streamId: string | undefined) {
   const pendingDisplayNamesRef = useRef<Map<string, string>>(new Map());
   const monitorConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const monitorFeedGenerationRef = useRef<Map<string, number>>(new Map());
+  const monitorRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const audioSourceNodesRef = useRef<Map<string, MediaStreamAudioSourceNode>>(new Map());
@@ -238,11 +239,28 @@ export function useHostStudio(streamId: string | undefined) {
     monitorConnectionsRef.current.delete(socketId);
   }
 
+  /**
+   * Debounced: a guest joining, starting their camera, and their video
+   * track arriving can all trigger this within milliseconds of each other.
+   * Running it immediately every time meant each new round reset
+   * connections that hadn't even finished negotiating the *previous* round
+   * yet -- confirmed live (2026-10-01) via "Called in wrong state: stable"
+   * errors, where a guest's answer for a just-superseded offer landed on
+   * the brand-new pc that replaced it instead. The per-socketId generation
+   * guard in startMonitorFeed stops a stale round from ever being *sent*,
+   * but can't stop an already-sent offer's answer from arriving after the
+   * round that sent it has already been superseded -- only giving each
+   * round room to actually finish fixes that.
+   */
   const refreshAllMonitorFeeds = useCallback(() => {
-    for (const id of participantsRef.current.keys()) {
-      if (id === 'local') continue;
-      void startMonitorFeed(id);
-    }
+    if (monitorRefreshTimerRef.current) clearTimeout(monitorRefreshTimerRef.current);
+    monitorRefreshTimerRef.current = setTimeout(() => {
+      monitorRefreshTimerRef.current = null;
+      for (const id of participantsRef.current.keys()) {
+        if (id === 'local') continue;
+        void startMonitorFeed(id);
+      }
+    }, 400);
   }, [startMonitorFeed]);
 
   // ---- Canvas compositing ----------------------------------------------
@@ -733,6 +751,11 @@ export function useHostStudio(streamId: string | undefined) {
     setEnding(true);
     endingStreamRef.current = true;
     setStatus({ text: 'Ending stream…', isError: false });
+
+    if (monitorRefreshTimerRef.current) {
+      clearTimeout(monitorRefreshTimerRef.current);
+      monitorRefreshTimerRef.current = null;
+    }
 
     if (keyFrameIntervalRef.current) {
       clearInterval(keyFrameIntervalRef.current);
