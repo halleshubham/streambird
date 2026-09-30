@@ -28,14 +28,10 @@
     <div class="status" id="callStatus">Connecting…</div>
   </div>
 
-  <div class="panel" id="broadcastPanel" style="display:none">
-    <label>Live broadcast (what's currently going out)</label>
-    <iframe
-      id="broadcastIframe"
-      style="width:100%;aspect-ratio:16/9;border:0;border-radius:8px;background:#000"
-      allow="autoplay; encrypted-media"
-      allowfullscreen
-    ></iframe>
+  <div class="panel" id="monitorPanel" style="display:none">
+    <label>Room monitor (what the host is seeing/hearing)</label>
+    <video id="monitorVideo" autoplay playsinline style="width:100%;aspect-ratio:16/9;border-radius:8px;background:#000"></video>
+    <div class="status">Use headphones if you can — without them, the room mix playing through your speakers may cause an echo.</div>
   </div>
 </div>
 

@@ -39,6 +39,16 @@
   // the real entry.
   const pendingDisplayNames = new Map();
 
+  // socketId -> RTCPeerConnection carrying the composited canvas + mixed
+  // audio *back* to that guest (the "room monitor"). Deliberately a
+  // separate connection per guest from their own upload `pc` in
+  // `participants` -- renegotiating one shared connection for both
+  // directions is what made the earlier version of this feature unreliable
+  // (see git history); two simple one-directional connections are easier to
+  // reason about.
+  const monitorConnections = new Map();
+  let monitorVideoTrack = null;
+
   let audioContext = null;
   let audioDestination = null;
 
@@ -194,6 +204,7 @@
         renderParticipantList();
       }
       pendingDisplayNames.delete(socketId);
+      stopMonitorFeed(socketId);
     });
 
     socket.on('signal', async (msg) => {
@@ -206,6 +217,18 @@
             await p.pc.addIceCandidate(new RTCIceCandidate(msg.payload));
           } catch (err) {
             console.warn('Failed to add ICE candidate from guest', err);
+          }
+        }
+      } else if (msg.type === 'monitor-answer') {
+        const monitorPc = monitorConnections.get(msg.from);
+        if (monitorPc) await monitorPc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+      } else if (msg.type === 'monitor-ice-candidate') {
+        const monitorPc = monitorConnections.get(msg.from);
+        if (monitorPc) {
+          try {
+            await monitorPc.addIceCandidate(new RTCIceCandidate(msg.payload));
+          } catch (err) {
+            console.warn('Failed to add ICE candidate for a guest\'s room monitor', err);
           }
         }
       }
@@ -261,6 +284,51 @@
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
+
+    startMonitorFeed(fromSocketId);
+  }
+
+  // ---- 3c. Room monitor: relay the composited canvas + mixed audio back
+  // to each guest, on its own dedicated connection (see monitorConnections
+  // above for why). Started once a guest's own upload connection is up, and
+  // torn down whenever they leave or get dropped.
+
+  function getMonitorVideoTrack() {
+    if (!monitorVideoTrack) {
+      monitorVideoTrack = els.canvas.captureStream(30).getVideoTracks()[0];
+    }
+    return monitorVideoTrack;
+  }
+
+  async function startMonitorFeed(socketId) {
+    stopMonitorFeed(socketId);
+    ensureAudioMix();
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    monitorConnections.set(socketId, pc);
+
+    pc.addTransceiver(getMonitorVideoTrack(), { direction: 'sendonly' });
+    pc.addTransceiver(audioDestination.stream.getAudioTracks()[0], { direction: 'sendonly' });
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
+      }
+    };
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('signal', { to: socketId, type: 'monitor-offer', payload: offer });
+    } catch (err) {
+      console.warn('Failed to start the room monitor feed for a guest', err);
+      stopMonitorFeed(socketId);
+    }
+  }
+
+  function stopMonitorFeed(socketId) {
+    monitorConnections.get(socketId)?.close();
+    monitorConnections.delete(socketId);
   }
 
   // ---- 3b. Per-participant controls (mute / camera / drop) ----
@@ -326,6 +394,7 @@
     p.audioSourceNode?.disconnect();
     participants.delete(id);
     renderParticipantList();
+    stopMonitorFeed(id);
   }
 
   // ---- 4. Audio mixing ----
@@ -664,6 +733,8 @@
 
     whipPc?.close();
     for (const p of participants.values()) p.pc?.close();
+    for (const monitorPc of monitorConnections.values()) monitorPc.close();
+    monitorConnections.clear();
     socket?.disconnect();
 
     if (ended) {

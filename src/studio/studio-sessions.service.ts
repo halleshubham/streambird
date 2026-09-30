@@ -113,10 +113,7 @@ export class StudioSessionsService {
    * Does not consume the token; call consumeInviteAndJoin for that.
    */
   async resolveInviteToken(token: string): Promise<StudioGuestInvite> {
-    const invite = await this.invites.findOne({
-      where: { token },
-      relations: ['studioSession', 'studioSession.liveStream'],
-    });
+    const invite = await this.invites.findOne({ where: { token } });
     if (!invite) {
       throw new NotFoundException('Invite not found');
     }
@@ -127,20 +124,6 @@ export class StudioSessionsService {
       throw new BadRequestException('This invite has expired');
     }
     return invite;
-  }
-
-  /**
-   * Cloudflare Stream plays a Live Input directly through the same hosted
-   * player used for VOD, keyed by the live input's own uid -- no separate
-   * "video id" to mint or track. The "customer-<code>" subdomain is fixed
-   * per Cloudflare account, not per stream, hence pulling it from config
-   * rather than anything stored on the LiveStream itself.
-   */
-  buildPlaybackIframeUrl(relayLiveInputId: string | null | undefined): string | null {
-    if (!relayLiveInputId) return null;
-    const customerCode = this.config.get<string>('cloudflare.customerCode');
-    if (!customerCode) return null;
-    return `https://customer-${customerCode}.cloudflarestream.com/${relayLiveInputId}/iframe`;
   }
 
   /**

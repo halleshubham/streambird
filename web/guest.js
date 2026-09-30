@@ -9,8 +9,8 @@
   const toggleMicBtn = document.getElementById('toggleMicBtn');
   const toggleCameraBtn = document.getElementById('toggleCameraBtn');
   const leaveBtn = document.getElementById('leaveBtn');
-  const broadcastPanel = document.getElementById('broadcastPanel');
-  const broadcastIframe = document.getElementById('broadcastIframe');
+  const monitorPanel = document.getElementById('monitorPanel');
+  const monitorVideo = document.getElementById('monitorVideo');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -20,6 +20,7 @@
   }
 
   let pc = null;
+  let monitorPc = null;
   let hostSocketId = null;
   let socket = null;
   let localStream = null;
@@ -91,18 +92,78 @@
     }
   }
 
+  // ---- Room monitor: a second, dedicated peer connection carrying the
+  // host's composited canvas + mixed audio back to this guest. Kept
+  // entirely separate from `pc` (this guest's own camera/mic upload) rather
+  // than renegotiating one shared connection -- two simple one-directional
+  // connections are easier to reason about, and a shared-connection
+  // renegotiation is exactly what made the earlier version of this feature
+  // unreliable. This also replaces the previous Cloudflare-hosted-player
+  // iframe approach: that player's several-second HLS/DASH latency put any
+  // guest's own voice looping back through their speakers far outside what
+  // browser echo cancellation can cancel (AEC only handles delays up to
+  // roughly a few hundred ms) -- a real WebRTC feed keeps that loop at
+  // normal WebRTC latency, where AEC actually has a chance.
+  async function handleMonitorOffer(fromSocketId, offer) {
+    monitorPc?.close();
+    monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+    monitorPc.ontrack = (event) => {
+      if (monitorVideo.srcObject !== event.streams[0]) {
+        monitorVideo.srcObject = event.streams[0];
+        // Unmuted autoplay can be blocked without a fresh-enough user
+        // gesture -- the join button click that got us here usually still
+        // counts, but fall back to a one-tap prompt if a browser disagrees
+        // rather than silently leaving the guest with no audio at all.
+        monitorVideo.play().catch(() => {
+          const resume = () => {
+            monitorVideo.play().catch(() => {});
+            document.removeEventListener('click', resume);
+          };
+          document.addEventListener('click', resume, { once: true });
+          callStatus.textContent = 'Tap anywhere to enable room monitor audio.';
+        });
+      }
+    };
+    monitorPc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('signal', { to: fromSocketId, type: 'monitor-ice-candidate', payload: event.candidate });
+      }
+    };
+
+    await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await monitorPc.createAnswer();
+    await monitorPc.setLocalDescription(answer);
+    socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
+
+    monitorPanel.style.display = 'block';
+  }
+
+  async function handleMonitorIceCandidate(payload) {
+    if (!monitorPc) return;
+    try {
+      await monitorPc.addIceCandidate(new RTCIceCandidate(payload));
+    } catch (err) {
+      console.warn('Failed to add ICE candidate for the room monitor', err);
+    }
+  }
+
   function stopLocalMedia() {
     leaving = true;
     if (pc) {
       pc.close();
       pc = null;
     }
+    if (monitorPc) {
+      monitorPc.close();
+      monitorPc = null;
+    }
     if (localStream) {
       localStream.getTracks().forEach((t) => t.stop());
     }
     socket?.disconnect();
-    broadcastIframe.src = '';
-    broadcastPanel.style.display = 'none';
+    monitorVideo.srcObject = null;
+    monitorPanel.style.display = 'none';
   }
 
   function handleKicked() {
@@ -150,14 +211,6 @@
       return;
     }
 
-    // Cloudflare's own hosted player for the live input -- it shows
-    // "offline" on its own until the host actually goes live, so this can
-    // just be shown right away rather than waiting for any signal.
-    if (invite.playbackUrl) {
-      broadcastIframe.src = invite.playbackUrl;
-      broadcastPanel.style.display = 'block';
-    }
-
     const displayName = document.getElementById('displayName').value.trim() || 'Guest';
 
     try {
@@ -187,6 +240,10 @@
         await handleAnswer(msg.payload);
       } else if (msg.type === 'ice-candidate') {
         await handleIceCandidate(msg.payload);
+      } else if (msg.type === 'monitor-offer') {
+        await handleMonitorOffer(msg.from, msg.payload);
+      } else if (msg.type === 'monitor-ice-candidate') {
+        await handleMonitorIceCandidate(msg.payload);
       } else if (msg.type === 'kicked') {
         handleKicked();
       }
