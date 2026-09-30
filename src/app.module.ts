@@ -16,9 +16,17 @@ import { AppController } from './app.controller';
   controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    // maxAge: 0 on both -- serve-static's default (4h) bit us once already:
+    // a fixed bug in host.js wasn't visible to a browser that had cached
+    // the old copy, and the same risk applies to dist-web/index.html
+    // pointing at a hashed asset filename a later deploy has removed. ETag/
+    // Last-Modified conditional requests still keep re-fetches cheap (a
+    // 304 when nothing changed), so this doesn't mean re-downloading on
+    // every load, just always re-validating.
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'web'),
       serveRoot: '/studio',
+      serveStaticOptions: { maxAge: 0 },
     }),
     // The React SPA build (see web-app/, built to dist-web/ by the
     // Dockerfile's web-builder stage). Its own client-side routes (e.g.
@@ -29,6 +37,7 @@ import { AppController } from './app.controller';
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'dist-web'),
       exclude: ['/api/(.*)', '/studio/(.*)', '/health'],
+      serveStaticOptions: { maxAge: 0 },
     }),
     DatabaseModule,
     CommonModule,
