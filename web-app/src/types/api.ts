@@ -54,6 +54,22 @@ export interface Stream {
   destinations: Destination[];
 }
 
+export interface HostTokenResponse {
+  token: string;
+}
+
+export interface CreateInviteResponse {
+  token: string;
+  joinUrl: string;
+  expiresAt: string;
+}
+
+export interface ResolveInviteResponse {
+  studioSessionId: string;
+  label: string | null;
+  expiresAt: string;
+}
+
 export interface DestinationSummary {
   platform: Platform;
   status: DestinationStatus;
