@@ -15,11 +15,17 @@ export interface AppConfig {
     tokenSecret: string;
   };
   mediamtx: {
-    /** Internal Control API base URL (container-to-container, not public) -- e.g. http://streambird-mediamtx:9997 */
+    /**
+     * Public Control API base URL, on its own domain pointed at MediaMTX's
+     * API port -- container-to-container Docker networking between
+     * separate Coolify apps didn't work out in practice, so this is
+     * exposed publicly and locked down with apiUser/apiPassword (MediaMTX's
+     * own Basic Auth, scoped to the "api" permission only) instead.
+     */
     apiUrl: string;
     apiUser: string;
     apiPassword: string;
-    /** Public base URL the host's browser publishes WHIP to -- e.g. https://<mediamtx-domain> (port 8889). */
+    /** Public base URL the host's browser publishes WHIP to -- MediaMTX's WebRTC/HTTP port, its own domain. */
     whipBaseUrl: string;
   };
   twitchClientId: string;
