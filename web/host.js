@@ -124,6 +124,22 @@
 
     socket.on('joined', () => setStatus(els.studioStatus, 'Connected to the studio as host.'));
 
+    // Without these, a dropped connection (e.g. a backend redeploy -- this
+    // gateway's state is in-memory only, so a restart drops every open
+    // socket) left the page silently showing "Connected to the studio as
+    // host." forever with zero indication anything had gone wrong, which
+    // is exactly why a guest joining afterward saw "waiting for the host"
+    // and stayed stuck: the host's signaling socket was gone, and nothing
+    // ever surfaced that. socket.io-client auto-reconnects and resends the
+    // same auth payload, so 'joined' firing again after 'disconnect' is
+    // the normal, expected recovery path here, not an error on its own.
+    socket.on('disconnect', (reason) => {
+      setStatus(els.studioStatus, `Lost connection to studio signaling (${reason}) — reconnecting…`, true);
+    });
+    socket.on('connect_error', (err) => {
+      setStatus(els.studioStatus, `Signaling connection failed: ${err.message}`, true);
+    });
+
     socket.on('peer-joined', ({ socketId, displayName }) => {
       setStatus(els.studioStatus, `${displayName} joined — requesting their video…`);
       socket.emit('signal', { to: socketId, type: 'request-offer', payload: {} });
