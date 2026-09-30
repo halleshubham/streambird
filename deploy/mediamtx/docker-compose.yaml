@@ -11,3 +11,30 @@ services:
       # way to express this (its ports_mappings field is TCP-only), which is
       # why this service is deployed via docker-compose instead.
       - "8189:8189/udp"
+    networks:
+      - coolify
+    labels:
+      # Explicit Traefik labels rather than Coolify's docker_compose_domains
+      # field: that field silently drops the ":<port>" suffix needed to
+      # route two different domains to this one service's two different
+      # HTTP ports (WHIP on 8889, Control API on 9997), collapsing both
+      # domains onto the same port. Hand-writing the labels gives one
+      # domain per port, unambiguously.
+      - coolify.managed=true
+      - traefik.enable=true
+      - traefik.http.routers.mtx-whip.rule=Host(`whip-sbmtx.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-whip.entrypoints=https
+      - traefik.http.routers.mtx-whip.tls=true
+      - traefik.http.routers.mtx-whip.tls.certresolver=letsencrypt
+      - traefik.http.routers.mtx-whip.service=mtx-whip-svc
+      - traefik.http.services.mtx-whip-svc.loadbalancer.server.port=8889
+      - traefik.http.routers.mtx-api.rule=Host(`api-sbmtx.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-api.entrypoints=https
+      - traefik.http.routers.mtx-api.tls=true
+      - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.mtx-api.service=mtx-api-svc
+      - traefik.http.services.mtx-api-svc.loadbalancer.server.port=9997
+
+networks:
+  coolify:
+    external: true
