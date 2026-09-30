@@ -11,7 +11,6 @@
     toggleLayoutBtn: document.getElementById('toggleLayoutBtn'),
     goLiveBtn: document.getElementById('goLiveBtn'),
     endBtn: document.getElementById('endBtn'),
-    toggleBackstageBtn: document.getElementById('toggleBackstageBtn'),
     studioStatus: document.getElementById('studioStatus'),
     inviteStatus: document.getElementById('inviteStatus'),
     participantList: document.getElementById('participantList'),
@@ -59,14 +58,6 @@
   let whipResourceUrl = null;
   let keyFrameInterval = null;
   let endingStream = false;
-
-  // The "backstage" feed is the composited canvas + mixed audio relayed back
-  // to each guest as a live monitor of what's actually going out -- the same
-  // MediaStreamTrack objects are added as a sender to every guest's
-  // RTCPeerConnection, so toggling .enabled once mutes/unmutes it for all of
-  // them at once without a per-guest loop over the media itself.
-  let backstageStream = null;
-  let backstageEnabled = true;
 
   function setStatus(el, text, isError) {
     el.textContent = text;
@@ -208,18 +199,6 @@
     socket.on('signal', async (msg) => {
       if (msg.type === 'offer') {
         await handleGuestOffer(msg.from, msg.payload);
-      } else if (msg.type === 'answer') {
-        // Only reachable via a renegotiation we started (addBackstageFeed) --
-        // the initial guest<->host offer/answer is handled entirely inside
-        // handleGuestOffer, which sends its own answer directly.
-        const p = participants.get(msg.from);
-        if (p?.pc) {
-          try {
-            await p.pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-          } catch (err) {
-            console.warn('Failed to apply renegotiation answer from guest', err);
-          }
-        }
       } else if (msg.type === 'ice-candidate') {
         const p = participants.get(msg.from);
         if (p?.pc) {
@@ -282,11 +261,6 @@
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
-
-    // JSEP forbids adding new m-lines to that same answer -- this guest's
-    // backstage monitor feed needs its own follow-up offer/answer cycle,
-    // which addBackstageFeed kicks off once the initial connection is set.
-    addBackstageFeed(fromSocketId, pc);
   }
 
   // ---- 3b. Per-participant controls (mute / camera / drop) ----
@@ -353,59 +327,6 @@
     participants.delete(id);
     renderParticipantList();
   }
-
-  // ---- 3c. Backstage broadcast (relay the composited canvas + mixed audio back to guests) ----
-
-  function ensureBackstageStream() {
-    if (backstageStream) return backstageStream;
-    const videoTrack = els.canvas.captureStream(30).getVideoTracks()[0];
-    ensureAudioMix();
-    const audioTrack = audioDestination.stream.getAudioTracks()[0];
-    videoTrack.enabled = backstageEnabled;
-    audioTrack.enabled = backstageEnabled;
-    backstageStream = new MediaStream([videoTrack, audioTrack]);
-    return backstageStream;
-  }
-
-  function addBackstageFeed(socketId, pc) {
-    const stream = ensureBackstageStream();
-    // Deliberately addTransceiver(), not addTrack(): this pc already has two
-    // transceivers with a null sender (created to *receive* the guest's own
-    // camera/mic) -- addTrack()'s spec'd behavior is to find and reuse such
-    // a transceiver rather than create a new one, which silently repurposed
-    // the guest's own video/audio m-lines instead of adding the backstage
-    // feed's own. addTransceiver() always creates a new one.
-    for (const track of stream.getTracks()) {
-      pc.addTransceiver(track, { direction: 'sendonly', streams: [stream] });
-    }
-    renegotiate(socketId, pc);
-  }
-
-  async function renegotiate(socketId, pc) {
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('signal', { to: socketId, type: 'offer', payload: offer });
-    } catch (err) {
-      console.warn('Renegotiation with guest failed', err);
-      setStatus(els.studioStatus, `Could not set up the guest's broadcast preview: ${err.message}`, true);
-    }
-  }
-
-  els.toggleBackstageBtn.addEventListener('click', () => {
-    backstageEnabled = !backstageEnabled;
-    if (backstageStream) {
-      backstageStream.getTracks().forEach((t) => { t.enabled = backstageEnabled; });
-    }
-    els.toggleBackstageBtn.textContent = backstageEnabled
-      ? 'Hide broadcast from guests'
-      : 'Show broadcast to guests';
-
-    for (const socketId of participants.keys()) {
-      if (socketId === 'local') continue;
-      socket?.emit('signal', { to: socketId, type: 'broadcast-toggle', payload: { enabled: backstageEnabled } });
-    }
-  });
 
   // ---- 4. Audio mixing ----
 
