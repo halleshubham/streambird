@@ -30,7 +30,6 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=web-builder /app/dist-web ./dist-web
 COPY migrations ./migrations
-COPY web ./web
 
 EXPOSE 3000
 

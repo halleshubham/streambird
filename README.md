@@ -28,15 +28,18 @@ Early scaffold. Working so far:
   land once their respective OAuth/app-review processes clear.
 - **Studio (guest-join + client-side compositing)** — `POST /streams` now
   also creates a `StudioSession`. `POST /studio-sessions/:id/invites`
-  issues a single-use, short-TTL guest join link; a `web/guest.html` +
-  `web/host.html` pair (plain JS, no build step, served at `/studio/*`)
-  implements the actual WebRTC flow: guests publish their camera/mic to
-  the host's browser over a **direct P2P mesh** (no SFU vendor yet — that
-  was an open decision in the plan; mesh is the right MVP default since it
-  costs nothing server-side and is a clean, swappable seam for a real SFU
-  later, at up to a handful of guests). The host composites every
-  participant onto a `<canvas>` (grid or spotlight layout, toggleable),
-  mixes all audio tracks via the Web Audio API, and publishes the
+  issues a single-use, short-TTL guest join link; `web-app/src/studio/`
+  (React, part of the main SPA — `/streams/:id/studio` for the host,
+  `/join/:token` for guests) implements the actual WebRTC flow: guests
+  publish their camera/mic to the host's browser over a **direct P2P mesh**
+  (no SFU vendor yet — that was an open decision in the plan; mesh is the
+  right MVP default since it costs nothing server-side and is a clean,
+  swappable seam for a real SFU later, at up to a handful of guests). Each
+  guest also gets a personal mix-minus audio feed (everyone else, never
+  their own voice) plus every other participant's video, on a separate
+  connection the host recreates whenever the room's roster changes. The
+  host composites every participant onto a `<canvas>` (grid or spotlight
+  layout, toggleable), mixes all audio tracks via the Web Audio API, and publishes the
   composited result to Cloudflare via **WHIP** — the exact flow (build
   offer, wait for ICE gathering, POST `application/sdp`, parse the answer)
   follows VDO.Ninja's proven implementation, referenced rather than

@@ -16,27 +16,21 @@ import { AppController } from './app.controller';
   controllers: [AppController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-    // maxAge: 0 on both -- serve-static's default (4h) bit us once already:
-    // a fixed bug in host.js wasn't visible to a browser that had cached
-    // the old copy, and the same risk applies to dist-web/index.html
-    // pointing at a hashed asset filename a later deploy has removed. ETag/
-    // Last-Modified conditional requests still keep re-fetches cheap (a
-    // 304 when nothing changed), so this doesn't mean re-downloading on
-    // every load, just always re-validating.
-    ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'web'),
-      serveRoot: '/studio',
-      serveStaticOptions: { maxAge: 0 },
-    }),
     // The React SPA build (see web-app/, built to dist-web/ by the
     // Dockerfile's web-builder stage). Its own client-side routes (e.g.
-    // /streams/new) fall through to index.html via this module's standard
-    // SPA-fallback behavior for any unmatched, non-excluded GET -- which is
-    // exactly why every real API route lives under /api (see main.ts's
-    // setGlobalPrefix) and /studio's static files are excluded here too.
+    // /streams/new, /streams/:id/studio, /join/:token) fall through to
+    // index.html via this module's standard SPA-fallback behavior for any
+    // unmatched, non-excluded GET -- which is exactly why every real API
+    // route lives under /api (see main.ts's setGlobalPrefix). maxAge: 0 --
+    // serve-static's default (4h) bit us once already: a fixed bug wasn't
+    // visible to a browser that had cached the old copy, and the same risk
+    // applies to index.html pointing at a hashed asset filename a later
+    // deploy has removed. ETag/Last-Modified conditional requests still
+    // keep re-fetches cheap (a 304 when nothing changed), so this doesn't
+    // mean re-downloading on every load, just always re-validating.
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'dist-web'),
-      exclude: ['/api/(.*)', '/studio/(.*)', '/health'],
+      exclude: ['/api/(.*)', '/health'],
       serveStaticOptions: { maxAge: 0 },
     }),
     DatabaseModule,
