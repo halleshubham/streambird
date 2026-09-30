@@ -321,7 +321,16 @@
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       monitorConnections.set(socketId, pc);
 
-      const transceiver = pc.addTransceiver(audioTrack, { direction: 'sendonly' });
+      // Root cause of "connected but ontrack delivers streams=0" (confirmed
+      // live 2026-10-01, cross-checked against VDO.Ninja's own source):
+      // addTransceiver(track, init) with no `streams` in init gives the
+      // track msid stream-id "-" (an anonymous/no-stream placeholder) in
+      // the SDP -- the connection negotiates and reaches "connected" just
+      // fine, but the receiving side's ontrack fires with an *empty*
+      // event.streams, so `event.streams[0]` is always undefined. Passing
+      // the mix-minus destination's own stream here is exactly what
+      // VDO.Ninja does for every one of its own addTransceiver calls.
+      const transceiver = pc.addTransceiver(audioTrack, { direction: 'sendonly', streams: [dest.stream] });
       console.log(`[monitor->${socketId}] transceiver added, track readyState=${audioTrack.readyState} enabled=${audioTrack.enabled} direction=${transceiver.direction}`);
 
       pc.onicecandidate = (event) => {
@@ -343,7 +352,6 @@
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      console.log(`[monitor->${socketId}] offer SDP:\n${offer.sdp}`);
       socket.emit('signal', { to: socketId, type: 'monitor-offer', payload: offer });
     } catch (err) {
       console.warn('Failed to start the room monitor feed for a guest', err);
