@@ -198,6 +198,20 @@ export class StreamsService {
         }),
     );
 
+    // Cloudflare's own per-output connection status (e.g. whether the RTMP
+    // relay to a platform has actually connected) -- surfaced here instead
+    // of only being visible by digging through the Cloudflare dashboard.
+    let cloudflareOutputStatus = new Map<string, string>();
+    if (stream.relayLiveInputId) {
+      try {
+        const relayStatus = await this.relay.getLiveInputStatus(stream.relayLiveInputId);
+        cloudflareOutputStatus = new Map(relayStatus.outputs.map((o) => [o.uid, o.status]));
+      } catch {
+        // Best-effort -- a Cloudflare API hiccup here shouldn't break the
+        // whole status response, it just omits this extra detail.
+      }
+    }
+
     return {
       status: stream.status,
       destinations: stream.destinations.map((d) => ({
@@ -206,6 +220,9 @@ export class StreamsService {
         status: d.status,
         viewerCount: d.viewerCount,
         errorMessage: d.errorMessage,
+        cloudflareOutputStatus: d.cloudflareOutputUid
+          ? (cloudflareOutputStatus.get(d.cloudflareOutputUid) ?? null)
+          : null,
       })),
     };
   }
