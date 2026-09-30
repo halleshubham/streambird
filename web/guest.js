@@ -19,7 +19,7 @@
   let socket = null;
 
   async function validateInvite() {
-    const res = await fetch(`/studio-sessions/invites/${encodeURIComponent(token)}`);
+    const res = await fetch(`/api/studio-sessions/invites/${encodeURIComponent(token)}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.message || `This invite is no longer valid (${res.status}).`);

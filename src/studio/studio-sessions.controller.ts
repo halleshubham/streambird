@@ -14,7 +14,7 @@ import {
 import { StudioSessionsService } from './studio-sessions.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { UpdateLayoutDto } from './dto/update-layout.dto';
-import { ApiKeyGuard } from '../common/guards/api-key.guard';
+import { AccountGuard } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
 
@@ -39,7 +39,7 @@ export class StudioSessionsController {
   }
 
   @Post(':id/invites')
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(AccountGuard)
   async createInvite(
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,
@@ -49,7 +49,7 @@ export class StudioSessionsController {
   }
 
   @Delete(':id/invites/:inviteId')
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(AccountGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeInvite(
     @CurrentAccount() account: Account,
@@ -60,7 +60,7 @@ export class StudioSessionsController {
   }
 
   @Get(':id/participants')
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(AccountGuard)
   async listParticipants(
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,
@@ -69,7 +69,7 @@ export class StudioSessionsController {
   }
 
   @Patch(':id/layout')
-  @UseGuards(ApiKeyGuard)
+  @UseGuards(AccountGuard)
   async updateLayout(
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,

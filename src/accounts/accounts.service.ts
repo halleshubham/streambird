@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -34,6 +34,14 @@ export class AccountsService {
   async findByApiKey(apiKey: string): Promise<Account | null> {
     const apiKeyHash = this.hashApiKey(apiKey);
     return this.accounts.findOne({ where: { apiKeyHash } });
+  }
+
+  async findByIdOrThrow(id: string): Promise<Account> {
+    const account = await this.accounts.findOne({ where: { id } });
+    if (!account) {
+      throw new NotFoundException(`Account ${id} not found`);
+    }
+    return account;
   }
 
   private hashApiKey(apiKey: string): string {

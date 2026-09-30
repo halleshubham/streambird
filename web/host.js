@@ -55,7 +55,7 @@
     setStatus(els.loadStatus, 'Loading…');
 
     try {
-      const res = await fetch(`/streams/${encodeURIComponent(streamId)}`, {
+      const res = await fetch(`/api/streams/${encodeURIComponent(streamId)}`, {
         headers: { 'x-api-key': apiKey },
       });
       if (!res.ok) throw new Error(`Failed to load stream (${res.status})`);
@@ -193,7 +193,7 @@
 
     if (session) {
       try {
-        await fetch(`/studio-sessions/${session.stream.studioSessionId}/layout`, {
+        await fetch(`/api/studio-sessions/${session.stream.studioSessionId}/layout`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'x-api-key': session.apiKey },
           body: JSON.stringify({ layoutConfig: { layout: layoutMode, overlays: [] } }),
@@ -264,7 +264,7 @@
   els.createInviteBtn.addEventListener('click', async () => {
     if (!session) return;
     try {
-      const res = await fetch(`/studio-sessions/${session.stream.studioSessionId}/invites`, {
+      const res = await fetch(`/api/studio-sessions/${session.stream.studioSessionId}/invites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': session.apiKey },
         body: JSON.stringify({ expiresInMinutes: 60 }),
@@ -351,7 +351,7 @@
     }
 
     try {
-      const res = await fetch(`/streams/${session.stream.id}/end`, {
+      const res = await fetch(`/api/streams/${session.stream.id}/end`, {
         method: 'POST',
         headers: { 'x-api-key': session.apiKey },
       });

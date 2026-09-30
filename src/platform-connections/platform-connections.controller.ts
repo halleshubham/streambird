@@ -14,7 +14,7 @@ import { plainToInstance } from 'class-transformer';
 import { PlatformConnectionsService } from './platform-connections.service';
 import { PlatformConnectionResponseDto } from './dto/platform-connection-response.dto';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
-import { ApiKeyGuard } from '../common/guards/api-key.guard';
+import { AccountGuard } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
 
@@ -27,7 +27,7 @@ import { Account } from '../accounts/entities/account.entity';
  * connection method for Twitch, not a stand-in for a future OAuth route.
  */
 @Controller('platform-connections')
-@UseGuards(ApiKeyGuard)
+@UseGuards(AccountGuard)
 export class PlatformConnectionsController {
   constructor(private readonly platformConnectionsService: PlatformConnectionsService) {}
 

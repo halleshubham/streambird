@@ -163,6 +163,21 @@ export class StreamsService {
     return stream;
   }
 
+  async findAllForAccount(
+    accountId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: LiveStream[]; total: number }> {
+    const [items, total] = await this.liveStreams.findAndCount({
+      where: { accountId },
+      relations: ['destinations', 'destinations.platformConnection'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+      skip: offset,
+    });
+    return { items, total };
+  }
+
   async getStatus(id: string, accountId: string) {
     const stream = await this.findByIdOrThrow(id, accountId);
 

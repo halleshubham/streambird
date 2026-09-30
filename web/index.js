@@ -35,7 +35,7 @@
 
   async function api(path, options = {}) {
     const apiKey = getApiKey();
-    const res = await fetch(path, {
+    const res = await fetch(`/api${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',

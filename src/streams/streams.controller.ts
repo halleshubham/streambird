@@ -5,21 +5,24 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { plainToInstance } from 'class-transformer';
 import { StreamsService } from './streams.service';
 import { CreateStreamDto } from './dto/create-stream.dto';
+import { ListStreamsDto } from './dto/list-streams.dto';
 import { StreamResponseDto } from './dto/stream-response.dto';
+import { StreamListItemDto } from './dto/stream-list-item.dto';
 import { DestinationResponseDto } from './dto/destination-response.dto';
-import { ApiKeyGuard } from '../common/guards/api-key.guard';
+import { AccountGuard } from '../common/guards/account.guard';
 import { StreamCreateThrottlerGuard } from '../common/guards/stream-create-throttler.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
 
 @Controller('streams')
-@UseGuards(ApiKeyGuard)
+@UseGuards(AccountGuard)
 export class StreamsController {
   constructor(private readonly streamsService: StreamsService) {}
 
@@ -29,6 +32,34 @@ export class StreamsController {
   async create(@CurrentAccount() account: Account, @Body() dto: CreateStreamDto) {
     const stream = await this.streamsService.create(account.id, dto);
     return plainToInstance(StreamResponseDto, stream, { excludeExtraneousValues: true });
+  }
+
+  @Get()
+  async findAll(@CurrentAccount() account: Account, @Query() query: ListStreamsDto) {
+    const { items, total } = await this.streamsService.findAllForAccount(
+      account.id,
+      query.limit,
+      query.offset,
+    );
+
+    return {
+      items: items.map((stream) =>
+        plainToInstance(
+          StreamListItemDto,
+          {
+            ...stream,
+            destinationsSummary: stream.destinations.map((d) => ({
+              platform: d.platformConnection.platform,
+              status: d.status,
+            })),
+          },
+          { excludeExtraneousValues: true },
+        ),
+      ),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
   }
 
   @Get(':id')
