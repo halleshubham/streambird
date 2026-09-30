@@ -3,17 +3,28 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { PlatformConnectionsService } from './platform-connections.service';
 import { PlatformConnection } from './entities/platform-connection.entity';
+import { EncryptionService } from '../encryption/encryption.service';
+import { Platform } from '../common/enums/platform.enum';
 
 describe('PlatformConnectionsService', () => {
   let service: PlatformConnectionsService;
-  let repo: { find: jest.Mock; delete: jest.Mock };
+  let repo: { find: jest.Mock; delete: jest.Mock; create: jest.Mock; save: jest.Mock };
+  let encryption: { encrypt: jest.Mock };
 
   beforeEach(async () => {
-    repo = { find: jest.fn(), delete: jest.fn() };
+    repo = {
+      find: jest.fn(),
+      delete: jest.fn(),
+      create: jest.fn((v) => v),
+      save: jest.fn(async (v) => ({ id: 'conn_1', ...v })),
+    };
+    encryption = { encrypt: jest.fn(() => Buffer.from('ciphertext')) };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         PlatformConnectionsService,
         { provide: getRepositoryToken(PlatformConnection), useValue: repo },
+        { provide: EncryptionService, useValue: encryption },
       ],
     }).compile();
     service = moduleRef.get(PlatformConnectionsService);
@@ -38,5 +49,29 @@ describe('PlatformConnectionsService', () => {
   it('throws NotFoundException when nothing matched the account-scoped delete', async () => {
     repo.delete.mockResolvedValue({ affected: 0 });
     await expect(service.remove('c1', 'acc_1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('createManualTwitchConnection encrypts the pasted ingest URL/key and stores it as a Twitch connection', async () => {
+    const connection = await service.createManualTwitchConnection('acc_1', {
+      label: 'My Twitch',
+      ingestServerUrl: 'rtmp://live.twitch.tv/app',
+      streamKey: 'live_123_abc',
+    });
+
+    expect(encryption.encrypt).toHaveBeenCalledWith({
+      accessToken: '',
+      refreshToken: '',
+      ingestServerUrl: 'rtmp://live.twitch.tv/app',
+      streamKey: 'live_123_abc',
+    });
+
+    const saved = repo.create.mock.calls[0][0];
+    expect(saved.accountId).toBe('acc_1');
+    expect(saved.platform).toBe(Platform.TWITCH);
+    expect(saved.label).toBe('My Twitch');
+    expect(saved.credentialsCiphertext).toEqual(Buffer.from('ciphertext'));
+    expect(saved.externalAccountId).toEqual(expect.any(String));
+
+    expect(connection.id).toBe('conn_1');
   });
 });

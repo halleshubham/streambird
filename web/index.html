@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamBird dashboard</title>
+<link rel="stylesheet" href="./shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>StreamBird</h1>
+  <p style="color:var(--muted); margin-top:-8px">Minimal test dashboard — creates real data via the API, no auth beyond the API key below.</p>
+
+  <div class="panel" id="accountPanel">
+    <h2 style="font-size:16px; margin-top:0">1. Account</h2>
+    <div id="noAccount">
+      <label for="accountName">Account name</label>
+      <input type="text" id="accountName" placeholder="e.g. My test account" maxlength="200">
+      <button id="createAccountBtn">Create account</button>
+    </div>
+    <div id="hasAccount" style="display:none">
+      <div class="status" id="accountStatus"></div>
+      <button id="forgetAccountBtn" class="danger">Forget this account (browser only)</button>
+    </div>
+  </div>
+
+  <div class="panel" id="connectionsPanel" style="display:none">
+    <h2 style="font-size:16px; margin-top:0">2. Connect a platform</h2>
+    <p style="color:var(--muted); font-size:13px">
+      Twitch only for now. Twitch's own API doesn't expose your stream key —
+      copy it from <a href="https://dashboard.twitch.tv/settings/stream" target="_blank" style="color:var(--accent)">your Twitch dashboard</a> and paste it here.
+    </p>
+    <label for="twitchLabel">Label</label>
+    <input type="text" id="twitchLabel" placeholder="e.g. My Twitch channel" maxlength="200">
+    <label for="twitchIngest">Ingest server URL</label>
+    <input type="text" id="twitchIngest" value="rtmp://live.twitch.tv/app">
+    <label for="twitchKey">Stream key</label>
+    <input type="password" id="twitchKey" placeholder="live_...">
+    <button id="connectTwitchBtn">Connect</button>
+    <div class="status" id="connectStatus"></div>
+
+    <div id="connectionsList" style="margin-top:16px"></div>
+  </div>
+
+  <div class="panel" id="streamPanel" style="display:none">
+    <h2 style="font-size:16px; margin-top:0">3. Create a stream</h2>
+    <label for="streamTitle">Title</label>
+    <input type="text" id="streamTitle" placeholder="e.g. Test stream" maxlength="200">
+    <label>Destinations</label>
+    <div id="destinationCheckboxes" style="margin-bottom:12px"></div>
+    <button id="createStreamBtn">Create stream</button>
+    <div class="status" id="streamStatus"></div>
+  </div>
+
+  <div class="panel" id="resultPanel" style="display:none">
+    <h2 style="font-size:16px; margin-top:0">4. Go live</h2>
+    <div class="status" id="resultStatus"></div>
+    <p style="font-size:13px">
+      Open <a href="./host.html" target="_blank" style="color:var(--accent)">the studio host page</a>
+      and paste in your API key (above) and this stream's ID to start the compositor and go live.
+    </p>
+  </div>
+</div>
+
+<script src="./index.js"></script>
+</body>
+</html>
