@@ -24,7 +24,7 @@ services:
       # path prefix instead, stripped before reaching MediaMTX.
       - coolify.managed=true
       - traefik.enable=true
-      - traefik.http.routers.mtx-api.rule=Host(`whip-sbmtx.103.160.107.190.sslip.io`) && PathPrefix(`/__mtxapi__`)
+      - traefik.http.routers.mtx-api.rule=Host(`mtx1.103.160.107.190.sslip.io`) && PathPrefix(`/__mtxapi__`)
       - traefik.http.routers.mtx-api.entrypoints=https
       - traefik.http.routers.mtx-api.tls=true
       - traefik.http.routers.mtx-api.tls.certresolver=letsencrypt
@@ -33,7 +33,7 @@ services:
       - traefik.http.middlewares.mtx-api-strip.stripprefix.prefixes=/__mtxapi__
       - traefik.http.routers.mtx-api.service=mtx-api-svc
       - traefik.http.services.mtx-api-svc.loadbalancer.server.port=9997
-      - traefik.http.routers.mtx-whip.rule=Host(`whip-sbmtx.103.160.107.190.sslip.io`)
+      - traefik.http.routers.mtx-whip.rule=Host(`mtx1.103.160.107.190.sslip.io`)
       - traefik.http.routers.mtx-whip.entrypoints=https
       - traefik.http.routers.mtx-whip.tls=true
       - traefik.http.routers.mtx-whip.tls.certresolver=letsencrypt
