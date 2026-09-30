@@ -140,6 +140,93 @@ input {
   margin-bottom: 12px;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 13px;
+  margin: 16px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.button-like {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  padding: 10px 16px;
+}
+
+.button-like:hover {
+  border-color: var(--accent);
+}
+
+/* ---- Team / Superadmin tables ---- */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.data-table th {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.inline-form input {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-h);
+}
+
+.danger-button {
+  border-color: var(--error);
+  background: transparent;
+  color: var(--error);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: var(--error);
+  color: #fff;
+}
+
 /* ---- App shell ---- */
 
 .app-shell {

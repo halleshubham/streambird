@@ -10,7 +10,12 @@ interface AuthContextValue {
   user: AuthUser | null;
   accountId: string | null;
   login: (email: string, code: string) => Promise<void>;
+  /** Sets the resulting session directly from an already-completed call
+   * (signup-company / superadmin-login) rather than re-deriving it --
+   * those flows hit a different endpoint than plain magic-code login. */
+  setSession: (user: AuthUser, accountId: string) => void;
   logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -20,23 +25,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
 
-  useEffect(() => {
-    authApi
-      .me()
-      .then((res) => {
-        setUser(res.user);
-        setAccountId(res.accountId);
-        setStatus('authenticated');
-      })
-      .catch(() => {
-        setStatus('anonymous');
-      });
+  const refresh = useCallback(async () => {
+    try {
+      const res = await authApi.me();
+      setUser(res.user);
+      setAccountId(res.accountId);
+      setStatus('authenticated');
+    } catch {
+      setUser(null);
+      setAccountId(null);
+      setStatus('anonymous');
+    }
   }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const login = useCallback(async (email: string, code: string) => {
     const res = await authApi.verifyCode(email, code);
     setUser(res.user);
     setAccountId(res.accountId);
+    setStatus('authenticated');
+  }, []);
+
+  const setSession = useCallback((user: AuthUser, accountId: string) => {
+    setUser(user);
+    setAccountId(accountId);
     setStatus('authenticated');
   }, []);
 
@@ -48,7 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ status, user, accountId, login, logout }}>
+    <AuthContext.Provider
+      value={{ status, user, accountId, login, setSession, logout, refresh }}
+    >
       {children}
     </AuthContext.Provider>
   );

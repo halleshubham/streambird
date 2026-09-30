@@ -1,19 +1,27 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as authApi from '../api/auth';
 import { ApiError } from '../api/client';
 
+const GOOGLE_OAUTH_ERRORS: Record<string, string> = {
+  google_oauth_failed: 'Google sign-in failed. Please try again.',
+  google_email_unverified: "Your Google account's email isn't verified, so we can't use it.",
+};
+
 export function LoginPage() {
   const { status, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    () => GOOGLE_OAUTH_ERRORS[searchParams.get('error') ?? ''] ?? null,
+  );
 
   if (status === 'authenticated') {
     return <Navigate to="/" replace />;
@@ -54,23 +62,35 @@ export function LoginPage() {
         <h1>StreamBird</h1>
 
         {step === 'email' && (
-          <form onSubmit={handleRequestCode}>
-            <p>Enter your email and we'll send you a one-time login code.</p>
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoFocus
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
-            {error && <p className="error">{error}</p>}
-            <button type="submit" disabled={busy || !email.trim()}>
-              {busy ? 'Sending…' : 'Send login code'}
-            </button>
-          </form>
+          <>
+            <form onSubmit={handleRequestCode}>
+              <p>Enter your email and we'll send you a one-time login code.</p>
+              <label htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                autoFocus
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+              {error && <p className="error">{error}</p>}
+              <button type="submit" disabled={busy || !email.trim()}>
+                {busy ? 'Sending…' : 'Send login code'}
+              </button>
+            </form>
+
+            <div className="auth-divider">or</div>
+
+            <a className="button-like google-button" href={authApi.googleLoginUrl()}>
+              Sign in with Google
+            </a>
+
+            <p>
+              New company? <Link to="/signup-company">Create your company account</Link>
+            </p>
+          </>
         )}
 
         {step === 'code' && (

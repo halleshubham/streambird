@@ -4,6 +4,7 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { AuthModule } from '../auth/auth.module';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { AccountGuard } from './guards/account.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.guard';
 
 @Module({
@@ -14,7 +15,7 @@ import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.gua
     AuthModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],
-  providers: [ApiKeyGuard, AccountGuard, StreamCreateThrottlerGuard],
+  providers: [ApiKeyGuard, AccountGuard, RolesGuard, StreamCreateThrottlerGuard],
   // Re-exporting AccountsModule/AuthModule (not just the guards) so any
   // module that imports CommonModule can resolve ApiKeyGuard/AccountGuard's
   // own constructor dependencies too — Nest resolves a guard's deps in the
@@ -22,6 +23,7 @@ import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.gua
   exports: [
     ApiKeyGuard,
     AccountGuard,
+    RolesGuard,
     StreamCreateThrottlerGuard,
     ThrottlerModule,
     AccountsModule,

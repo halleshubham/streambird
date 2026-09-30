@@ -15,6 +15,7 @@ export function AppShell() {
         <nav>
           <Link to="/">Dashboard</Link>
           <Link to="/connections">Connections</Link>
+          {user?.role === 'company_admin' && <Link to="/team">Team</Link>}
         </nav>
         <div className="app-header-right">
           {user && <span className="user-email">{user.email}</span>}

@@ -1,12 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { LoginCode } from './entities/login-code.entity';
 import { UserSession } from './entities/user-session.entity';
 import { UsersService } from '../users/users.service';
 import { EMAIL_SERVICE } from '../email/email.interface';
+import { Role } from '../common/enums/role.enum';
+import { hashPassword } from './password.util';
 
 function inMemoryRepo<T extends { id?: string }>() {
   const rows = new Map<string, T>();
@@ -45,10 +47,23 @@ describe('AuthService', () => {
   async function build() {
     const loginCodes = inMemoryRepo<LoginCode>();
     const sessions = inMemoryRepo<UserSession>();
-    const fakeUser = { id: 'user_1', email: 'tester@example.com' };
+    const fakeUser = { id: 'user_1', email: 'tester@example.com', account: undefined as any };
     const fakeAccount = { id: 'acc_1' };
+    const fakeCompany = { id: 'company_1', accountId: fakeAccount.id };
+    const usersByEmail = new Map<string, any>();
     const usersService = {
       findOrCreateForEmail: jest.fn(async () => ({ user: fakeUser, account: fakeAccount })),
+      findByEmail: jest.fn(async (email: string) => usersByEmail.get(email) ?? null),
+      createCompanyAdmin: jest.fn(async (companyName: string, email: string) => {
+        const user = {
+          id: 'admin_1',
+          email,
+          accountId: 'acc_2',
+          role: Role.COMPANY_ADMIN,
+          approvedAt: null,
+        };
+        return { user, account: { id: 'acc_2' }, company: { ...fakeCompany, name: companyName } };
+      }),
     };
     const emailService = {
       sendLoginCode: jest.fn(async (_to: string, _code: string) => undefined),
@@ -88,6 +103,7 @@ describe('AuthService', () => {
       loginCodes,
       sessions,
       usersService,
+      usersByEmail,
       emailService,
       fakeUser,
       fakeAccount,
@@ -204,5 +220,101 @@ describe('AuthService', () => {
     await service.logout(token);
 
     expect(await service.resolveSession(token)).toBeNull();
+  });
+
+  describe('verifyCompanySignup', () => {
+    it('consumes the code and delegates creation to UsersService.createCompanyAdmin, minting a session', async () => {
+      const { service, emailService, usersService, sessions } = await build();
+      await service.requestCode('admin@acme.com');
+      const code = emailService.sendLoginCode.mock.calls[0][1];
+
+      const result = await service.verifyCompanySignup('Acme Inc', 'admin@acme.com', code, {});
+
+      expect(usersService.createCompanyAdmin).toHaveBeenCalledWith('Acme Inc', 'admin@acme.com');
+      expect(result.user.role).toBe(Role.COMPANY_ADMIN);
+      expect(result.token).toHaveLength(43);
+      expect(sessions.rows.size).toBe(1);
+    });
+
+    it('rejects an invalid code exactly like verifyCode does, without creating anything', async () => {
+      const { service, usersService } = await build();
+
+      await expect(
+        service.verifyCompanySignup('Acme Inc', 'admin@acme.com', '000000', {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(usersService.createCompanyAdmin).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('superadminLogin', () => {
+    it('logs in a seeded superadmin with the correct password', async () => {
+      const { service, usersByEmail } = await build();
+      const passwordHash = hashPassword('correct-horse-battery-staple');
+      usersByEmail.set('root@streambird.dev', {
+        id: 'root_1',
+        email: 'root@streambird.dev',
+        role: Role.SUPERADMIN,
+        passwordHash,
+        account: { id: 'acc_root' },
+      });
+
+      const result = await service.superadminLogin(
+        'root@streambird.dev',
+        'correct-horse-battery-staple',
+        {},
+      );
+
+      expect(result.user.id).toBe('root_1');
+      expect(result.token).toHaveLength(43);
+    });
+
+    it('rejects a wrong password', async () => {
+      const { service, usersByEmail } = await build();
+      usersByEmail.set('root@streambird.dev', {
+        id: 'root_1',
+        email: 'root@streambird.dev',
+        role: Role.SUPERADMIN,
+        passwordHash: hashPassword('correct-password'),
+        account: { id: 'acc_root' },
+      });
+
+      await expect(
+        service.superadminLogin('root@streambird.dev', 'wrong-password', {}),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects a non-superadmin user even with a set password hash -- role is checked, not just the password', async () => {
+      const { service, usersByEmail } = await build();
+      usersByEmail.set('notadmin@example.com', {
+        id: 'u1',
+        email: 'notadmin@example.com',
+        role: Role.USER,
+        passwordHash: hashPassword('whatever'),
+        account: { id: 'acc_1' },
+      });
+
+      await expect(
+        service.superadminLogin('notadmin@example.com', 'whatever', {}),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects an unknown email', async () => {
+      const { service } = await build();
+      await expect(
+        service.superadminLogin('nobody@example.com', 'whatever', {}),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+  });
+
+  describe('loginWithGoogleProfile', () => {
+    it('resolves identity via the same findOrCreateForEmail path as magic-code login', async () => {
+      const { service, usersService, sessions } = await build();
+
+      const result = await service.loginWithGoogleProfile('tester@example.com', {});
+
+      expect(usersService.findOrCreateForEmail).toHaveBeenCalledWith('tester@example.com');
+      expect(result.token).toHaveLength(43);
+      expect(sessions.rows.size).toBe(1);
+    });
   });
 });
