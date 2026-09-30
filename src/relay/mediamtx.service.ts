@@ -96,6 +96,14 @@ export class MediaMtxService {
     const teeTargets = validDests.map((dest) => `[f=flv]${dest}`).join('|');
     return [
       'ffmpeg -nostdin -loglevel warning',
+      // This RTSP hop is loopback-only, but MediaMTX's RTSP server defaults
+      // to UDP -- under real load (this ffmpeg process, the room-monitor
+      // WebRTC connections, etc.) that loopback UDP started dropping
+      // packets, confirmed live (2026-10-01) via repeated "RTP: missed N
+      // packets", which cascaded into "non-existing PPS 0 referenced" and
+      // non-monotonic DTS -- corrupt enough that Twitch's player couldn't
+      // decode it. TCP retransmits; on loopback the overhead is negligible.
+      '-rtsp_transport tcp',
       '-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"',
       // The tee muxer needs explicit maps -- without them it fails with
       // "Output file does not contain any stream" as soon as there's more

@@ -33,6 +33,7 @@ describe('MediaMtxService', () => {
     const [, body] = post.mock.calls[0];
     expect(body.source).toBe('publisher');
     expect(body.runOnReadyRestart).toBe(true);
+    expect(body.runOnReady).toContain('-rtsp_transport tcp');
     expect(body.runOnReady).toContain('-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"');
     expect(body.runOnReady).toContain('-map 0:v:0 -map 0:a:0');
     expect(body.runOnReady).toContain('-c:v copy -c:a aac');
