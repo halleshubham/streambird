@@ -30,6 +30,7 @@ export interface ParticipantView {
   audioEnabled: boolean;
   videoEnabled: boolean;
   isLocal: boolean;
+  isScreenShare: boolean;
 }
 
 export interface Branding {
@@ -37,6 +38,19 @@ export interface Branding {
   newsText: string;
   nameFontSize: number;
 }
+
+/** A named, saved bundle of layout + branding settings -- session-lifetime only (see useHostStudio scenes state). */
+export interface Scene {
+  name: string;
+  layoutMode: LayoutMode;
+  branding: Branding;
+}
+
+// The screen-share track lives in the same participantsRef Map as every
+// real guest/host entry (so it rides the existing grid/spotlight draw loop
+// and the generic per-guest room-monitor relay for free) but under this
+// clearly-synthetic key, never a real socket id.
+const SCREEN_SHARE_ID = 'screen-share';
 
 /**
  * All of the imperative WebRTC/Web Audio/canvas-compositing logic from the
@@ -63,6 +77,12 @@ export function useHostStudio(streamId: string | undefined) {
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [branding, setBranding] = useState<Branding>({ logoSize: 60, newsText: '', nameFontSize: 14 });
+  // Scenes only need to persist for the lifetime of this studio session --
+  // in-memory React state, deliberately not persisted to the backend/DB.
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
 
   const hostTokenRef = useRef<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -97,6 +117,7 @@ export function useHostStudio(streamId: string | undefined) {
       audioEnabled: p.audioEnabled,
       videoEnabled: p.videoEnabled,
       isLocal: p.id === 'local',
+      isScreenShare: p.id === SCREEN_SHARE_ID,
     }));
     setParticipantsView(view);
   }
@@ -594,8 +615,10 @@ export function useHostStudio(streamId: string | undefined) {
     }
   }, [refreshAllMonitorFeeds]);
 
-  const toggleLayout = useCallback(() => {
-    const next: LayoutMode = layoutModeRef.current === 'grid' ? 'spotlight' : 'grid';
+  // setLayout is the shared primitive -- it sets the layout directly (used
+  // by both the toggle button and scene-switching) and persists it to the
+  // backend exactly like the original toggle-only implementation did.
+  const setLayout = useCallback((next: LayoutMode) => {
     layoutModeRef.current = next;
     setLayoutMode(next);
     setStatus({ text: `Layout: ${next}`, isError: false });
@@ -606,6 +629,76 @@ export function useHostStudio(streamId: string | undefined) {
       });
     }
   }, [stream]);
+
+  const toggleLayout = useCallback(() => {
+    setLayout(layoutModeRef.current === 'grid' ? 'spotlight' : 'grid');
+  }, [setLayout]);
+
+  // ---- Screen sharing (host-only) ---------------------------------------
+  //
+  // Added to participantsRef.current under the synthetic SCREEN_SHARE_ID
+  // key, following the exact same shape as every real participant entry --
+  // that's what lets it ride the existing grid/spotlight draw loop and the
+  // generic per-guest room-monitor relay in startMonitorFeed with zero
+  // extra plumbing.
+
+  const stopScreenShare = useCallback(() => {
+    const p = participantsRef.current.get(SCREEN_SHARE_ID);
+    if (!p) return;
+    p.videoTrack?.stop();
+    p.audioTrack?.stop();
+    participantsRef.current.delete(SCREEN_SHARE_ID);
+    removeParticipantAudio(SCREEN_SHARE_ID);
+    renderParticipantList();
+    setScreenSharing(false);
+    refreshAllMonitorFeeds();
+  }, [refreshAllMonitorFeeds]);
+
+  const startScreenShare = useCallback(async () => {
+    try {
+      let displayStream: MediaStream;
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      } catch {
+        // Some browsers/permission states reject audio:true for display
+        // capture -- retry video-only rather than failing the whole feature.
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      }
+
+      const videoEl = document.createElement('video'); // never mounted -- pure canvas.drawImage source, same as every other participant
+      videoEl.srcObject = displayStream;
+      videoEl.muted = true;
+      videoEl.autoplay = true;
+      videoEl.playsInline = true;
+      await videoEl.play();
+
+      const videoTrack = displayStream.getVideoTracks()[0];
+      const audioTrack = displayStream.getAudioTracks()[0] ?? null;
+
+      participantsRef.current.set(SCREEN_SHARE_ID, {
+        id: SCREEN_SHARE_ID,
+        pc: null,
+        videoEl,
+        displayName: 'Screen share',
+        videoTrack,
+        audioTrack,
+        audioEnabled: true,
+        videoEnabled: true,
+      });
+
+      if (audioTrack) connectAudioTrack(SCREEN_SHARE_ID, audioTrack);
+
+      // Fires when the browser's own native "Stop sharing" control is used
+      // (not just our button) -- run the exact same cleanup either way.
+      videoTrack.onended = () => stopScreenShare();
+
+      renderParticipantList();
+      setScreenSharing(true);
+      refreshAllMonitorFeeds();
+    } catch (err) {
+      setStatus({ text: `Could not start screen share: ${(err as Error).message}`, isError: true });
+    }
+  }, [refreshAllMonitorFeeds, stopScreenShare]);
 
   const createInviteLink = useCallback(async () => {
     if (!stream?.studioSessionId) return;
@@ -639,7 +732,7 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   const dropParticipant = useCallback((id: string) => {
-    if (id === 'local') return;
+    if (id === 'local' || id === SCREEN_SHARE_ID) return; // not a real guest -- use stopScreenShare instead
     const p = participantsRef.current.get(id);
     if (!p) return;
     socketRef.current?.emit('signal', { to: id, type: 'kicked', payload: {} });
@@ -662,17 +755,64 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   function setLogoSize(size: number) {
-    if (Number.isFinite(size) && size > 0) brandingRef.current.logoSize = size;
+    if (Number.isFinite(size) && size > 0) {
+      brandingRef.current.logoSize = size;
+      setBranding((b) => ({ ...b, logoSize: size }));
+    }
   }
 
   function setNewsText(text: string) {
     brandingRef.current.newsText = text.trim();
     newsScrollXRef.current = null;
+    setBranding((b) => ({ ...b, newsText: text.trim() }));
   }
 
   function setNameFontSize(size: number) {
-    if (Number.isFinite(size) && size > 0) brandingRef.current.nameFontSize = size;
+    if (Number.isFinite(size) && size > 0) {
+      brandingRef.current.nameFontSize = size;
+      setBranding((b) => ({ ...b, nameFontSize: size }));
+    }
   }
+
+  // ---- Scenes (session-lifetime presets) --------------------------------
+  //
+  // Explicit scope decision: scenes only need to persist for the duration
+  // of the current studio session -- this in-memory React state is NOT
+  // persisted to the backend/database, and does not survive a page reload.
+
+  const saveScene = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const snapshot: Scene = {
+      name: trimmed,
+      layoutMode: layoutModeRef.current,
+      branding: {
+        logoSize: brandingRef.current.logoSize,
+        newsText: brandingRef.current.newsText,
+        nameFontSize: brandingRef.current.nameFontSize,
+      },
+    };
+    setScenes((prev) => [...prev.filter((s) => s.name !== trimmed), snapshot]);
+    setActiveSceneName(trimmed);
+    setStatus({ text: `Saved scene "${trimmed}".`, isError: false });
+  }, []);
+
+  const applyScene = useCallback((name: string) => {
+    setScenes((prev) => {
+      const scene = prev.find((s) => s.name === name);
+      if (scene) {
+        setLayout(scene.layoutMode);
+        brandingRef.current.logoSize = scene.branding.logoSize;
+        brandingRef.current.newsText = scene.branding.newsText;
+        brandingRef.current.nameFontSize = scene.branding.nameFontSize;
+        newsScrollXRef.current = null;
+        setBranding({ ...scene.branding });
+        setActiveSceneName(name);
+        setStatus({ text: `Switched to scene "${name}".`, isError: false });
+      }
+      return prev;
+    });
+  }, [setLayout]);
 
   function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
     if (pc.iceGatheringState === 'complete') return Promise.resolve();
@@ -792,6 +932,10 @@ export function useHostStudio(streamId: string | undefined) {
     }
 
     whipPcRef.current?.close();
+    // Stop the screen-capture track explicitly so the browser's own
+    // "sharing your screen" indicator clears too, not just our connections.
+    participantsRef.current.get(SCREEN_SHARE_ID)?.videoTrack?.stop();
+    participantsRef.current.get(SCREEN_SHARE_ID)?.audioTrack?.stop();
     for (const p of participantsRef.current.values()) p.pc?.close();
     for (const monitorPc of monitorConnectionsRef.current.values()) monitorPc.close();
     monitorConnectionsRef.current.clear();
@@ -819,10 +963,15 @@ export function useHostStudio(streamId: string | undefined) {
     cameraStarted,
     isLive,
     ending,
+    screenSharing,
+    branding,
+    scenes,
+    activeSceneName,
     actions: {
       startCamera,
       createInviteLink,
       toggleLayout,
+      setLayout,
       goLive,
       endStream,
       toggleParticipantAudio,
@@ -832,6 +981,10 @@ export function useHostStudio(streamId: string | undefined) {
       setLogoSize,
       setNewsText,
       setNameFontSize,
+      startScreenShare,
+      stopScreenShare,
+      saveScene,
+      applyScene,
     },
   };
 }

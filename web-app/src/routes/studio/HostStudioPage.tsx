@@ -12,6 +12,10 @@ import {
   Video,
   VideoOff,
   Image as ImageIcon,
+  MonitorUp,
+  MonitorOff,
+  Save,
+  Clapperboard,
 } from 'lucide-react';
 import { useHostStudio } from '../../studio/useHostStudio';
 
@@ -31,6 +35,10 @@ export function HostStudioPage() {
     cameraStarted,
     isLive,
     ending,
+    screenSharing,
+    branding,
+    scenes,
+    activeSceneName,
     actions,
   } = useHostStudio(streamId);
 
@@ -78,6 +86,13 @@ export function HostStudioPage() {
         <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
           {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
         </button>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
+        >
+          {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
+        </button>
         <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.goLive()} disabled={!stream.whipUrl || isLive}>
           <Radio size={16} /> {isLive ? 'Live' : 'Go live'}
         </button>
@@ -94,18 +109,28 @@ export function HostStudioPage() {
         {participants.map((p) => (
           <div key={p.id} className="participant-row">
             <span>{p.displayName}</span>
-            <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
-              {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
-              {p.audioEnabled === false ? 'Unmute' : 'Mute'}
-            </button>
-            <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
-              {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
-              {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
-            </button>
-            {!p.isLocal && (
-              <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.dropParticipant(p.id)}>
-                <UserX size={14} /> Remove
+            {!p.isScreenShare && (
+              <>
+                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
+                  {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
+                  {p.audioEnabled === false ? 'Unmute' : 'Mute'}
+                </button>
+                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
+                  {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
+                  {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                </button>
+              </>
+            )}
+            {p.isScreenShare ? (
+              <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.stopScreenShare()}>
+                <MonitorOff size={14} /> Stop sharing
               </button>
+            ) : (
+              !p.isLocal && (
+                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.dropParticipant(p.id)}>
+                  <UserX size={14} /> Remove
+                </button>
+              )
             )}
           </div>
         ))}
@@ -122,7 +147,7 @@ export function HostStudioPage() {
         type="number"
         min={16}
         max={240}
-        defaultValue={60}
+        value={branding.logoSize}
         onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
       />
 
@@ -131,6 +156,7 @@ export function HostStudioPage() {
         id="newsInput"
         type="text"
         placeholder="Breaking: ..."
+        value={branding.newsText}
         onChange={(e) => actions.setNewsText(e.target.value)}
       />
 
@@ -140,9 +166,35 @@ export function HostStudioPage() {
         type="number"
         min={8}
         max={48}
-        defaultValue={14}
+        value={branding.nameFontSize}
         onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
       />
+
+      <label className="studio-section-label">
+        <Clapperboard size={14} /> Scenes
+      </label>
+      <div className="studio-toolbar">
+        <button
+          type="button"
+          className="icon-btn icon-btn--small"
+          onClick={() => {
+            const name = window.prompt('Name this scene:');
+            if (name && name.trim()) actions.saveScene(name);
+          }}
+        >
+          <Save size={14} /> Save current as scene
+        </button>
+        {scenes.map((scene) => (
+          <button
+            key={scene.name}
+            type="button"
+            className={`icon-btn icon-btn--small${scene.name === activeSceneName ? ' icon-btn--accent' : ''}`}
+            onClick={() => actions.applyScene(scene.name)}
+          >
+            <Clapperboard size={14} /> {scene.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
