@@ -120,11 +120,14 @@
     monitorPanel.style.display = 'block';
     monitorStatus.textContent = 'Room monitor offer received — connecting…';
 
+    console.log(`[monitor] offer SDP:\n${offer.sdp}`);
+
     try {
       monitorPc?.close();
       monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
       monitorPc.ontrack = (event) => {
+        console.log(`[monitor] ontrack fired: kind=${event.track.kind} readyState=${event.track.readyState} streams=${event.streams.length}`);
         if (monitorAudio.srcObject !== event.streams[0]) {
           monitorAudio.srcObject = event.streams[0];
           // Starting muted and unmuting right after is the standard
@@ -156,16 +159,25 @@
         }
       };
       monitorPc.onconnectionstatechange = () => {
+        console.log(`[monitor] connectionState: ${monitorPc.connectionState}`);
         // 'connected' is reported once ontrack's own play()/mute-unmute
         // settles, so as not to clobber a still-pending tap-to-enable
         // prompt with a falsely-reassuring "connected".
         if (monitorPc.connectionState === 'connected') return;
         monitorStatus.textContent = `Room monitor: ${monitorPc.connectionState}`;
       };
+      monitorPc.oniceconnectionstatechange = () => {
+        console.log(`[monitor] iceConnectionState: ${monitorPc.iceConnectionState}`);
+      };
+      monitorPc.onsignalingstatechange = () => {
+        console.log(`[monitor] signalingState: ${monitorPc.signalingState}`);
+      };
 
       await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
+      console.log('[monitor] after setRemoteDescription, receivers:', monitorPc.getReceivers().map((r) => ({ kind: r.track?.kind, readyState: r.track?.readyState })));
       const answer = await monitorPc.createAnswer();
       await monitorPc.setLocalDescription(answer);
+      console.log(`[monitor] answer SDP:\n${answer.sdp}`);
       socket.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
     } catch (err) {
       monitorStatus.textContent = `Room monitor failed to connect: ${err.message}`;

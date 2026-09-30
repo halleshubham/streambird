@@ -321,19 +321,29 @@
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       monitorConnections.set(socketId, pc);
 
-      pc.addTransceiver(audioTrack, { direction: 'sendonly' });
+      const transceiver = pc.addTransceiver(audioTrack, { direction: 'sendonly' });
+      console.log(`[monitor->${socketId}] transceiver added, track readyState=${audioTrack.readyState} enabled=${audioTrack.enabled} direction=${transceiver.direction}`);
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
+        } else {
+          console.log(`[monitor->${socketId}] ICE gathering complete`);
         }
       };
       pc.onconnectionstatechange = () => {
-        console.log(`Room monitor feed for ${socketId}: ${pc.connectionState}`);
+        console.log(`[monitor->${socketId}] connectionState: ${pc.connectionState}`);
+      };
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[monitor->${socketId}] iceConnectionState: ${pc.iceConnectionState}`);
+      };
+      pc.onsignalingstatechange = () => {
+        console.log(`[monitor->${socketId}] signalingState: ${pc.signalingState}`);
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      console.log(`[monitor->${socketId}] offer SDP:\n${offer.sdp}`);
       socket.emit('signal', { to: socketId, type: 'monitor-offer', payload: offer });
     } catch (err) {
       console.warn('Failed to start the room monitor feed for a guest', err);
