@@ -34,6 +34,7 @@ describe('MediaMtxService', () => {
     expect(body.source).toBe('publisher');
     expect(body.runOnReadyRestart).toBe(true);
     expect(body.runOnReady).toContain('-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"');
+    expect(body.runOnReady).toContain('-map 0:v:0 -map 0:a:0');
     expect(body.runOnReady).toContain('-c:v copy -c:a aac');
     expect(body.runOnReady).toContain(
       "-f tee '[f=flv]rtmp://live.twitch.tv/app/twitch-key|[f=flv]rtmps://live.cloudflare.com:443/live/cf-key'",

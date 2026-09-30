@@ -97,6 +97,10 @@ export class MediaMtxService {
     return [
       'ffmpeg -nostdin -loglevel warning',
       '-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"',
+      // The tee muxer needs explicit maps -- without them it fails with
+      // "Output file does not contain any stream" as soon as there's more
+      // than one tee branch, confirmed live (2026-09-30).
+      '-map 0:v:0 -map 0:a:0',
       '-c:v copy -c:a aac -b:a 128k',
       `-f tee ${this.shQuote(teeTargets)}`,
     ].join(' ');
