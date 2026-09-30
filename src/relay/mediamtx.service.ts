@@ -24,6 +24,19 @@ import { firstValueFrom } from 'rxjs';
  * this whole MediaMTX hop can be dropped in favor of publishing WHIP
  * straight to it -- keep this service's boundary clean for that.
  *
+ * The RTMP push itself goes through a `runOnReady` ffmpeg command, not
+ * MediaMTX's own built-in `forward` field -- confirmed live (2026-09-30)
+ * that `forward` gets an instant EOF from both Twitch and Cloudflare, TLS
+ * and non-TLS alike, while a plain ffmpeg RTMP push from the same host with
+ * the same key works perfectly. RTMP/FLV has no codec slot for Opus (only
+ * Enhanced-RTMP-aware receivers accept it), and WHIP's audio is always
+ * Opus, so every native `forward` attempt was rejected before a single
+ * frame went out. ffmpeg pulls the path back over local RTSP and
+ * transcodes audio only (video stays `-c:v copy`) to fix that, teeing to
+ * every destination in one process. This needs the "-ffmpeg" image variant
+ * (see docker-compose.yaml) -- the default image has neither a shell nor
+ * ffmpeg, and `runOnReady` is just a shell command.
+ *
  * Each LiveStream gets its own MediaMTX path (named after the stream's own
  * id), registered/removed at runtime via MediaMTX's Control API rather
  * than static config, since the RTMP forward destinations (each
@@ -53,24 +66,64 @@ export class MediaMtxService {
   }
 
   /**
+   * Wraps a value in single quotes for safe interpolation into the shell
+   * command line MediaMTX runs for `runOnReady` -- every rtmpDest is
+   * provider-returned data (a platform's ingest URL/key), not something we
+   * fully control, so it crosses a real shell-injection boundary here.
+   * Single-quoting neutralizes every shell metacharacter except a literal
+   * single quote, which this escapes the standard POSIX way.
+   */
+  private shQuote(value: string): string {
+    return `'${value.split("'").join(`'\\''`)}'`;
+  }
+
+  /**
+   * Builds the `runOnReady` command that pulls this path back over its own
+   * local RTSP server and tees an audio-transcoded (video copied) RTMP push
+   * to every destination -- see the class doc for why this replaces
+   * MediaMTX's native `forward`. Returns null if no destination has a
+   * scheme we're willing to hand to a shell command at all.
+   */
+  private buildRunOnReady(rtmpDests: string[]): string | null {
+    const validDests = rtmpDests.filter((dest) => /^rtmps?:\/\//i.test(dest));
+    if (validDests.length !== rtmpDests.length) {
+      this.logger.warn(
+        `Dropped ${rtmpDests.length - validDests.length} forward destination(s) with an unexpected URL scheme`,
+      );
+    }
+    if (validDests.length === 0) return null;
+
+    const teeTargets = validDests.map((dest) => `[f=flv]${dest}`).join('|');
+    return [
+      'ffmpeg -nostdin -loglevel warning',
+      '-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"',
+      '-c:v copy -c:a aac -b:a 128k',
+      `-f tee ${this.shQuote(teeTargets)}`,
+    ].join(' ');
+  }
+
+  /**
    * Registers a path that accepts a WHIP publisher and forwards it to every
    * URL in rtmpDests, and returns the public WHIP URL the host's browser
    * should publish to. Best-effort: returns null (never throws) if MediaMTX
-   * isn't configured, unreachable, or given no destinations, so a MediaMTX
-   * outage degrades to "no browser-studio publish available" rather than
-   * failing stream creation outright -- OBS/RTMP-direct ingest doesn't
-   * depend on this at all.
+   * isn't configured, unreachable, or given no usable destinations, so a
+   * MediaMTX outage degrades to "no browser-studio publish available"
+   * rather than failing stream creation outright -- OBS/RTMP-direct ingest
+   * doesn't depend on this at all.
    */
   async registerForward(pathName: string, rtmpDests: string[]): Promise<string | null> {
     const apiUrl = this.apiUrl;
     const whipBaseUrl = this.config.get<string>('mediamtx.whipBaseUrl');
     if (!apiUrl || !whipBaseUrl || rtmpDests.length === 0) return null;
 
+    const runOnReady = this.buildRunOnReady(rtmpDests);
+    if (!runOnReady) return null;
+
     try {
       await firstValueFrom(
         this.http.post(
           `${apiUrl}/v3/config/paths/add/${pathName}`,
-          { source: 'publisher', forward: rtmpDests.map((dest) => ({ dest })) },
+          { source: 'publisher', runOnReady, runOnReadyRestart: true },
           this.authConfig,
         ),
       );
@@ -82,11 +135,10 @@ export class MediaMtxService {
   }
 
   /**
-   * Replaces the full forward-destination list on an already-registered
-   * path -- e.g. after retryDestination() mints a fresh ingest URL/key for
-   * one destination. MediaMTX's patch endpoint replaces the whole `forward`
-   * field wholesale, so callers must pass the complete desired list, not
-   * just the one entry that changed. Best-effort, same as registerForward.
+   * Replaces the forward destinations on an already-registered path -- e.g.
+   * after retryDestination() mints a fresh ingest URL/key for one
+   * destination. Callers must pass the complete desired list, not just the
+   * one entry that changed. Best-effort, same as registerForward.
    */
   async updateForward(pathName: string, rtmpDests: string[]): Promise<void> {
     const apiUrl = this.apiUrl;
@@ -96,7 +148,7 @@ export class MediaMtxService {
       await firstValueFrom(
         this.http.patch(
           `${apiUrl}/v3/config/paths/patch/${pathName}`,
-          { forward: rtmpDests.map((dest) => ({ dest })) },
+          { runOnReady: this.buildRunOnReady(rtmpDests) ?? '', runOnReadyRestart: true },
           this.authConfig,
         ),
       );

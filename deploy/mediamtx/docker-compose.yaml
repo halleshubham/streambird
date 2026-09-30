@@ -1,6 +1,22 @@
 services:
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    # Pinned (not :latest) so a redeploy is reproducible. The "-ffmpeg" tag
+    # is bluenviron's official Alpine-based variant -- it has a real shell,
+    # ffmpeg, and a working system CA store, none of which the minimal
+    # default image has. We need all three: MediaMTX's own built-in RTMP
+    # `forward` turned out to reject our WHIP-sourced Opus audio outright
+    # (RTMP/FLV has no Opus codec slot; only Enhanced-RTMP-aware receivers
+    # accept it, and Twitch/Cloudflare's ingest servers aren't -- confirmed
+    # by both closing the connection instantly, before any data, the exact
+    # same way, TLS and non-TLS alike). ffmpeg via runOnReady (see
+    # MediaMtxService) does a cheap audio-only transcode (video stays
+    # copied) to fix that, which needs a real ffmpeg binary + shell inside
+    # this container. The working CA store also retires the CA-bundle
+    # bind-mount hack below entirely -- ffmpeg's own outbound RTMPS to
+    # Cloudflare (or whatever) uses it directly, and MediaMTX's own Go
+    # binary makes no outbound TLS connections anymore now that `forward`
+    # is unused.
+    image: bluenviron/mediamtx:1.21.1-ffmpeg
     restart: unless-stopped
     ports:
       - "8889:8889"
@@ -22,20 +38,6 @@ services:
       # the config to keeps the real content (incl. the API password) out
       # of git, same as before.
       - /data/coolify/applications/owu27ugzcewyf9yd9eopxjx2/mediamtx.yml:/mediamtx.yml:ro
-      # The mediamtx image's minimal base has no CA trust store, so its own
-      # outbound RTMPS forward to Cloudflare failed on every attempt with
-      # "x509: certificate signed by unknown authority". Binding this path
-      # directly to a raw HOST path (as before) backfired: Coolify's compose
-      # scanner auto-detects any bind-mount source that looks like an
-      # absolute path and pre-creates it -- since nothing existed at
-      # /etc/ssl/certs/ca-certificates.crt on this SM-L4 host's *Docker
-      # bind-mount source* location, it silently created an empty
-      # *directory* there, giving "read /etc/ssl/certs/ca-certificates.crt:
-      # is a directory" on every forward attempt. Fixed the same way as
-      # mediamtx.yml below: a real file uploaded through Coolify's
-      # file-storage API (curl.se's CA bundle), mounted from its actual
-      # managed path instead of guessing at a host path.
-      - /data/coolify/applications/owu27ugzcewyf9yd9eopxjx2/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     networks:
       - coolify
     labels:
