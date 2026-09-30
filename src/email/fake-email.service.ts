@@ -4,7 +4,7 @@ import { EmailService } from './email.interface';
 /**
  * Logs the code instead of sending it. Default outside production so
  * local dev and CI never need a real Resend API key — mirrors
- * FakeCloudflareRelay's role for CloudflareRelayService.
+ * FakeRelayProvider's role for CloudflareRelayService/MuxRelayService.
  */
 @Injectable()
 export class FakeEmailService implements EmailService {

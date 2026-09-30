@@ -6,8 +6,8 @@ import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
-import { CLOUDFLARE_RELAY } from '../relay/cloudflare-relay.interface';
-import { FakeCloudflareRelay } from '../relay/fake-cloudflare-relay';
+import { RELAY_PROVIDER } from '../relay/relay-provider.interface';
+import { FakeRelayProvider } from '../relay/fake-relay-provider';
 import { Platform } from '../common/enums/platform.enum';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
@@ -73,7 +73,7 @@ describe('StreamsService', () => {
     const liveStreamRepo = inMemoryRepo<LiveStream>();
     const destinationRepo = inMemoryRepo<LiveStreamDestination>();
     const connectionRepo = inMemoryRepo<PlatformConnection>();
-    const relay = new FakeCloudflareRelay();
+    const relay = new FakeRelayProvider();
 
     // findByIdOrThrow relies on TypeORM's `relations: ['destinations']` to
     // populate the nested array; the mocked repo has no such feature, so
@@ -95,7 +95,7 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(LiveStreamDestination), useValue: destinationRepo },
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
-        { provide: CLOUDFLARE_RELAY, useValue: relay },
+        { provide: RELAY_PROVIDER, useValue: relay },
         {
           provide: StudioSessionsService,
           useValue: {

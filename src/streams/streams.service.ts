@@ -14,8 +14,7 @@ import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { StreamProvider } from '../providers/stream-provider.interface';
-import { CLOUDFLARE_RELAY } from '../relay/cloudflare-relay.interface';
-import { CloudflareRelay } from '../relay/cloudflare-relay.interface';
+import { RELAY_PROVIDER, RelayProvider } from '../relay/relay-provider.interface';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
 
 @Injectable()
@@ -29,8 +28,8 @@ export class StreamsService {
     private readonly platformConnections: Repository<PlatformConnection>,
     @Inject(STREAM_PROVIDERS)
     private readonly providers: StreamProvider[],
-    @Inject(CLOUDFLARE_RELAY)
-    private readonly relay: CloudflareRelay,
+    @Inject(RELAY_PROVIDER)
+    private readonly relay: RelayProvider,
     private readonly studioSessions: StudioSessionsService,
   ) {}
 

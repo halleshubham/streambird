@@ -1,19 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
-  CloudflareRelay,
+  RelayProvider,
   RelayLiveInput,
   RelayLiveInputStatus,
   RelayOutput,
-} from './cloudflare-relay.interface';
+} from './relay-provider.interface';
 
 /**
- * In-memory stand-in for CloudflareRelayService, used in tests so
- * StreamsService's orchestration logic can be exercised without a real
- * Cloudflare account.
+ * In-memory stand-in for a real RelayProvider (Cloudflare or Mux), used in
+ * tests so StreamsService's orchestration logic can be exercised without a
+ * real account against either.
  */
 @Injectable()
-export class FakeCloudflareRelay implements CloudflareRelay {
+export class FakeRelayProvider implements RelayProvider {
   readonly liveInputs = new Map<string, { outputs: Map<string, RelayOutput> }>();
 
   async createLiveInput(): Promise<RelayLiveInput> {

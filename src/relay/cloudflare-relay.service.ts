@@ -3,14 +3,14 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import {
-  CloudflareRelay,
+  RelayProvider,
   RelayLiveInput,
   RelayLiveInputStatus,
   RelayOutput,
-} from './cloudflare-relay.interface';
+} from './relay-provider.interface';
 
 @Injectable()
-export class CloudflareRelayService implements CloudflareRelay {
+export class CloudflareRelayService implements RelayProvider {
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
