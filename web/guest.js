@@ -6,6 +6,9 @@
   const callPanel = document.getElementById('callPanel');
   const localVideo = document.getElementById('localVideo');
   const joinBtn = document.getElementById('joinBtn');
+  const toggleMicBtn = document.getElementById('toggleMicBtn');
+  const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+  const leaveBtn = document.getElementById('leaveBtn');
 
   if (!token) {
     joinStatus.textContent = 'This link is missing an invite token.';
@@ -17,6 +20,9 @@
   let pc = null;
   let hostSocketId = null;
   let socket = null;
+  let localStream = null;
+  let micEnabled = true;
+  let cameraEnabled = true;
 
   async function validateInvite() {
     const res = await fetch(`/api/studio-sessions/invites/${encodeURIComponent(token)}`);
@@ -77,6 +83,48 @@
     }
   }
 
+  function stopLocalMedia() {
+    if (pc) {
+      pc.close();
+      pc = null;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach((t) => t.stop());
+    }
+    socket?.disconnect();
+  }
+
+  function handleKicked() {
+    callStatus.textContent = 'You were removed from the room by the host.';
+    callStatus.classList.add('error');
+    stopLocalMedia();
+    toggleMicBtn.disabled = true;
+    toggleCameraBtn.disabled = true;
+    leaveBtn.disabled = true;
+  }
+
+  toggleMicBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    micEnabled = !micEnabled;
+    localStream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
+    toggleMicBtn.textContent = micEnabled ? 'Mute mic' : 'Unmute mic';
+  });
+
+  toggleCameraBtn.addEventListener('click', () => {
+    if (!localStream) return;
+    cameraEnabled = !cameraEnabled;
+    localStream.getVideoTracks().forEach((t) => { t.enabled = cameraEnabled; });
+    toggleCameraBtn.textContent = cameraEnabled ? 'Disable camera' : 'Enable camera';
+  });
+
+  leaveBtn.addEventListener('click', () => {
+    callStatus.textContent = 'You left the room.';
+    stopLocalMedia();
+    toggleMicBtn.disabled = true;
+    toggleCameraBtn.disabled = true;
+    leaveBtn.disabled = true;
+  });
+
   joinBtn.addEventListener('click', async () => {
     joinBtn.disabled = true;
     joinStatus.textContent = 'Checking invite…';
@@ -92,7 +140,6 @@
 
     const displayName = document.getElementById('displayName').value.trim() || 'Guest';
 
-    let localStream;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     } catch (err) {
@@ -120,6 +167,8 @@
         await handleAnswer(msg.payload);
       } else if (msg.type === 'ice-candidate') {
         await handleIceCandidate(msg.payload);
+      } else if (msg.type === 'kicked') {
+        handleKicked();
       }
     });
 

@@ -13,6 +13,10 @@
     endBtn: document.getElementById('endBtn'),
     studioStatus: document.getElementById('studioStatus'),
     inviteStatus: document.getElementById('inviteStatus'),
+    participantList: document.getElementById('participantList'),
+    logoInput: document.getElementById('logoInput'),
+    newsInput: document.getElementById('newsInput'),
+    nameFontSizeInput: document.getElementById('nameFontSizeInput'),
   };
 
   const ctx = els.canvas.getContext('2d');
@@ -21,14 +25,32 @@
   let session = null;
   let socket = null;
 
-  /** socketId -> { pc, videoEl, displayName, audioSourceNode } ; 'local' is the host's own camera. */
+  /**
+   * socketId -> { pc, videoEl, displayName, audioSourceNode, audioTrack,
+   * videoTrack, audioEnabled, videoEnabled } ; 'local' is the host's own
+   * camera (no pc — it never negotiates with itself).
+   */
   const participants = new Map();
+
+  // peer-joined arrives before the guest's offer (and thus before a
+  // participants entry exists for them), but it's the only event carrying
+  // their chosen display name — stash it here until handleGuestOffer creates
+  // the real entry.
+  const pendingDisplayNames = new Map();
 
   let audioContext = null;
   let audioDestination = null;
 
   let layoutMode = 'grid';
   let drawing = false;
+
+  const branding = {
+    logoImg: null,
+    newsText: '',
+    nameFontSize: 14,
+  };
+  let newsScrollX = null;
+  let lastFrameTime = null;
 
   let whipPc = null;
   let whipResourceUrl = null;
@@ -103,8 +125,18 @@
       videoEl.playsInline = true;
       await videoEl.play();
 
-      participants.set('local', { videoEl, displayName: 'Host' });
-      connectAudioTrack(localStream.getAudioTracks()[0]);
+      const videoTrack = localStream.getVideoTracks()[0];
+      const audioTrack = localStream.getAudioTracks()[0];
+      participants.set('local', {
+        videoEl,
+        displayName: 'Host',
+        videoTrack,
+        audioTrack,
+        audioEnabled: true,
+        videoEnabled: true,
+      });
+      connectAudioTrack(audioTrack);
+      renderParticipantList();
     } catch (err) {
       setStatus(els.studioStatus, `Could not start camera: ${err.message}`, true);
       els.startCameraBtn.disabled = false;
@@ -147,6 +179,7 @@
 
     socket.on('peer-joined', ({ socketId, displayName }) => {
       setStatus(els.studioStatus, `${displayName} joined — requesting their video…`);
+      pendingDisplayNames.set(socketId, displayName || 'Guest');
       socket.emit('signal', { to: socketId, type: 'request-offer', payload: {} });
     });
 
@@ -156,7 +189,9 @@
         p.pc?.close();
         p.audioSourceNode?.disconnect();
         participants.delete(socketId);
+        renderParticipantList();
       }
+      pendingDisplayNames.delete(socketId);
     });
 
     socket.on('signal', async (msg) => {
@@ -184,15 +219,34 @@
     videoEl.autoplay = true;
     videoEl.playsInline = true;
 
-    participants.set(fromSocketId, { pc, videoEl, displayName: 'Guest' });
+    const displayName = pendingDisplayNames.get(fromSocketId) || 'Guest';
+    pendingDisplayNames.delete(fromSocketId);
+    participants.set(fromSocketId, {
+      pc,
+      videoEl,
+      displayName,
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    renderParticipantList();
 
     pc.ontrack = (event) => {
+      const p = participants.get(fromSocketId);
       if (event.track.kind === 'video') {
         videoEl.srcObject = event.streams[0];
         videoEl.play().catch(() => {});
+        if (p) {
+          p.videoTrack = event.track;
+          event.track.enabled = p.videoEnabled;
+        }
       } else if (event.track.kind === 'audio') {
         connectAudioTrack(event.track);
+        if (p) {
+          p.audioTrack = event.track;
+          event.track.enabled = p.audioEnabled;
+        }
       }
+      renderParticipantList();
     };
 
     pc.onicecandidate = (event) => {
@@ -205,6 +259,71 @@
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socket.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
+  }
+
+  // ---- 3b. Per-participant controls (mute / camera / drop) ----
+
+  function renderParticipantList() {
+    els.participantList.innerHTML = '';
+    for (const [id, p] of participants) {
+      const row = document.createElement('div');
+      row.className = 'participant-row';
+
+      const name = document.createElement('span');
+      name.textContent = p.displayName;
+      row.appendChild(name);
+
+      const audioBtn = document.createElement('button');
+      audioBtn.textContent = p.audioEnabled === false ? 'Unmute' : 'Mute';
+      audioBtn.addEventListener('click', () => toggleParticipantAudio(id));
+      row.appendChild(audioBtn);
+
+      const videoBtn = document.createElement('button');
+      videoBtn.textContent = p.videoEnabled === false ? 'Enable camera' : 'Disable camera';
+      videoBtn.addEventListener('click', () => toggleParticipantVideo(id));
+      row.appendChild(videoBtn);
+
+      if (id !== 'local') {
+        const dropBtn = document.createElement('button');
+        dropBtn.className = 'danger';
+        dropBtn.textContent = 'Remove from room';
+        dropBtn.addEventListener('click', () => dropParticipant(id));
+        row.appendChild(dropBtn);
+      }
+
+      els.participantList.appendChild(row);
+    }
+  }
+
+  function toggleParticipantAudio(id) {
+    const p = participants.get(id);
+    if (!p) return;
+    p.audioEnabled = !p.audioEnabled;
+    if (p.audioTrack) p.audioTrack.enabled = p.audioEnabled;
+    renderParticipantList();
+  }
+
+  function toggleParticipantVideo(id) {
+    const p = participants.get(id);
+    if (!p) return;
+    p.videoEnabled = !p.videoEnabled;
+    if (p.videoTrack) p.videoTrack.enabled = p.videoEnabled;
+    renderParticipantList();
+  }
+
+  // Guests only — the host can't drop themself (use "End stream" for that).
+  // Closing our side of the peer connection stops compositing them
+  // immediately; the 'kicked' signal lets the guest's own page notice and
+  // leave cleanly instead of just seeing a connection drop.
+  function dropParticipant(id) {
+    if (id === 'local') return;
+    const p = participants.get(id);
+    if (!p) return;
+    socket?.emit('signal', { to: id, type: 'kicked', payload: {} });
+    p.pc?.close();
+    p.audioSourceNode?.disconnect();
+    participants.delete(id);
+    renderParticipantList();
   }
 
   // ---- 4. Audio mixing ----
@@ -243,7 +362,7 @@
     if (drawing) return;
     drawing = true;
 
-    function frame() {
+    function frame(now) {
       const w = els.canvas.width;
       const h = els.canvas.height;
       ctx.fillStyle = '#000';
@@ -259,9 +378,42 @@
         }
       }
 
+      drawLogo(w);
+      drawNewsline(w, h, now);
+
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
+  }
+
+  function drawLogo(canvasW) {
+    if (!branding.logoImg) return;
+    const maxH = 60;
+    const scale = maxH / branding.logoImg.naturalHeight;
+    const w = branding.logoImg.naturalWidth * scale;
+    ctx.drawImage(branding.logoImg, 16, 16, w, maxH);
+  }
+
+  function drawNewsline(w, h, now) {
+    if (!branding.newsText) return;
+    const barH = 36;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, h - barH, w, barH);
+
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'middle';
+    const textWidth = ctx.measureText(branding.newsText).width;
+
+    if (newsScrollX === null) newsScrollX = w;
+    const dt = lastFrameTime === null ? 0 : now - lastFrameTime;
+    lastFrameTime = now;
+
+    const speedPxPerMs = 0.08;
+    newsScrollX -= dt * speedPxPerMs;
+    if (newsScrollX + textWidth < 0) newsScrollX = w;
+
+    ctx.fillText(branding.newsText, newsScrollX, h - barH / 2);
   }
 
   function drawGrid(entries, w, h) {
@@ -290,9 +442,32 @@
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(x, y + h - 24, w, 24);
     ctx.fillStyle = '#fff';
-    ctx.font = '14px sans-serif';
+    ctx.font = `${branding.nameFontSize}px sans-serif`;
     ctx.fillText(p.displayName, x + 6, y + h - 6);
   }
+
+  // ---- 5b. Branding overlays (logo, news ticker, name label size) ----
+
+  els.logoInput.addEventListener('change', () => {
+    const file = els.logoInput.files?.[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      branding.logoImg = img;
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+  els.newsInput.addEventListener('input', () => {
+    branding.newsText = els.newsInput.value.trim();
+    newsScrollX = null;
+  });
+
+  els.nameFontSizeInput.addEventListener('input', () => {
+    const size = parseInt(els.nameFontSizeInput.value, 10);
+    if (Number.isFinite(size) && size > 0) branding.nameFontSize = size;
+  });
 
   // ---- 6. Guest invites ----
 
