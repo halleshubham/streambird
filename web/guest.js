@@ -17,7 +17,7 @@
   const toggleCameraBtn = document.getElementById('toggleCameraBtn');
   const leaveBtn = document.getElementById('leaveBtn');
   const monitorPanel = document.getElementById('monitorPanel');
-  const monitorVideo = document.getElementById('monitorVideo');
+  const monitorAudio = document.getElementById('monitorAudio');
   const monitorStatus = document.getElementById('monitorStatus');
 
   if (!token) {
@@ -100,18 +100,22 @@
     }
   }
 
-  // ---- Room monitor: a second, dedicated peer connection carrying the
-  // host's composited canvas + mixed audio back to this guest. Kept
-  // entirely separate from `pc` (this guest's own camera/mic upload) rather
-  // than renegotiating one shared connection -- two simple one-directional
+  // ---- Room monitor: a second, dedicated peer connection carrying this
+  // guest's personal mix-minus audio feed -- everyone else currently in the
+  // room, but never their own voice -- back from the host. Kept entirely
+  // separate from `pc` (this guest's own camera/mic upload) rather than
+  // renegotiating one shared connection -- two simple one-directional
   // connections are easier to reason about, and a shared-connection
-  // renegotiation is exactly what made the earlier version of this feature
-  // unreliable. This also replaces the previous Cloudflare-hosted-player
-  // iframe approach: that player's several-second HLS/DASH latency put any
-  // guest's own voice looping back through their speakers far outside what
-  // browser echo cancellation can cancel (AEC only handles delays up to
-  // roughly a few hundred ms) -- a real WebRTC feed keeps that loop at
-  // normal WebRTC latency, where AEC actually has a chance.
+  // renegotiation is exactly what made an earlier version of this feature
+  // unreliable. This replaced two earlier approaches: a Cloudflare-hosted-
+  // player iframe (several seconds of HLS/DASH latency put a guest's own
+  // voice looping back through their speakers far outside what echo
+  // cancellation can handle), and relaying the host's full composited
+  // canvas + mixed audio (needed its own video encode and consistently hit
+  // ICE/negotiation trouble -- see git history). Mix-minus sidesteps the
+  // echo problem entirely, regardless of latency or headphone use: a
+  // guest's own voice is never in what they receive, so there's nothing of
+  // theirs to loop back.
   async function handleMonitorOffer(fromSocketId, offer) {
     monitorPanel.style.display = 'block';
     monitorStatus.textContent = 'Room monitor offer received — connecting…';
@@ -121,29 +125,24 @@
       monitorPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
       monitorPc.ontrack = (event) => {
-        if (monitorVideo.srcObject !== event.streams[0]) {
-          monitorVideo.srcObject = event.streams[0];
+        if (monitorAudio.srcObject !== event.streams[0]) {
+          monitorAudio.srcObject = event.streams[0];
           // Starting muted and unmuting right after is the standard
           // workaround for unmuted-autoplay blocking: browsers always allow
           // muted autoplay, and (unlike *starting* unmuted playback) simply
           // flipping .muted off on already-rolling media generally isn't
-          // re-blocked. This is what was silently failing before -- the
-          // play() rejection was caught, but the connectionstatechange
-          // handler below then overwrote the resulting "tap to enable"
-          // prompt with "Room monitor: connected" moments later, so the
-          // guest never actually saw it and the video just sat paused on a
-          // black frame with no console error at all.
-          monitorVideo.muted = true;
-          monitorVideo
+          // re-blocked.
+          monitorAudio.muted = true;
+          monitorAudio
             .play()
             .then(() => {
-              monitorVideo.muted = false;
+              monitorAudio.muted = false;
               monitorStatus.textContent = 'Room monitor: connected';
             })
             .catch(() => {
               const resume = () => {
-                monitorVideo.muted = false;
-                monitorVideo.play().catch(() => {});
+                monitorAudio.muted = false;
+                monitorAudio.play().catch(() => {});
                 document.removeEventListener('click', resume);
               };
               document.addEventListener('click', resume, { once: true });
@@ -197,7 +196,7 @@
       localStream.getTracks().forEach((t) => t.stop());
     }
     socket?.disconnect();
-    monitorVideo.srcObject = null;
+    monitorAudio.srcObject = null;
     monitorPanel.style.display = 'none';
   }
 

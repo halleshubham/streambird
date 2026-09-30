@@ -29,10 +29,9 @@
   </div>
 
   <div class="panel" id="monitorPanel" style="display:none">
-    <label>Room monitor (what the host is seeing/hearing)</label>
-    <video id="monitorVideo" autoplay playsinline style="width:100%;aspect-ratio:16/9;border-radius:8px;background:#000"></video>
-    <div class="status" id="monitorStatus">Waiting for the host's room monitor…</div>
-    <div class="status">Use headphones if you can — without them, the room mix playing through your speakers may cause an echo.</div>
+    <label>Room audio (everyone else in the room — never your own mic)</label>
+    <audio id="monitorAudio" autoplay></audio>
+    <div class="status" id="monitorStatus">Waiting to connect…</div>
   </div>
 </div>
 

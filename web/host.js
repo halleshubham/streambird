@@ -30,9 +30,9 @@
   let socket = null;
 
   /**
-   * socketId -> { pc, videoEl, displayName, audioSourceNode, audioTrack,
-   * videoTrack, audioEnabled, videoEnabled } ; 'local' is the host's own
-   * camera (no pc — it never negotiates with itself).
+   * socketId -> { pc, videoEl, displayName, audioTrack, videoTrack,
+   * audioEnabled, videoEnabled } ; 'local' is the host's own camera (no pc
+   * — it never negotiates with itself).
    */
   const participants = new Map();
 
@@ -42,18 +42,22 @@
   // the real entry.
   const pendingDisplayNames = new Map();
 
-  // socketId -> RTCPeerConnection carrying the composited canvas + mixed
-  // audio *back* to that guest (the "room monitor"). Deliberately a
-  // separate connection per guest from their own upload `pc` in
-  // `participants` -- renegotiating one shared connection for both
-  // directions is what made the earlier version of this feature unreliable
-  // (see git history); two simple one-directional connections are easier to
-  // reason about.
+  // socketId -> RTCPeerConnection carrying that guest's personal mix-minus
+  // audio feed (everyone else in the room, never their own voice) -- see
+  // section 4 below. Deliberately a separate connection per guest from
+  // their own upload `pc` in `participants` -- renegotiating one shared
+  // connection for both directions is what made an earlier version of this
+  // feature unreliable (see git history); two simple one-directional
+  // connections are easier to reason about.
   const monitorConnections = new Map();
-  let monitorVideoTrack = null;
 
   let audioContext = null;
   let audioDestination = null;
+  // key ('local' or a guest's socketId) -> MediaStreamAudioSourceNode for
+  // that participant's mic, and guest socketId -> their personal mix-minus
+  // MediaStreamAudioDestinationNode. See section 4.
+  const audioSourceNodes = new Map();
+  const guestMixMinusDestinations = new Map();
 
   let layoutMode = 'grid';
   let drawing = false;
@@ -150,7 +154,7 @@
         audioEnabled: true,
         videoEnabled: true,
       });
-      connectAudioTrack(audioTrack);
+      connectAudioTrack('local', audioTrack);
       renderParticipantList();
     } catch (err) {
       setStatus(els.studioStatus, `Could not start camera: ${err.message}`, true);
@@ -202,12 +206,12 @@
       const p = participants.get(socketId);
       if (p) {
         p.pc?.close();
-        p.audioSourceNode?.disconnect();
         participants.delete(socketId);
         renderParticipantList();
       }
       pendingDisplayNames.delete(socketId);
       stopMonitorFeed(socketId);
+      removeParticipantAudio(socketId);
     });
 
     socket.on('signal', async (msg) => {
@@ -268,7 +272,7 @@
           event.track.enabled = p.videoEnabled;
         }
       } else if (event.track.kind === 'audio') {
-        connectAudioTrack(event.track);
+        connectAudioTrack(fromSocketId, event.track);
         if (p) {
           p.audioTrack = event.track;
           event.track.enabled = p.audioEnabled;
@@ -291,33 +295,32 @@
     startMonitorFeed(fromSocketId);
   }
 
-  // ---- 3c. Room monitor: relay the composited canvas + mixed audio back
-  // to each guest, on its own dedicated connection (see monitorConnections
-  // above for why). Started once a guest's own upload connection is up, and
-  // torn down whenever they leave or get dropped.
-
-  function getMonitorVideoTrack() {
-    if (!monitorVideoTrack) {
-      monitorVideoTrack = els.canvas.captureStream(30).getVideoTracks()[0];
-    }
-    return monitorVideoTrack;
-  }
+  // ---- 3c. Room monitor: give each guest a personal mix-minus audio feed
+  // -- everyone else currently in the room, but never their own voice --
+  // on its own dedicated connection (see monitorConnections above for why).
+  // This replaces an earlier attempt that relayed the full composited
+  // canvas + mixed audio back to guests: that needed its own video encode
+  // and consistently hit ICE/negotiation trouble in practice (see git
+  // history), and StreamYard/Zoom-style tools don't do that either --
+  // participants just hear each other directly, same as any group call.
+  // Mix-minus (see ensureGuestMixMinus below) also makes echo structurally
+  // impossible regardless of latency or headphone use: a guest's own voice
+  // is never in what they receive, so there's nothing of theirs to loop
+  // back. Started once a guest's own upload connection is up, and torn
+  // down whenever they leave or get dropped.
 
   async function startMonitorFeed(socketId) {
     try {
       stopMonitorFeed(socketId);
-      ensureAudioMix();
-
-      const videoTrack = getMonitorVideoTrack();
-      const audioTrack = audioDestination.stream.getAudioTracks()[0];
-      if (!videoTrack || !audioTrack) {
-        throw new Error(`missing track(s) for room monitor (video=${!!videoTrack}, audio=${!!audioTrack})`);
+      const dest = ensureGuestMixMinus(socketId);
+      const audioTrack = dest.stream.getAudioTracks()[0];
+      if (!audioTrack) {
+        throw new Error('missing mix-minus audio track');
       }
 
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       monitorConnections.set(socketId, pc);
 
-      pc.addTransceiver(videoTrack, { direction: 'sendonly' });
       pc.addTransceiver(audioTrack, { direction: 'sendonly' });
 
       pc.onicecandidate = (event) => {
@@ -404,13 +407,24 @@
     if (!p) return;
     socket?.emit('signal', { to: id, type: 'kicked', payload: {} });
     p.pc?.close();
-    p.audioSourceNode?.disconnect();
     participants.delete(id);
     renderParticipantList();
     stopMonitorFeed(id);
+    removeParticipantAudio(id);
   }
 
   // ---- 4. Audio mixing ----
+  //
+  // Two different outputs draw on the same set of participant mic tracks:
+  //  - `audioDestination`: the full mix of everyone, incl. the host -- the
+  //    audio half of the outbound WHIP publish (see section 7).
+  //  - one MediaStreamAudioDestinationNode per guest in
+  //    `guestMixMinusDestinations`, each fed by every source *except* that
+  //    guest's own -- their personal "room monitor" (section 3c). A single
+  //    AudioNode can fan out to any number of destinations, so each
+  //    participant's mic is captured into exactly one MediaStreamAudioSource
+  //    -Node (in `audioSourceNodes`) and then `.connect()`-ed to the full
+  //    mix plus every *other* guest's mix-minus node.
 
   function ensureAudioMix() {
     if (!audioContext) {
@@ -419,11 +433,40 @@
     }
   }
 
-  function connectAudioTrack(track) {
+  /** key is 'local' for the host, or a guest's socketId. */
+  function connectAudioTrack(key, track) {
     if (!track) return;
     ensureAudioMix();
+    if (audioSourceNodes.has(key)) return;
+
     const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+    audioSourceNodes.set(key, source);
+
     source.connect(audioDestination);
+    for (const [guestId, dest] of guestMixMinusDestinations) {
+      if (guestId !== key) source.connect(dest);
+    }
+  }
+
+  /** Every guest gets everyone else's already-connected sources, never their own. */
+  function ensureGuestMixMinus(guestSocketId) {
+    ensureAudioMix();
+    const existing = guestMixMinusDestinations.get(guestSocketId);
+    if (existing) return existing;
+
+    const dest = audioContext.createMediaStreamDestination();
+    guestMixMinusDestinations.set(guestSocketId, dest);
+    for (const [key, source] of audioSourceNodes) {
+      if (key !== guestSocketId) source.connect(dest);
+    }
+    return dest;
+  }
+
+  /** Disconnects a participant's mic from every mix once they leave, and drops their own mix-minus node. */
+  function removeParticipantAudio(key) {
+    audioSourceNodes.get(key)?.disconnect();
+    audioSourceNodes.delete(key);
+    guestMixMinusDestinations.delete(key);
   }
 
   // ---- 5. Canvas compositing ----
