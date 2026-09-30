@@ -26,6 +26,7 @@
   let localStream = null;
   let micEnabled = true;
   let cameraEnabled = true;
+  let leaving = false;
 
   async function validateInvite() {
     const res = await fetch(`/api/studio-sessions/invites/${encodeURIComponent(token)}`);
@@ -56,6 +57,11 @@
     };
 
     conn.onconnectionstatechange = () => {
+      // pc.close() (deliberate leave, or a kick) fires this asynchronously,
+      // after the current call stack finishes -- without this guard, it
+      // overwrites handleKicked()'s/leaveBtn's own message with a generic
+      // "Connection: closed" moments after it's shown.
+      if (leaving) return;
       callStatus.textContent = `Connection: ${conn.connectionState}`;
     };
 
@@ -106,6 +112,7 @@
   }
 
   function stopLocalMedia() {
+    leaving = true;
     if (pc) {
       pc.close();
       pc = null;

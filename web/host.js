@@ -367,8 +367,14 @@
 
   function addBackstageFeed(socketId, pc) {
     const stream = ensureBackstageStream();
+    // Deliberately addTransceiver(), not addTrack(): this pc already has two
+    // transceivers with a null sender (created to *receive* the guest's own
+    // camera/mic) -- addTrack()'s spec'd behavior is to find and reuse such
+    // a transceiver rather than create a new one, which silently repurposed
+    // the guest's own video/audio m-lines instead of adding the backstage
+    // feed's own. addTransceiver() always creates a new one.
     for (const track of stream.getTracks()) {
-      pc.addTrack(track, stream);
+      pc.addTransceiver(track, { direction: 'sendonly', streams: [stream] });
     }
     renegotiate(socketId, pc);
   }
@@ -380,6 +386,7 @@
       socket.emit('signal', { to: socketId, type: 'offer', payload: offer });
     } catch (err) {
       console.warn('Renegotiation with guest failed', err);
+      setStatus(els.studioStatus, `Could not set up the guest's broadcast preview: ${err.message}`, true);
     }
   }
 
