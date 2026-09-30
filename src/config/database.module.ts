@@ -9,6 +9,7 @@ import { LiveStreamDestination } from '../streams/entities/live-stream-destinati
 import { StudioSession } from '../studio/entities/studio-session.entity';
 import { StudioGuestInvite } from '../studio/entities/studio-guest-invite.entity';
 import { StudioParticipant } from '../studio/entities/studio-participant.entity';
+import { StudioHostToken } from '../studio/entities/studio-host-token.entity';
 import { User } from '../users/entities/user.entity';
 import { LoginCode } from '../auth/entities/login-code.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
@@ -29,6 +30,7 @@ import { UserSession } from '../auth/entities/user-session.entity';
           StudioSession,
           StudioGuestInvite,
           StudioParticipant,
+          StudioHostToken,
           User,
           LoginCode,
           UserSession,

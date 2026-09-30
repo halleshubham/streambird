@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { StudioSession } from './entities/studio-session.entity';
 import { StudioGuestInvite } from './entities/studio-guest-invite.entity';
 import { StudioParticipant } from './entities/studio-participant.entity';
+import { StudioHostToken } from './entities/studio-host-token.entity';
 import { StudioSessionsService } from './studio-sessions.service';
 import { StudioSessionsController } from './studio-sessions.controller';
 import { StudioSignalingGateway } from './studio-signaling.gateway';
@@ -12,7 +13,12 @@ import { CommonModule } from '../common/common.module';
   // CommonModule re-exports AccountsModule too, which ApiKeyGuard and the
   // signaling gateway both need for AccountsService.
   imports: [
-    TypeOrmModule.forFeature([StudioSession, StudioGuestInvite, StudioParticipant]),
+    TypeOrmModule.forFeature([
+      StudioSession,
+      StudioGuestInvite,
+      StudioParticipant,
+      StudioHostToken,
+    ]),
     CommonModule,
   ],
   providers: [StudioSessionsService, StudioSignalingGateway],

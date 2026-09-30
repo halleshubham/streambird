@@ -10,7 +10,6 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { StudioSessionsService } from './studio-sessions.service';
-import { AccountsService } from '../accounts/accounts.service';
 
 interface SocketState {
   sessionId: string;
@@ -35,14 +34,11 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   @WebSocketServer()
   server!: Server;
 
-  constructor(
-    private readonly studioSessionsService: StudioSessionsService,
-    private readonly accountsService: AccountsService,
-  ) {}
+  constructor(private readonly studioSessionsService: StudioSessionsService) {}
 
   async handleConnection(client: Socket) {
     try {
-      // Credentials (apiKey, invite token) travel in the socket.io `auth`
+      // Credentials (hostToken, invite token) travel in the socket.io `auth`
       // payload, not `query` — query strings are URL-visible and end up
       // in server access logs; `auth` is sent once in the handshake body.
       const { role } = client.handshake.auth as { role?: string };
@@ -62,20 +58,24 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   }
 
   private async handleHostConnection(client: Socket) {
-    const { sessionId, apiKey, displayName } = client.handshake.auth as {
+    const { sessionId, hostToken, displayName } = client.handshake.auth as {
       sessionId?: string;
-      apiKey?: string;
+      hostToken?: string;
       displayName?: string;
     };
-    if (!sessionId || !apiKey) {
-      throw new Error('host connections require sessionId and apiKey');
+    if (!sessionId || !hostToken) {
+      throw new Error('host connections require sessionId and hostToken');
     }
 
-    const account = await this.accountsService.findByApiKey(apiKey);
-    if (!account) throw new Error('invalid apiKey');
-
-    // Throws if the session doesn't exist or isn't owned by this account.
-    await this.studioSessionsService.findByIdOrThrow(sessionId, account.id);
+    // Throws if the token is unknown, revoked, or expired. The account's
+    // real API key never travels into client-side socket code — minting
+    // this token already proved account ownership of the session (see
+    // StudioSessionsController.mintHostToken), so we only need to confirm
+    // it actually belongs to the session this socket claims to join.
+    const tokenRow = await this.studioSessionsService.resolveHostToken(hostToken);
+    if (tokenRow.studioSessionId !== sessionId) {
+      throw new Error('hostToken does not match sessionId');
+    }
 
     const participant = await this.studioSessionsService.recordHostJoined(
       sessionId,

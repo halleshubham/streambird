@@ -2,9 +2,6 @@
   const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
   const els = {
-    apiKey: document.getElementById('apiKey'),
-    streamId: document.getElementById('streamId'),
-    loadBtn: document.getElementById('loadBtn'),
     loadStatus: document.getElementById('loadStatus'),
     loadPanel: document.getElementById('loadPanel'),
     studioPanel: document.getElementById('studioPanel'),
@@ -20,7 +17,7 @@
 
   const ctx = els.canvas.getContext('2d');
 
-  /** @type {{apiKey: string, stream: any} | null} */
+  /** @type {{stream: any, hostToken: string} | null} */
   let session = null;
   let socket = null;
 
@@ -42,27 +39,41 @@
   }
 
   // ---- 1. Load the stream (studioSessionId, ingest info) ----
+  //
+  // Auth is the sb_session cookie (credentials:'include'), same as the
+  // React dashboard — no API key pasted here. streamId comes from the URL
+  // the create-stream flow navigates to (?streamId=...), not a form field.
 
-  els.loadBtn.addEventListener('click', async () => {
-    const apiKey = els.apiKey.value.trim();
-    const streamId = els.streamId.value.trim();
-    if (!apiKey || !streamId) {
-      setStatus(els.loadStatus, 'API key and stream ID are both required.', true);
+  async function loadStream() {
+    const streamId = new URLSearchParams(location.search).get('streamId');
+    if (!streamId) {
+      setStatus(els.loadStatus, 'Missing streamId in the URL.', true);
       return;
     }
 
-    els.loadBtn.disabled = true;
     setStatus(els.loadStatus, 'Loading…');
 
     try {
       const res = await fetch(`/api/streams/${encodeURIComponent(streamId)}`, {
-        headers: { 'x-api-key': apiKey },
+        credentials: 'include',
       });
+      if (res.status === 401) {
+        setStatus(els.loadStatus, '');
+        els.loadStatus.innerHTML = 'You need to be logged in. <a href="/login">Log in</a>';
+        return;
+      }
       if (!res.ok) throw new Error(`Failed to load stream (${res.status})`);
       const stream = await res.json();
       if (!stream.studioSessionId) throw new Error('This stream has no studio session.');
 
-      session = { apiKey, stream };
+      const hostTokenRes = await fetch(`/api/studio-sessions/${stream.studioSessionId}/host-token`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!hostTokenRes.ok) throw new Error(`Failed to authorize studio access (${hostTokenRes.status})`);
+      const { token: hostToken } = await hostTokenRes.json();
+
+      session = { stream, hostToken };
       els.loadPanel.style.display = 'none';
       els.studioPanel.style.display = 'block';
       els.goLiveBtn.disabled = !stream.whipUrl;
@@ -72,9 +83,10 @@
       startDrawLoop();
     } catch (err) {
       setStatus(els.loadStatus, err.message, true);
-      els.loadBtn.disabled = false;
     }
-  });
+  }
+
+  loadStream();
 
   // ---- 2. Host's own camera ----
 
@@ -104,7 +116,7 @@
       auth: {
         role: 'host',
         sessionId: session.stream.studioSessionId,
-        apiKey: session.apiKey,
+        hostToken: session.hostToken,
         displayName: 'Host',
       },
     });
@@ -195,7 +207,8 @@
       try {
         await fetch(`/api/studio-sessions/${session.stream.studioSessionId}/layout`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': session.apiKey },
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ layoutConfig: { layout: layoutMode, overlays: [] } }),
         });
       } catch (err) {
@@ -266,7 +279,8 @@
     try {
       const res = await fetch(`/api/studio-sessions/${session.stream.studioSessionId}/invites`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': session.apiKey },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiresInMinutes: 60 }),
       });
       if (!res.ok) throw new Error(`Failed to create invite (${res.status})`);
@@ -353,7 +367,7 @@
     try {
       const res = await fetch(`/api/streams/${session.stream.id}/end`, {
         method: 'POST',
-        headers: { 'x-api-key': session.apiKey },
+        credentials: 'include',
       });
       if (!res.ok) throw new Error(`Failed to end stream (${res.status})`);
       setStatus(els.studioStatus, 'Stream ended.');

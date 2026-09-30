@@ -101,6 +101,7 @@ describe('StreamsService', () => {
           useValue: {
             createForStream: jest.fn(async () => ({ id: 'studio_session_1' })),
             findByLiveStreamId: jest.fn(async () => ({ id: 'studio_session_1' })),
+            revokeHostTokensForStream: jest.fn(async () => undefined),
           },
         },
       ],

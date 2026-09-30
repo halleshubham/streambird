@@ -10,10 +10,12 @@ import * as crypto from 'crypto';
 import { StudioSession } from './entities/studio-session.entity';
 import { StudioGuestInvite } from './entities/studio-guest-invite.entity';
 import { StudioParticipant, ParticipantRole } from './entities/studio-participant.entity';
+import { StudioHostToken } from './entities/studio-host-token.entity';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 
 const DEFAULT_INVITE_TTL_MINUTES = 60;
+const HOST_TOKEN_TTL_HOURS = 6;
 
 @Injectable()
 export class StudioSessionsService {
@@ -24,6 +26,8 @@ export class StudioSessionsService {
     private readonly invites: Repository<StudioGuestInvite>,
     @InjectRepository(StudioParticipant)
     private readonly participants: Repository<StudioParticipant>,
+    @InjectRepository(StudioHostToken)
+    private readonly hostTokens: Repository<StudioHostToken>,
     private readonly config: ConfigService,
   ) {}
 
@@ -157,5 +161,63 @@ export class StudioSessionsService {
       joinedAt: new Date(),
     });
     return this.participants.save(participant);
+  }
+
+  /**
+   * Mints a fresh host token for this session, revoking any prior
+   * non-revoked one first — one active host token per session, same as
+   * only the latest browser tab should be able to drive a live show.
+   * Unlike a guest invite, this token is reusable until expiry/revocation
+   * (the host's page may reconnect the socket repeatedly during a show),
+   * so it must never be sent anywhere but this authenticated response.
+   */
+  async mintHostToken(
+    sessionId: string,
+    accountId: string,
+  ): Promise<{ token: string; expiresAt: Date }> {
+    const session = await this.findByIdOrThrow(sessionId, accountId);
+
+    // Re-stamping an already-revoked row's revokedAt is harmless, so this
+    // doesn't need an IS NULL filter to stay correct.
+    await this.hostTokens.update({ studioSessionId: session.id }, { revokedAt: new Date() });
+
+    const token = crypto.randomBytes(24).toString('base64url');
+    const expiresAt = new Date(Date.now() + HOST_TOKEN_TTL_HOURS * 60 * 60_000);
+
+    const hostToken = this.hostTokens.create({
+      studioSessionId: session.id,
+      token,
+      expiresAt,
+    });
+    await this.hostTokens.save(hostToken);
+
+    return { token, expiresAt };
+  }
+
+  /**
+   * Used only by the signaling gateway to authenticate a host socket
+   * connection — mirrors resolveInviteToken's checks but, unlike a guest
+   * invite, is NOT consumed here: the host may reconnect many times
+   * before the token expires or is revoked.
+   */
+  async resolveHostToken(token: string): Promise<StudioHostToken> {
+    const hostToken = await this.hostTokens.findOne({ where: { token } });
+    if (!hostToken) {
+      throw new NotFoundException('Host token not found');
+    }
+    if (hostToken.revokedAt) {
+      throw new BadRequestException('This host token has been revoked');
+    }
+    if (hostToken.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('This host token has expired');
+    }
+    return hostToken;
+  }
+
+  /** Called from StreamsService.end() so a token can't outlive its stream. */
+  async revokeHostTokensForStream(liveStreamId: string): Promise<void> {
+    const session = await this.findByLiveStreamId(liveStreamId);
+    if (!session) return;
+    await this.hostTokens.update({ studioSessionId: session.id }, { revokedAt: new Date() });
   }
 }

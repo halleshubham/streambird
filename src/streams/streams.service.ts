@@ -271,6 +271,10 @@ export class StreamsService {
       await this.relay.deleteLiveInput(stream.relayLiveInputId);
     }
 
+    // A host token can't outlive the stream it authenticates studio access
+    // for -- otherwise a leaked token from an ended show would still work.
+    await this.studioSessions.revokeHostTokensForStream(stream.id);
+
     stream.status = StreamStatus.ENDED;
     stream.endedAt = new Date();
     await this.liveStreams.save(stream);

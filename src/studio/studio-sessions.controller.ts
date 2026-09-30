@@ -38,6 +38,20 @@ export class StudioSessionsController {
     };
   }
 
+  /**
+   * Mints the reusable socket-auth token the studio host page uses instead
+   * of sending the account's real API key into the browser's Socket.IO
+   * handshake. See StudioSessionsService.mintHostToken.
+   */
+  @Post(':id/host-token')
+  @UseGuards(AccountGuard)
+  async mintHostToken(
+    @CurrentAccount() account: Account,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.studioSessionsService.mintHostToken(id, account.id);
+  }
+
   @Post(':id/invites')
   @UseGuards(AccountGuard)
   async createInvite(
