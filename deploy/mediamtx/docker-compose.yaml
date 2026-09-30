@@ -1,0 +1,13 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    restart: unless-stopped
+    ports:
+      - "8889:8889"
+      - "9997:9997"
+      # WebRTC/WHIP media (ICE/DTLS/SRTP) is UDP -- it can't be proxied by
+      # Traefik like the HTTP ports above, so this needs a real host-level
+      # UDP port publish. Coolify's structured "dockerimage" app type has no
+      # way to express this (its ports_mappings field is TCP-only), which is
+      # why this service is deployed via docker-compose instead.
+      - "8189:8189/udp"
