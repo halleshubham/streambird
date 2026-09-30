@@ -9,6 +9,9 @@ import { LiveStreamDestination } from '../streams/entities/live-stream-destinati
 import { StudioSession } from '../studio/entities/studio-session.entity';
 import { StudioGuestInvite } from '../studio/entities/studio-guest-invite.entity';
 import { StudioParticipant } from '../studio/entities/studio-participant.entity';
+import { User } from '../users/entities/user.entity';
+import { LoginCode } from '../auth/entities/login-code.entity';
+import { UserSession } from '../auth/entities/user-session.entity';
 
 @Module({
   imports: [
@@ -26,6 +29,9 @@ import { StudioParticipant } from '../studio/entities/studio-participant.entity'
           StudioSession,
           StudioGuestInvite,
           StudioParticipant,
+          User,
+          LoginCode,
+          UserSession,
         ],
         namingStrategy: new SnakeNamingStrategy(),
         // Schema is owned by migrations/*.sql (see src/config/migrate.ts), never by TypeORM.

@@ -9,6 +9,7 @@ import { AccountsModule } from './accounts/accounts.module';
 import { PlatformConnectionsModule } from './platform-connections/platform-connections.module';
 import { StreamsModule } from './streams/streams.module';
 import { StudioModule } from './studio/studio.module';
+import { AuthModule } from './auth/auth.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -25,6 +26,7 @@ import { AppController } from './app.controller';
     PlatformConnectionsModule,
     StreamsModule,
     StudioModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

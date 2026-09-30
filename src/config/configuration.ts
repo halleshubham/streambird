@@ -9,6 +9,10 @@ export interface AppConfig {
   twitchClientId: string;
   twitchClientSecret: string;
   publicBaseUrl: string;
+  nodeEnv: string;
+  cookieSecure: boolean;
+  resendApiKey: string;
+  emailFrom: string;
 }
 
 export default (): AppConfig => ({
@@ -22,4 +26,8 @@ export default (): AppConfig => ({
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`,
+  nodeEnv: process.env.NODE_ENV ?? 'development',
+  cookieSecure: process.env.NODE_ENV === 'production',
+  resendApiKey: process.env.RESEND_API_KEY ?? '',
+  emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.shackyapps.in>',
 });
