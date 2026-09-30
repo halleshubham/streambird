@@ -14,7 +14,6 @@ import { StudioHostToken } from './entities/studio-host-token.entity';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 
-const DEFAULT_INVITE_TTL_MINUTES = 60;
 const HOST_TOKEN_TTL_HOURS = 6;
 
 @Injectable()
@@ -30,6 +29,11 @@ export class StudioSessionsService {
     private readonly hostTokens: Repository<StudioHostToken>,
     private readonly config: ConfigService,
   ) {}
+
+  /** Same simple sha256 approach as AuthService.hash() -- this guards invite access, not a security-critical credential store. */
+  private hash(value: string): string {
+    return crypto.createHash('sha256').update(value).digest('hex');
+  }
 
   async createForStream(liveStream: LiveStream): Promise<StudioSession> {
     const session = this.sessions.create({
@@ -55,30 +59,36 @@ export class StudioSessionsService {
     return session;
   }
 
+  /**
+   * Invites no longer carry a TTL -- they stay valid for the entire
+   * lifetime of the stream (expiresAt is always null now) and only stop
+   * working once the host ends the stream, which revokes every invite on
+   * the session (see StreamsService.end -> revokeInvitesForStream). An
+   * optional password can be set; if so, a guest must supply it to join
+   * (see joinAsGuest).
+   */
   async createInvite(
     sessionId: string,
     accountId: string,
     dto: CreateInviteDto,
-  ): Promise<{ token: string; joinUrl: string; expiresAt: Date }> {
+  ): Promise<{ token: string; joinUrl: string; expiresAt: Date | null }> {
     const session = await this.findByIdOrThrow(sessionId, accountId);
 
     const token = crypto.randomBytes(24).toString('base64url');
-    const expiresAt = new Date(
-      Date.now() + (dto.expiresInMinutes ?? DEFAULT_INVITE_TTL_MINUTES) * 60_000,
-    );
 
     const invite = this.invites.create({
       studioSessionId: session.id,
       token,
       label: dto.label ?? null,
-      expiresAt,
+      expiresAt: null,
+      passwordHash: dto.password ? this.hash(dto.password) : null,
     });
     await this.invites.save(invite);
 
     const baseUrl = this.config.get<string>('publicBaseUrl');
     const joinUrl = `${baseUrl}/join/${token}`;
 
-    return { token, joinUrl, expiresAt };
+    return { token, joinUrl, expiresAt: invite.expiresAt };
   }
 
   async revokeInvite(sessionId: string, inviteId: string, accountId: string): Promise<void> {
@@ -109,8 +119,12 @@ export class StudioSessionsService {
 
   /**
    * Public (no API key) — used by the guest join page and the signaling
-   * gateway to validate a token before a guest is let into the room.
-   * Does not consume the token; call consumeInviteAndJoin for that.
+   * gateway to validate a token before a guest is let into the room. Never
+   * consumes or otherwise mutates the invite -- an invite stays valid for
+   * repeat/reconnect joins until the host revokes it (explicitly, or by
+   * ending the stream). expiresAt is legacy/defensive: new invites are
+   * always created with it null, but an old row that still has one set is
+   * still honored.
    */
   async resolveInviteToken(token: string): Promise<StudioGuestInvite> {
     const invite = await this.invites.findOne({ where: { token } });
@@ -118,24 +132,34 @@ export class StudioSessionsService {
       throw new NotFoundException('Invite not found');
     }
     if (invite.revokedAt) {
-      throw new BadRequestException('This invite has already been used or was revoked');
+      throw new BadRequestException('This invite has been revoked');
     }
-    if (invite.expiresAt.getTime() < Date.now()) {
+    if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) {
       throw new BadRequestException('This invite has expired');
     }
     return invite;
   }
 
   /**
-   * Single-use: consumes the invite (revokedAt = now) and records the
-   * guest as a StudioParticipant. Called only once the guest's WebRTC
-   * signaling connection actually opens, not on a simple page-load GET.
+   * Validates the token (and password, if the invite requires one) and
+   * records the guest as a StudioParticipant. Unlike the old
+   * consumeInviteAndJoin, this does NOT revoke the invite -- a guest whose
+   * socket drops (network blip, tab refresh) can call this again with the
+   * same link and rejoin. The invite only stops working once the host
+   * revokes it or ends the stream (revokeInvitesForStream).
    */
-  async consumeInviteAndJoin(token: string, displayName: string): Promise<StudioParticipant> {
+  async joinAsGuest(
+    token: string,
+    displayName: string,
+    password?: string,
+  ): Promise<StudioParticipant> {
     const invite = await this.resolveInviteToken(token);
 
-    invite.revokedAt = new Date();
-    await this.invites.save(invite);
+    if (invite.passwordHash) {
+      if (!password || this.hash(password) !== invite.passwordHash) {
+        throw new BadRequestException('This invite requires the correct password to join');
+      }
+    }
 
     const participant = this.participants.create({
       studioSessionId: invite.studioSessionId,
@@ -216,5 +240,17 @@ export class StudioSessionsService {
     const session = await this.findByLiveStreamId(liveStreamId);
     if (!session) return;
     await this.hostTokens.update({ studioSessionId: session.id }, { revokedAt: new Date() });
+  }
+
+  /**
+   * Called from StreamsService.end() so guest invite links genuinely stop
+   * working once the show ends -- invites no longer carry their own TTL
+   * (see createInvite), so this is now the only thing that ends their
+   * lifetime.
+   */
+  async revokeInvitesForStream(liveStreamId: string): Promise<void> {
+    const session = await this.findByLiveStreamId(liveStreamId);
+    if (!session) return;
+    await this.invites.update({ studioSessionId: session.id }, { revokedAt: new Date() });
   }
 }

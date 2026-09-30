@@ -26,6 +26,7 @@ export interface MonitorVideoTile {
 export function useGuestStudio(token: string | undefined) {
   const [mode, setMode] = useState<GuestMode>(token ? 'checking-invite' : 'invite-invalid');
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [passwordRequired, setPasswordRequired] = useState(false);
   const [callStatus, setCallStatus] = useState('Connecting…');
   const [callIsError, setCallIsError] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState('Waiting to connect…');
@@ -230,7 +231,7 @@ export function useGuestStudio(token: string | undefined) {
     stopLocalMedia();
   }
 
-  const join = useCallback(async (displayName: string) => {
+  const join = useCallback(async (displayName: string, password?: string) => {
     if (!token) return;
     setJoining(true);
     setJoinError(null);
@@ -258,7 +259,7 @@ export function useGuestStudio(token: string | undefined) {
     setCallStatus('Joining…');
     setCallIsError(false);
 
-    const socket = io('/studio', { auth: { role: 'guest', token, displayName } });
+    const socket = io('/studio', { auth: { role: 'guest', token, displayName, password } });
     socketRef.current = socket;
 
     socket.on('joined', () => setCallStatus('Joined — waiting for the host to connect…'));
@@ -323,8 +324,10 @@ export function useGuestStudio(token: string | undefined) {
       return;
     }
     resolveInvite(token)
-      .then(() => {
-        if (!cancelled) setMode('ready-to-join');
+      .then((res) => {
+        if (cancelled) return;
+        setPasswordRequired(res.passwordRequired);
+        setMode('ready-to-join');
       })
       .catch((err) => {
         if (cancelled) return;
@@ -339,6 +342,7 @@ export function useGuestStudio(token: string | undefined) {
   return {
     mode,
     joinError,
+    passwordRequired,
     callStatus,
     callIsError,
     monitorStatus,

@@ -20,18 +20,28 @@ export class StudioGuestInvite {
   @JoinColumn({ name: 'studio_session_id' })
   studioSession!: StudioSession;
 
-  /** Single-use, opaque join token. Never logged. */
+  /** Opaque join token, reusable for the lifetime of the stream. Never logged. */
   @Column()
   token!: string;
 
   @Column({ type: 'text', nullable: true })
   label!: string | null;
 
-  @Column({ type: 'timestamptz' })
-  expiresAt!: Date;
+  /**
+   * Null means "valid until the host ends the stream" -- the only behavior
+   * going forward (see StudioSessionsService.createInvite). The column
+   * stays nullable rather than being dropped, so a fixed-TTL invite could
+   * still be represented if that ever comes back.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  expiresAt!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   revokedAt!: Date | null;
+
+  /** sha256(password) hex digest, same technique as AuthService.hash(). Null = no password required. */
+  @Column({ type: 'text', nullable: true })
+  passwordHash!: string | null;
 
   @CreateDateColumn()
   createdAt!: Date;

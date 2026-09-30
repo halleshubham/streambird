@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Camera,
@@ -17,6 +18,8 @@ import { useHostStudio } from '../../studio/useHostStudio';
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
+  const [requireInvitePassword, setRequireInvitePassword] = useState(false);
+  const [invitePassword, setInvitePassword] = useState('');
   const {
     canvasRef,
     loading,
@@ -72,7 +75,11 @@ export function HostStudioPage() {
         <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
           <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
         </button>
-        <button type="button" className="icon-btn" onClick={() => void actions.createInviteLink()}>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
+        >
           <Copy size={16} /> Create guest invite
         </button>
         <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
@@ -84,6 +91,25 @@ export function HostStudioPage() {
         <button type="button" className="icon-btn icon-btn--danger" onClick={() => void actions.endStream()} disabled={ending}>
           <PhoneOff size={16} /> End stream
         </button>
+      </div>
+
+      <div className="studio-invite-controls">
+        <label>
+          <input
+            type="checkbox"
+            checked={requireInvitePassword}
+            onChange={(e) => setRequireInvitePassword(e.target.checked)}
+          />
+          {' '}Require a password to join
+        </label>
+        {requireInvitePassword && (
+          <input
+            type="text"
+            placeholder="Invite password"
+            value={invitePassword}
+            onChange={(e) => setInvitePassword(e.target.value)}
+          />
+        )}
       </div>
 
       {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}

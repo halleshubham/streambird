@@ -35,6 +35,7 @@ export class StudioSessionsController {
       studioSessionId: invite.studioSessionId,
       label: invite.label,
       expiresAt: invite.expiresAt,
+      passwordRequired: !!invite.passwordHash,
     };
   }
 

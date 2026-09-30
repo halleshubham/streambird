@@ -111,6 +111,7 @@ describe('StreamsService', () => {
             createForStream: jest.fn(async () => ({ id: 'studio_session_1' })),
             findByLiveStreamId: jest.fn(async () => ({ id: 'studio_session_1' })),
             revokeHostTokensForStream: jest.fn(async () => undefined),
+            revokeInvitesForStream: jest.fn(async () => undefined),
           },
         },
       ],
@@ -120,6 +121,7 @@ describe('StreamsService', () => {
       service: moduleRef.get(StreamsService),
       connectionRepo,
       relay,
+      studioSessions: moduleRef.get(StudioSessionsService),
     };
   }
 
@@ -192,7 +194,7 @@ describe('StreamsService', () => {
 
   it('end() calls endBroadcast on every live destination and tears down the live input', async () => {
     const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
-    const { service, connectionRepo, relay } = await build([youtube]);
+    const { service, connectionRepo, relay, studioSessions } = await build([youtube]);
     const conn = makeConnection('c1', Platform.YOUTUBE);
     connectionRepo.rows.set(conn.id, conn);
 
@@ -207,5 +209,8 @@ describe('StreamsService', () => {
     expect(ended.status).toBe(StreamStatus.ENDED);
     expect(youtube.endBroadcast).toHaveBeenCalledWith(conn, 'youtube-broadcast-1');
     expect(relay.liveInputs.size).toBe(0);
+    // Guest invites no longer carry their own TTL -- ending the stream is
+    // now the only thing that stops an outstanding invite link from working.
+    expect(studioSessions.revokeInvitesForStream).toHaveBeenCalledWith(stream.id);
   });
 });

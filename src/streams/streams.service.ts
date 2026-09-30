@@ -315,6 +315,10 @@ export class StreamsService {
     // for -- otherwise a leaked token from an ended show would still work.
     await this.studioSessions.revokeHostTokensForStream(stream.id);
 
+    // Guest invites no longer carry their own TTL (they're valid for the
+    // whole stream) -- this is now the only thing that ends their lifetime.
+    await this.studioSessions.revokeInvitesForStream(stream.id);
+
     stream.status = StreamStatus.ENDED;
     stream.endedAt = new Date();
     await this.liveStreams.save(stream);

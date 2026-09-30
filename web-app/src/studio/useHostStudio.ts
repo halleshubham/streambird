@@ -607,15 +607,16 @@ export function useHostStudio(streamId: string | undefined) {
     }
   }, [stream]);
 
-  const createInviteLink = useCallback(async () => {
+  const createInviteLink = useCallback(async (password?: string) => {
     if (!stream?.studioSessionId) return;
     try {
-      const { joinUrl } = await createInvite(stream.studioSessionId, 60);
+      const { joinUrl } = await createInvite(stream.studioSessionId, { password });
+      const suffix = password ? ' (password required)' : '';
       try {
         await navigator.clipboard.writeText(joinUrl);
-        setInviteMessage({ text: `Guest link (60 min), copied to clipboard: ${joinUrl}`, isError: false });
+        setInviteMessage({ text: `Guest link${suffix}, copied to clipboard: ${joinUrl}`, isError: false });
       } catch {
-        setInviteMessage({ text: `Guest link (60 min): ${joinUrl}`, isError: false });
+        setInviteMessage({ text: `Guest link${suffix}: ${joinUrl}`, isError: false });
       }
     } catch (err) {
       setInviteMessage({ text: err instanceof ApiError ? err.message : 'Failed to create invite.', isError: true });
