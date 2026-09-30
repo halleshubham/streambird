@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Trash2, Plug } from 'lucide-react';
 import { listConnections, connectTwitchManual, removeConnection } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { ApiError } from '../api/client';
@@ -61,8 +62,8 @@ export function ConnectionsPage() {
               <li key={c.id}>
                 <PlatformBadge platform={c.platform} />
                 <span className="connection-label">{c.label}</span>
-                <button type="button" className="link-button" onClick={() => void handleRemove(c.id)}>
-                  Remove
+                <button type="button" className="link-button icon-btn" onClick={() => void handleRemove(c.id)}>
+                  <Trash2 size={14} /> Remove
                 </button>
               </li>
             ))}
@@ -107,8 +108,8 @@ export function ConnectionsPage() {
           />
 
           {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={busy || !ingestServerUrl.trim() || !streamKey.trim()}>
-            {busy ? 'Connecting…' : 'Connect'}
+          <button type="submit" className="icon-btn" disabled={busy || !ingestServerUrl.trim() || !streamKey.trim()}>
+            <Plug size={16} /> {busy ? 'Connecting…' : 'Connect'}
           </button>
         </form>
       </section>

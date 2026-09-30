@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { StreamListItem as StreamListItemType } from '../types/api';
 import { PlatformBadge } from './PlatformBadge';
 
@@ -10,7 +11,7 @@ const STATUS_LABELS: Record<StreamListItemType['status'], string> = {
 
 // A stream detail page doesn't exist yet -- a live/scheduled stream (the
 // only ones with anywhere useful to go) opens its studio page directly,
-// same as CreateStreamPage's post-create redirect.
+// same as CreateStreamPage's post-create navigation.
 export function StreamListItem({ stream }: { stream: StreamListItemType }) {
   const date = stream.startedAt ?? stream.scheduledAt ?? stream.createdAt;
   const canOpenStudio = stream.status === 'live' || stream.status === 'scheduled';
@@ -38,11 +39,11 @@ export function StreamListItem({ stream }: { stream: StreamListItemType }) {
   }
 
   return (
-    <a
-      href={`/studio/host.html?streamId=${stream.id}`}
+    <Link
+      to={`/streams/${stream.id}/studio`}
       className={`stream-list-item status-${stream.status}`}
     >
       {content}
-    </a>
+    </Link>
   );
 }

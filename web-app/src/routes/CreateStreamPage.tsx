@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
 import { createStream } from '../api/streams';
 import { PlatformBadge } from '../components/PlatformBadge';
@@ -8,6 +9,7 @@ import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 
 export function CreateStreamPage() {
+  const navigate = useNavigate();
   const [connections, setConnections] = useState<PlatformConnection[] | null>(null);
   const [title, setTitle] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -41,10 +43,7 @@ export function CreateStreamPage() {
         title: title.trim() || 'Untitled stream',
         destinationConnectionIds: [...selected],
       });
-      // The studio compositor is a separate static app (web/host.html),
-      // reached by a full page navigation -- not (yet) ported into this
-      // SPA. See the implementation plan's "Studio Reachability" section.
-      window.location.href = `/studio/host.html?streamId=${stream.id}`;
+      navigate(`/streams/${stream.id}/studio`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create stream.');
       setBusy(false);
@@ -95,8 +94,8 @@ export function CreateStreamPage() {
         )}
 
         {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? 'Creating…' : 'Create and open studio'}
+        <button type="submit" className="icon-btn" disabled={busy}>
+          <Radio size={16} /> {busy ? 'Creating…' : 'Create and open studio'}
         </button>
       </form>
     </div>

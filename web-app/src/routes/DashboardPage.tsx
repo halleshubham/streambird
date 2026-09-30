@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Radio } from 'lucide-react';
 import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
@@ -48,7 +49,7 @@ export function DashboardPage() {
             if (!hasConnections) e.preventDefault();
           }}
         >
-          Go live
+          <Radio size={16} /> Go live
         </Link>
       </div>
 

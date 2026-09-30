@@ -85,7 +85,7 @@ describe('StudioSessionsService', () => {
     const result = await service.createInvite('s1', 'acc_1', { label: 'Co-host' });
 
     expect(result.token).toHaveLength(32); // 24 random bytes, base64url
-    expect(result.joinUrl).toBe(`http://localhost:3000/studio/guest.html?token=${result.token}`);
+    expect(result.joinUrl).toBe(`http://localhost:3000/join/${result.token}`);
   });
 
   it('createInvite rejects a session not owned by the requesting account', async () => {

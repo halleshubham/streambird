@@ -76,7 +76,7 @@ export class StudioSessionsService {
     await this.invites.save(invite);
 
     const baseUrl = this.config.get<string>('publicBaseUrl');
-    const joinUrl = `${baseUrl}/studio/guest.html?token=${token}`;
+    const joinUrl = `${baseUrl}/join/${token}`;
 
     return { token, joinUrl, expiresAt };
   }
