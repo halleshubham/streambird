@@ -22,6 +22,11 @@ services:
       # the config to keeps the real content (incl. the API password) out
       # of git, same as before.
       - /data/coolify/applications/ke9ra2k9ovcjancgamo3bdfv/mediamtx.yml:/mediamtx.yml:ro
+      # The mediamtx image's minimal base has no CA trust store, so its own
+      # outbound RTMPS forward to Cloudflare failed on every attempt with
+      # "x509: certificate signed by unknown authority" -- mount the host's
+      # own (real, current) CA bundle at the path Go's TLS stack checks.
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     networks:
       - coolify
     labels:
