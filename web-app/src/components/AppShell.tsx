@@ -1,4 +1,4 @@
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, NavLink } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,9 +13,17 @@ export function AppShell() {
           StreamBird
         </Link>
         <nav>
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/connections">Connections</Link>
-          {user?.role === 'company_admin' && <Link to="/team">Team</Link>}
+          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Dashboard
+          </NavLink>
+          <NavLink to="/connections" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Connections
+          </NavLink>
+          {user?.role === 'company_admin' && (
+            <NavLink to="/team" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+              Team
+            </NavLink>
+          )}
         </nav>
         <div className="app-header-right">
           {user && <span className="user-email">{user.email}</span>}

@@ -1,4 +1,4 @@
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -14,15 +14,28 @@ export function AdminShell() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <span className="brand">StreamBird Admin</span>
+    <div className="app-shell admin-shell">
+      <header className="app-header admin-header">
+        <Link to="/admin" className="brand">
+          <img src="/logo.png" alt="" className="brand-logo" />
+          StreamBird <span className="admin-badge">ADMIN</span>
+        </Link>
         <nav>
-          <Link to="/admin">Approvals</Link>
-          <Link to="/admin/accounts">Companies</Link>
-          <Link to="/admin/users">Users</Link>
-          <Link to="/admin/analytics">Analytics</Link>
-          <Link to="/admin/audit-log">Audit log</Link>
+          <NavLink to="/admin" end className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Approvals
+          </NavLink>
+          <NavLink to="/admin/accounts" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Companies
+          </NavLink>
+          <NavLink to="/admin/users" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Users
+          </NavLink>
+          <NavLink to="/admin/analytics" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Analytics
+          </NavLink>
+          <NavLink to="/admin/audit-log" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Audit log
+          </NavLink>
         </nav>
         <div className="app-header-right">
           {user && <span className="user-email">{user.email}</span>}

@@ -104,40 +104,36 @@ export function HostStudioPage() {
       </div>
 
       <div className="panel">
-        <div className="studio-toolbar">
-          <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
-            <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
-          >
-            <Copy size={16} /> Create guest invite
-          </button>
-          <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
-            {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
-          >
-            {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
-          </button>
-          <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.goLive()} disabled={!stream.whipUrl || isLive}>
-            <Radio size={16} /> {isLive ? 'Live' : 'Go live'}
-          </button>
-          <button
-            type="button"
-            className="icon-btn icon-btn--danger"
-            onClick={() => {
-              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
-            }}
-            disabled={ending}
-          >
-            <PhoneOff size={16} /> End stream
-          </button>
+        <div className="studio-toolbar-group">
+          <span className="studio-toolbar-group-label">Setup</span>
+          <div className="studio-toolbar">
+            <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
+              <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
+            >
+              <Copy size={16} /> Create guest invite
+            </button>
+          </div>
+        </div>
+
+        <div className="studio-toolbar-group">
+          <span className="studio-toolbar-group-label">Live controls</span>
+          <div className="studio-toolbar">
+            <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
+              {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
+            >
+              {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
+            </button>
+          </div>
         </div>
 
         <div className="studio-invite-controls">
@@ -159,9 +155,34 @@ export function HostStudioPage() {
           )}
         </div>
 
-        {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}
-        {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
+        <div className="studio-golive-row">
+          <button
+            type="button"
+            className={`go-live-button${isLive ? ' go-live-button--live' : ''}`}
+            onClick={() => void actions.goLive()}
+            disabled={!stream.whipUrl || isLive}
+          >
+            <Radio size={20} /> {isLive ? 'Live' : 'Go live'}
+          </button>
+          <button
+            type="button"
+            className="icon-btn icon-btn--small icon-btn--danger"
+            onClick={() => {
+              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
+            }}
+            disabled={ending}
+          >
+            <PhoneOff size={14} /> End stream
+          </button>
+        </div>
       </div>
+
+      {(status || inviteMessage) && (
+        <div className="studio-status-toast">
+          {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}
+          {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
+        </div>
+      )}
 
       {destinations.length > 0 && (
         <div className="panel">
@@ -209,9 +230,12 @@ export function HostStudioPage() {
         <div className="participant-list">
           {participants.map((p) => (
             <div key={p.id} className="participant-row">
-              <span>{p.displayName}</span>
+              <span className="participant-row-name">{p.displayName}</span>
               {!p.isScreenShare && (
                 <>
+                  <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
+                  {p.pinned && <span className="badge badge-accent">Pinned</span>}
+                  {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
                   <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
                     {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
                     {p.audioEnabled === false ? 'Unmute' : 'Mute'}
@@ -264,10 +288,10 @@ export function HostStudioPage() {
         </label>
         <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
 
-        <label htmlFor="logoSizeInput">Logo size (px height)</label>
+        <label htmlFor="logoSizeInput">Logo size: {branding.logoSize}px</label>
         <input
           id="logoSizeInput"
-          type="number"
+          type="range"
           min={16}
           max={240}
           value={branding.logoSize}
@@ -283,10 +307,10 @@ export function HostStudioPage() {
           onChange={(e) => actions.setNewsText(e.target.value)}
         />
 
-        <label htmlFor="nameFontSizeInput">Name label size (px)</label>
+        <label htmlFor="nameFontSizeInput">Name label size: {branding.nameFontSize}px</label>
         <input
           id="nameFontSizeInput"
-          type="number"
+          type="range"
           min={8}
           max={48}
           value={branding.nameFontSize}

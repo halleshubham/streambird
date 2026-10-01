@@ -133,6 +133,13 @@ textarea {
   color: var(--text);
 }
 
+input[type="range"] {
+  padding: 0;
+  border: none;
+  background: none;
+  margin-bottom: 16px;
+}
+
 /* ---- Auth pages ---- */
 
 .auth-page {
@@ -435,6 +442,18 @@ textarea {
 .app-header nav a {
   color: var(--text);
   text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+}
+
+.app-header nav a:hover {
+  color: var(--text-h);
+}
+
+.app-header nav a.active {
+  color: var(--text-h);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
 }
 
 .app-header-right {
@@ -449,6 +468,28 @@ textarea {
 
 .user-email {
   font-size: 14px;
+}
+
+/* Visually distinct from the customer app's header -- a superadmin here
+   can suspend accounts/users and permanently delete pending signups, so
+   it should never be mistakable for the regular app at a glance. */
+.admin-header {
+  border-bottom: 3px solid var(--warning);
+}
+
+.admin-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--warning);
+  color: #1a1203;
+  padding: 2px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.admin-header nav a.active {
+  border-bottom-color: var(--warning);
 }
 
 .app-main {
@@ -832,6 +873,83 @@ a.icon-btn--danger {
   margin-top: 12px;
 }
 
+.studio-toolbar-group {
+  margin-bottom: 4px;
+}
+
+.studio-toolbar-group-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* Go Live is the single most consequential control on this page --
+   visually isolated and sized up so it never reads as just another
+   button in the toolbar, with End Stream pushed well away from it
+   (same row, opposite end) rather than sitting immediately adjacent at
+   the same size, where a misclick risk is highest. */
+.studio-golive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.go-live-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 32px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.go-live-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.go-live-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.go-live-button--live {
+  background: var(--error);
+}
+
+.studio-status-toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+}
+
+.studio-status-toast p {
+  margin: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+}
+
 .studio-section-label {
   display: flex;
   align-items: center;
@@ -863,10 +981,19 @@ a.icon-btn--danger {
   padding: 6px 10px;
 }
 
-.participant-row span {
+.participant-row-name {
   flex: 1;
   font-size: 13px;
   color: var(--text-h);
+}
+
+.participant-row-muted-icon {
+  color: var(--error);
+}
+
+.badge-accent {
+  background: var(--accent);
+  color: #fff;
 }
 
 .monitor-video-grid {
