@@ -36,6 +36,16 @@ export interface PendingCompanyAdmin {
   createdAt: string;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  actorUserId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export interface Account {
   id: string;
   name: string;

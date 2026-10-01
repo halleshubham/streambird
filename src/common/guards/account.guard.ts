@@ -44,6 +44,12 @@ export class AccountGuard implements CanActivate {
       if (!account) {
         throw new UnauthorizedException('Invalid API key');
       }
+      // Suspension must block the API-key path too -- otherwise it's a
+      // trivial bypass of a session-cookie suspension check (just switch
+      // to the API key instead).
+      if (account.suspendedAt) {
+        throw new ForbiddenException('This account has been suspended.');
+      }
       request.account = account;
       return true;
     }
@@ -75,6 +81,22 @@ export class AccountGuard implements CanActivate {
       throw new ForbiddenException(
         'Your company account is pending Superadmin approval.',
       );
+    }
+
+    // Suspension gate: a superadmin's abuse-handling lever (see
+    // SuperadminController's account/user suspend-reactivate routes), at
+    // two independent granularities. Checked for every role including
+    // SUPERADMIN itself -- there's no legitimate reason a Superadmin
+    // would ever be suspended, but if one somehow were, the gate should
+    // still hold rather than carve out a silent exception. The account
+    // check is deliberately evaluated whether or not the suspended
+    // account is the *acting* user's own -- a suspended company blocks
+    // all of its users, full stop.
+    if (resolved.account.suspendedAt) {
+      throw new ForbiddenException('This account has been suspended.');
+    }
+    if (resolved.user.suspendedAt) {
+      throw new ForbiddenException('Your user account has been suspended.');
     }
 
     // CSRF: a cookie rides along on any cross-site request automatically,

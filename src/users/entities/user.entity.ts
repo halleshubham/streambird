@@ -58,6 +58,13 @@ export class User {
   @Column({ type: 'text', nullable: true })
   displayName!: string | null;
 
+  // Null = active. Suspending a User blocks just that one person on every
+  // AccountGuard-protected route (see AccountGuard) without touching
+  // anyone else on their Account -- distinct from suspending the whole
+  // Account (see Account.suspendedAt).
+  @Column({ type: 'timestamptz', nullable: true })
+  suspendedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

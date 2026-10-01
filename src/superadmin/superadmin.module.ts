@@ -6,9 +6,16 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { CommonModule } from '../common/common.module';
 import { SuperadminSeedService } from './superadmin-seed.service';
 import { SuperadminController } from './superadmin.controller';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), UsersModule, AccountsModule, CommonModule],
+  imports: [
+    TypeOrmModule.forFeature([User]),
+    UsersModule,
+    AccountsModule,
+    CommonModule,
+    AuditLogModule,
+  ],
   controllers: [SuperadminController],
   providers: [SuperadminSeedService],
 })

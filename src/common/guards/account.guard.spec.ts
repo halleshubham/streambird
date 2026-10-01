@@ -122,6 +122,32 @@ describe('AccountGuard', () => {
     expect(authService.resolveSession).not.toHaveBeenCalled();
   });
 
+  it('rejects every user on a suspended Account with a 403, regardless of role', async () => {
+    const account = { id: 'acc_1', suspendedAt: new Date() };
+    const normalUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
+    const { guard } = buildGuard({ resolvedUser: normalUser });
+    const { context } = buildContext({ cookieToken: 'tok', method: 'GET' });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects a suspended User even on an otherwise-active Account', async () => {
+    const account = { id: 'acc_1' };
+    const suspendedUser = { id: 'u2', role: Role.USER, approvedAt: null, suspendedAt: new Date(), account };
+    const { guard } = buildGuard({ resolvedUser: suspendedUser });
+    const { context } = buildContext({ cookieToken: 'tok', method: 'GET' });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects the x-api-key path too for a suspended Account -- suspension cannot be bypassed by switching auth methods', async () => {
+    const account = { id: 'acc_1', suspendedAt: new Date() };
+    const { guard } = buildGuard({ account });
+    const { context } = buildContext({ apiKey: 'sb_some_key', method: 'GET' });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('still enforces the pre-existing CSRF origin check on mutating cookie-path requests, unchanged by the approval gate', async () => {
     const account = { id: 'acc_1' };
     const normalUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
