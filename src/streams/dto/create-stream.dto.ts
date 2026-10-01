@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsISO8601,
   IsOptional,
   IsString,
@@ -23,6 +24,11 @@ export class CreateStreamDto {
   @IsOptional()
   @IsISO8601()
   scheduledAt?: string;
+
+  /** Only meaningful to providers that support it (YouTube) -- see BroadcastMeta. */
+  @IsOptional()
+  @IsIn(['public', 'unlisted', 'private'])
+  visibility?: 'public' | 'unlisted' | 'private';
 
   @IsArray()
   @ArrayMinSize(1)

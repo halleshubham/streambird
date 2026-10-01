@@ -105,6 +105,7 @@ export interface Destination {
   platformConnectionId: string;
   status: DestinationStatus;
   viewerCount: number | null;
+  watchUrl: string | null;
   errorMessage: string | null;
 }
 
@@ -115,8 +116,27 @@ export interface Stream {
   ingestUrl: string | null;
   streamKey: string | null;
   whipUrl: string | null;
+  visibility: 'public' | 'unlisted' | 'private' | null;
   studioSessionId?: string;
   destinations: Destination[];
+}
+
+/** GET /streams/:id/status's shape -- distinct from Stream/Destination above (which come from the plain create/get endpoints) because this one additionally carries each destination's real, freshly-polled platform status. */
+export interface StreamStatusDestination {
+  id: string;
+  platformConnectionId: string;
+  status: DestinationStatus;
+  /** The platform's OWN reported lifecycle status (e.g. YouTube's created/ready/testing/live/complete), when the provider supports reading it -- null otherwise. See StreamsService.getStatus server-side for why this can genuinely differ from `status` above. */
+  platformStatus: string | null;
+  viewerCount: number | null;
+  watchUrl: string | null;
+  errorMessage: string | null;
+}
+
+export interface StreamStatusResponse {
+  status: StreamStatus;
+  relayInputStatus: 'idle' | 'connected' | null;
+  destinations: StreamStatusDestination[];
 }
 
 export interface HostTokenResponse {

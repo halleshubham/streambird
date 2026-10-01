@@ -110,7 +110,9 @@ label {
   margin-bottom: 4px;
 }
 
-input {
+input,
+textarea,
+select {
   font: inherit;
   width: 100%;
   padding: 10px 12px;
@@ -119,6 +121,16 @@ input {
   background: var(--card-bg);
   color: var(--text-h);
   margin-bottom: 12px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.field-hint {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  color: var(--text);
 }
 
 /* ---- Auth pages ---- */
@@ -614,6 +626,34 @@ a.stream-list-item:hover {
 .stream-status {
   font-size: 12px;
   color: var(--text);
+}
+
+/* ---- Stream detail page ---- */
+
+.stream-detail-page .section-header h1 {
+  margin: 0;
+}
+
+.destination-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.destination-detail-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.destination-detail-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .stream-list-item-meta {

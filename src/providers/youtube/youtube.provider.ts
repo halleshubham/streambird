@@ -112,7 +112,7 @@ export class YouTubeProvider implements StreamProvider {
             // Unlisted by default -- a public StreamBird broadcast going
             // live on a connected channel without the caller choosing
             // that visibility would be a surprising default to ship.
-            privacyStatus: 'unlisted',
+            privacyStatus: meta.visibility ?? 'unlisted',
             selfDeclaredMadeForKids: false,
           },
           contentDetails: {
@@ -144,7 +144,33 @@ export class YouTubeProvider implements StreamProvider {
       ingestUrl: stream.cdn.ingestionInfo.ingestionAddress,
       streamKey: stream.cdn.ingestionInfo.streamName,
       platformBroadcastId: broadcast.id,
+      // The broadcast id doubles as the video id -- this is the one stable,
+      // always-correct way to construct the watch URL, true even before
+      // the broadcast actually starts receiving data.
+      watchUrl: `https://www.youtube.com/watch?v=${broadcast.id}`,
     };
+  }
+
+  /**
+   * YouTube's own lifecycle status for this broadcast -- 'created' | 'ready'
+   * | 'testing' | 'live' | 'complete' | 'revoked'. Critically, this is the
+   * only trustworthy way to know whether YouTube has actually started
+   * receiving real RTMP data: enableAutoStart (see createBroadcast) only
+   * flips YouTube's OWN status to 'live' once real data arrives -- it does
+   * NOT mean our own LiveStreamDestination.status=LIVE (set as soon as
+   * MediaMTX forwarding is configured, regardless of whether any data has
+   * actually flowed yet) is telling the truth about what's on-air.
+   */
+  async getBroadcastStatus(
+    conn: PlatformConnection,
+    platformBroadcastId: string,
+  ): Promise<string | null> {
+    const accessToken = await this.getValidAccessToken(conn);
+    const result = await this.callApi<{
+      items: Array<{ status?: { lifeCycleStatus?: string } }>;
+    }>(`/liveBroadcasts?part=status&id=${platformBroadcastId}`, accessToken);
+
+    return result.items[0]?.status?.lifeCycleStatus ?? null;
   }
 
   async endBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {

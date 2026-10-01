@@ -55,6 +55,7 @@ describe('YouTubeProvider', () => {
       ingestUrl: 'rtmp://a.rtmp.youtube.com/live2',
       streamKey: 'abcd-1234',
       platformBroadcastId: 'broadcast_1',
+      watchUrl: 'https://www.youtube.com/watch?v=broadcast_1',
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[0][0]).toContain('/liveBroadcasts?part=');
@@ -79,6 +80,32 @@ describe('YouTubeProvider', () => {
     });
     // The API calls themselves must use the freshly refreshed token, not the stale one.
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer new-token');
+  });
+
+  it('createBroadcast defaults to unlisted visibility when none is given', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'b1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 's1', cdn: { ingestionInfo: { ingestionAddress: 'rtmp://x', streamName: 'k' } } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'b1' }));
+
+    await provider.createBroadcast(conn, { title: 'Test stream' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.status.privacyStatus).toBe('unlisted');
+  });
+
+  it('createBroadcast passes through an explicit visibility choice', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'b1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 's1', cdn: { ingestionInfo: { ingestionAddress: 'rtmp://x', streamName: 'k' } } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'b1' }));
+
+    await provider.createBroadcast(conn, { title: 'Test stream', visibility: 'public' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.status.privacyStatus).toBe('public');
   });
 
   it('createBroadcast throws with a clear message when the YouTube API rejects the request', async () => {
@@ -123,5 +150,26 @@ describe('YouTubeProvider', () => {
 
     const count = await provider.getViewerCount!(conn, 'broadcast_1');
     expect(count).toBe(0);
+  });
+
+  it("getBroadcastStatus reads YouTube's real lifecycleStatus -- distinct from this app's own optimistic LIVE status", async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [{ status: { lifeCycleStatus: 'testing' } }] }));
+
+    const status = await provider.getBroadcastStatus(conn, 'broadcast_1');
+
+    expect(status).toBe('testing');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/liveBroadcasts?part=status&id=broadcast_1'),
+      expect.anything(),
+    );
+  });
+
+  it('getBroadcastStatus returns null when the broadcast no longer exists', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }));
+
+    const status = await provider.getBroadcastStatus(conn, 'broadcast_1');
+    expect(status).toBeNull();
   });
 });

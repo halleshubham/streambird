@@ -34,6 +34,7 @@ describe('TwitchProvider', () => {
       ingestUrl: fakeCreds.ingestServerUrl,
       streamKey: fakeCreds.streamKey,
       platformBroadcastId: conn.externalAccountId,
+      watchUrl: null,
     });
     expect(httpGet).not.toHaveBeenCalled();
   });

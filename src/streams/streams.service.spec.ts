@@ -62,6 +62,7 @@ function fakeProvider(identifier: Platform, behavior: 'succeed' | 'fail'): Strea
         ingestUrl: `rtmp://${identifier}/ingest`,
         streamKey: `${identifier}-key`,
         platformBroadcastId: `${identifier}-broadcast-1`,
+        watchUrl: `https://watch.example/${identifier}-broadcast-1`,
       };
     }),
     endBroadcast: jest.fn(async () => undefined),
@@ -212,5 +213,59 @@ describe('StreamsService', () => {
     // Guest invites no longer carry their own TTL -- ending the stream is
     // now the only thing that stops an outstanding invite link from working.
     expect(studioSessions.revokeInvitesForStream).toHaveBeenCalledWith(stream.id);
+  });
+
+  it('passes visibility through to the provider and persists both it and the returned watchUrl', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const { service, connectionRepo } = await build([youtube]);
+    const conn = makeConnection('c1', Platform.YOUTUBE);
+    connectionRepo.rows.set(conn.id, conn);
+
+    const stream = await service.create('acc_1', {
+      title: 'Visibility test',
+      destinationConnectionIds: ['c1'],
+      visibility: 'public',
+    });
+
+    expect(youtube.createBroadcast).toHaveBeenCalledWith(
+      conn,
+      expect.objectContaining({ visibility: 'public' }),
+    );
+    expect(stream.destinations[0].watchUrl).toBe('https://watch.example/youtube-broadcast-1');
+  });
+
+  it('getStatus surfaces the provider-reported platformStatus alongside the (possibly optimistic) internal status', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    (youtube as any).getBroadcastStatus = jest.fn(async () => 'testing');
+    const { service, connectionRepo } = await build([youtube]);
+    const conn = makeConnection('c1', Platform.YOUTUBE);
+    connectionRepo.rows.set(conn.id, conn);
+
+    const stream = await service.create('acc_1', {
+      title: 'Status test',
+      destinationConnectionIds: ['c1'],
+    });
+
+    const status = await service.getStatus(stream.id, 'acc_1');
+
+    expect(status.destinations[0].status).toBe(DestinationStatus.LIVE);
+    expect(status.destinations[0].platformStatus).toBe('testing');
+    expect(status.destinations[0].watchUrl).toBe('https://watch.example/youtube-broadcast-1');
+  });
+
+  it("getStatus leaves platformStatus null when the provider doesn't support reading it (e.g. Twitch)", async () => {
+    const twitch = fakeProvider(Platform.TWITCH, 'succeed');
+    const { service, connectionRepo } = await build([twitch]);
+    const conn = makeConnection('c1', Platform.TWITCH);
+    connectionRepo.rows.set(conn.id, conn);
+
+    const stream = await service.create('acc_1', {
+      title: 'No platform status test',
+      destinationConnectionIds: ['c1'],
+    });
+
+    const status = await service.getStatus(stream.id, 'acc_1');
+
+    expect(status.destinations[0].platformStatus).toBeNull();
   });
 });

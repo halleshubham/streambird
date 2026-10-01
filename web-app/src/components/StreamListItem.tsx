@@ -9,12 +9,12 @@ const STATUS_LABELS: Record<StreamListItemType['status'], string> = {
   failed: 'Failed',
 };
 
-// A stream detail page doesn't exist yet -- a live/scheduled stream (the
-// only ones with anywhere useful to go) opens its studio page directly,
-// same as CreateStreamPage's post-create navigation.
+// Every stream links to its detail page (destinations, real platform
+// status, watch URLs) -- that page itself offers an "Open studio" button
+// when the stream is live/scheduled, rather than this list item having two
+// different link targets depending on status.
 export function StreamListItem({ stream }: { stream: StreamListItemType }) {
   const date = stream.startedAt ?? stream.scheduledAt ?? stream.createdAt;
-  const canOpenStudio = stream.status === 'live' || stream.status === 'scheduled';
 
   const content = (
     <>
@@ -34,15 +34,8 @@ export function StreamListItem({ stream }: { stream: StreamListItemType }) {
     </>
   );
 
-  if (!canOpenStudio) {
-    return <div className={`stream-list-item status-${stream.status}`}>{content}</div>;
-  }
-
   return (
-    <Link
-      to={`/streams/${stream.id}/studio`}
-      className={`stream-list-item status-${stream.status}`}
-    >
+    <Link to={`/streams/${stream.id}`} className={`stream-list-item status-${stream.status}`}>
       {content}
     </Link>
   );

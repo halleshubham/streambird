@@ -61,6 +61,7 @@ export class StreamsService {
       title: dto.title,
       description: dto.description ?? null,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+      visibility: dto.visibility ?? null,
       status: StreamStatus.SCHEDULED,
     });
     await this.liveStreams.save(stream);
@@ -81,6 +82,7 @@ export class StreamsService {
           title: dto.title,
           description: dto.description,
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+          visibility: dto.visibility,
         });
         return { conn, result };
       }),
@@ -100,6 +102,7 @@ export class StreamsService {
             platformBroadcastId: outcome.value.result.platformBroadcastId,
             ingestUrl: outcome.value.result.ingestUrl,
             streamKey: outcome.value.result.streamKey,
+            watchUrl: outcome.value.result.watchUrl,
             status: DestinationStatus.READY,
           }),
         );
@@ -203,8 +206,14 @@ export class StreamsService {
   async getStatus(id: string, accountId: string) {
     const stream = await this.findByIdOrThrow(id, accountId);
 
-    // Best-effort viewer-count refresh: a failed read never flips stored
-    // status, it just leaves viewerCount as last known.
+    // Best-effort viewer-count + real-platform-status refresh: a failed read
+    // never flips stored status, it just leaves the last known values. The
+    // platform status (platformStatus below) is fetched fresh every call,
+    // not persisted -- it's the ground truth for "is this destination
+    // actually receiving data and airing," which our own `status` column
+    // (LIVE as soon as forwarding is configured, regardless of whether the
+    // platform has seen a single byte yet) deliberately does not track.
+    const platformStatuses = new Map<string, string | null>();
     await Promise.allSettled(
       stream.destinations
         .filter((d) => d.status === DestinationStatus.LIVE)
@@ -213,10 +222,16 @@ export class StreamsService {
             where: { id: d.platformConnectionId },
           });
           const provider = this.resolveProvider(conn);
-          if (!provider.getViewerCount || !d.platformBroadcastId) return;
-          const count = await provider.getViewerCount(conn, d.platformBroadcastId);
-          d.viewerCount = count;
-          await this.destinations.save(d);
+          if (!d.platformBroadcastId) return;
+
+          if (provider.getViewerCount) {
+            const count = await provider.getViewerCount(conn, d.platformBroadcastId);
+            d.viewerCount = count;
+            await this.destinations.save(d);
+          }
+          if (provider.getBroadcastStatus) {
+            platformStatuses.set(d.id, await provider.getBroadcastStatus(conn, d.platformBroadcastId));
+          }
         }),
     );
 
@@ -241,7 +256,13 @@ export class StreamsService {
         id: d.id,
         platformConnectionId: d.platformConnectionId,
         status: d.status,
+        // Real platform-reported lifecycle status (e.g. YouTube's created/
+        // ready/testing/live/complete) when the provider supports reading
+        // it, so "StreamBird says LIVE" and "YouTube says testing/no data
+        // yet" are both visible instead of only the former.
+        platformStatus: platformStatuses.get(d.id) ?? null,
         viewerCount: d.viewerCount,
+        watchUrl: d.watchUrl,
         errorMessage: d.errorMessage,
       })),
     };
@@ -264,10 +285,12 @@ export class StreamsService {
         title: stream.title,
         description: stream.description ?? undefined,
         scheduledAt: stream.scheduledAt ?? undefined,
+        visibility: (stream.visibility as 'public' | 'unlisted' | 'private' | null) ?? undefined,
       });
       destination.platformBroadcastId = result.platformBroadcastId;
       destination.ingestUrl = result.ingestUrl;
       destination.streamKey = result.streamKey;
+      destination.watchUrl = result.watchUrl;
       destination.errorMessage = null;
       destination.retryCount += 1;
       destination.status = DestinationStatus.LIVE;

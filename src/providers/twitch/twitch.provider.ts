@@ -41,6 +41,13 @@ export class TwitchProvider implements StreamProvider {
       streamKey: creds.streamKey,
       // Twitch has no broadcast object; the channel id is the stable handle.
       platformBroadcastId: conn.externalAccountId,
+      // conn.externalAccountId is Twitch's numeric user id, not the channel's
+      // login name a twitch.tv/<login> URL needs -- the manual-connect flow
+      // (CreateManualTwitchConnectionDto) never captures that, and there's no
+      // OAuth token here to resolve it via Helix either (see TwitchCredentials
+      // -- accessToken/refreshToken are blank for a manual connection). No
+      // reliable watch URL to produce until that connect flow changes.
+      watchUrl: null,
     };
   }
 

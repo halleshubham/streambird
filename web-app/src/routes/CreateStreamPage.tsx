@@ -12,6 +12,8 @@ export function CreateStreamPage() {
   const navigate = useNavigate();
   const [connections, setConnections] = useState<PlatformConnection[] | null>(null);
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'private'>('unlisted');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +43,8 @@ export function CreateStreamPage() {
     try {
       const stream = await createStream({
         title: title.trim() || 'Untitled stream',
+        description: description.trim() || undefined,
+        visibility,
         destinationConnectionIds: [...selected],
       });
       navigate(`/streams/${stream.id}/studio`);
@@ -73,6 +77,27 @@ export function CreateStreamPage() {
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Untitled stream"
         />
+
+        <label htmlFor="description">Description</label>
+        <textarea
+          id="description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="What's this stream about?"
+          rows={3}
+        />
+
+        <label htmlFor="visibility">Visibility</label>
+        <select
+          id="visibility"
+          value={visibility}
+          onChange={(e) => setVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
+        >
+          <option value="public">Public</option>
+          <option value="unlisted">Unlisted</option>
+          <option value="private">Private</option>
+        </select>
+        <p className="field-hint">Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.</p>
 
         <label>Destinations</label>
         {!connections ? (

@@ -11,5 +11,6 @@ export class DestinationResponseDto {
   @Expose() platformConnectionId!: string;
   @Expose() status!: DestinationStatus;
   @Expose() viewerCount!: number | null;
+  @Expose() watchUrl!: string | null;
   @Expose() errorMessage!: string | null;
 }

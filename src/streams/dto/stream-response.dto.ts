@@ -11,6 +11,7 @@ export class StreamResponseDto {
   @Expose() ingestUrl!: string | null;
   @Expose() streamKey!: string | null;
   @Expose() whipUrl!: string | null;
+  @Expose() visibility!: string | null;
   @Expose() studioSessionId?: string;
 
   @Expose()

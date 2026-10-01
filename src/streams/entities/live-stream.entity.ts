@@ -26,6 +26,10 @@ export class LiveStream {
   @Column({ type: 'timestamptz', nullable: true })
   scheduledAt!: Date | null;
 
+  /** 'public' | 'unlisted' | 'private' -- only meaningful to providers that support it (YouTube); others ignore it, same as scheduledAt. Null = provider default (YouTubeProvider defaults to 'unlisted'). Persisted here (not just passed through BroadcastMeta at create time) so retryDestination() can resend the same choice. */
+  @Column({ type: 'text', nullable: true })
+  visibility!: string | null;
+
   @Column({ type: 'enum', enum: StreamStatus, default: StreamStatus.SCHEDULED })
   status!: StreamStatus;
 

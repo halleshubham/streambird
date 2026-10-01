@@ -40,6 +40,10 @@ export class LiveStreamDestination {
   @Column({ type: 'text', nullable: true })
   streamKey!: string | null;
 
+  /** Public URL to actually watch this destination's broadcast, e.g. https://youtube.com/watch?v=... -- null when the provider can't produce one (e.g. TwitchProvider, which has no stable channel login name to build a URL from -- see its createBroadcast). */
+  @Column({ type: 'text', nullable: true })
+  watchUrl!: string | null;
+
   @Column({ type: 'enum', enum: DestinationStatus, default: DestinationStatus.PENDING })
   status!: DestinationStatus;
 
