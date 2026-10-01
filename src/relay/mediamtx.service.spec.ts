@@ -34,6 +34,12 @@ describe('MediaMtxService', () => {
     expect(body.source).toBe('publisher');
     expect(body.runOnReadyRestart).toBe(true);
     expect(body.runOnReady).toContain('-rtsp_transport tcp');
+    // Without an explicit probe budget, ffmpeg can start reading before the
+    // first H264 keyframe (carrying SPS/PPS, i.e. the frame dimensions) has
+    // arrived and give up with "Could not find codec parameters... unspecified
+    // size" -- confirmed live (2026-10-01), writing nothing to any destination
+    // for that attempt. See the class's buildRunOnReady docstring.
+    expect(body.runOnReady).toContain('-analyzeduration 10M -probesize 10M');
     expect(body.runOnReady).toContain('-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"');
     expect(body.runOnReady).toContain('-map 0:v:0 -map 0:a:0');
     expect(body.runOnReady).toContain('-c:v copy -c:a aac');

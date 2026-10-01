@@ -870,7 +870,7 @@ export function useHostStudio(streamId: string | undefined) {
 
   const goLive = useCallback(async () => {
     if (!stream?.whipUrl) {
-      setStatus({ text: "This stream has no WHIP URL — see the plan's empirical Cloudflare spike.", isError: true });
+      setStatus({ text: 'This stream has no publish URL yet.', isError: true });
       return;
     }
     setStatus({ text: 'Starting publish…', isError: false });
@@ -884,9 +884,11 @@ export function useHostStudio(streamId: string | undefined) {
       const videoTransceiver = whipPc.addTransceiver(videoTrack, { direction: 'sendonly' });
       if (audioTrack) whipPc.addTransceiver(audioTrack, { direction: 'sendonly' });
 
-      // Cloudflare's WHIP ingest accepts VP8 at the SDP/ICE/transport level
-      // but its live-transcode pipeline only processes H264 -- force it
-      // first, keep the rest as a fallback.
+      // Force H264 first (keep the rest as a fallback) for the broadest
+      // compatibility with whatever's actually transcoding downstream of
+      // our own WHIP endpoint (MediaMTX) -- not all RTMP destinations'
+      // transcode pipelines handle VP8 even when the WHIP leg itself
+      // accepts it at the SDP/ICE/transport level.
       if (typeof RTCRtpSender.getCapabilities === 'function') {
         const codecs = RTCRtpSender.getCapabilities('video')?.codecs ?? [];
         const h264 = codecs.filter((c) => c.mimeType.toLowerCase() === 'video/h264');
@@ -905,8 +907,8 @@ export function useHostStudio(streamId: string | undefined) {
       });
       if (!res.ok) throw new Error(`WHIP publish failed (${res.status})`);
 
-      // Cloudflare's WHIP Location header is relative -- resolve it against
-      // the WHIP endpoint's own origin, not this page's.
+      // The WHIP Location header can be relative -- resolve it against the
+      // WHIP endpoint's own origin (MediaMTX), not this page's.
       const location = res.headers.get('Location');
       whipResourceUrlRef.current = location ? new URL(location, stream.whipUrl).toString() : null;
       const answerSdp = await res.text();
@@ -916,7 +918,7 @@ export function useHostStudio(streamId: string | undefined) {
       // destinations need one roughly every ~2s to recognize the stream at
       // all. Two different APIs exist across browser versions -- try both.
       const sender = videoTransceiver.sender;
-      keyFrameIntervalRef.current = setInterval(() => {
+      const forceKeyFrame = () => {
         const s = sender as RTCRtpSender & { generateKeyFrame?: () => Promise<void> };
         if (typeof s.generateKeyFrame === 'function') {
           s.generateKeyFrame().catch(() => {});
@@ -926,10 +928,18 @@ export function useHostStudio(streamId: string | undefined) {
         if (params.encodings && params.encodings.length > 0) {
           sender.setParameters(params).catch(() => {});
         }
-      }, 2000);
+      };
+      // Fire one immediately rather than waiting for the first interval tick
+      // -- MediaMTX's runOnReady ffmpeg pull starts probing the RTSP stream
+      // as soon as the path goes online, and without an early keyframe
+      // (carrying H264's SPS/PPS) it can give up probing before one ever
+      // arrives, silently dropping every destination for that attempt
+      // (confirmed live 2026-10-01 -- see MediaMtxService.buildRunOnReady).
+      forceKeyFrame();
+      keyFrameIntervalRef.current = setInterval(forceKeyFrame, 2000);
 
       setIsLive(true);
-      setStatus({ text: 'LIVE — publishing to Cloudflare.', isError: false });
+      setStatus({ text: 'LIVE — publishing.', isError: false });
     } catch (err) {
       setStatus({ text: `Failed to go live: ${(err as Error).message}`, isError: true });
     }

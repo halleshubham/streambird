@@ -104,6 +104,16 @@ export class MediaMtxService {
       // non-monotonic DTS -- corrupt enough that Twitch's player couldn't
       // decode it. TCP retransmits; on loopback the overhead is negligible.
       '-rtsp_transport tcp',
+      // Confirmed live (2026-10-01): without an explicit probe budget,
+      // ffmpeg sometimes starts reading the RTSP pull before the first
+      // keyframe (carrying H264's SPS/PPS, which is what tells ffmpeg the
+      // frame dimensions) has arrived, gives up with "Could not find codec
+      // parameters... unspecified size", and the tee output writes nothing
+      // at all to ANY destination for that attempt -- probabilistic,
+      // depending on exactly how the probe window lines up against when
+      // the browser's first keyframe actually lands (see goLive()'s
+      // immediate generateKeyFrame() call, added for the same reason).
+      '-analyzeduration 10M -probesize 10M',
       '-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"',
       // The tee muxer needs explicit maps -- without them it fails with
       // "Output file does not contain any stream" as soon as there's more
