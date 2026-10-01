@@ -14,6 +14,7 @@ import { AdminShell } from './components/AdminShell';
 import { AdminLoginPage } from './routes/admin/AdminLoginPage';
 import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
 import { AdminAuditLogPage } from './routes/admin/AdminAuditLogPage';
+import { AdminAnalyticsPage } from './routes/admin/AdminAnalyticsPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -42,6 +43,7 @@ export function App() {
       <Route element={<SuperadminRoute />}>
         <Route element={<AdminShell />}>
           <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
           <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
         </Route>
       </Route>

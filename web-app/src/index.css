@@ -7,6 +7,7 @@
   --accent: #7c3aed;
   --accent-hover: #6d28d9;
   --error: #dc2626;
+  --warning: #d97706;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -31,6 +32,7 @@
     --accent: #a78bfa;
     --accent-hover: #c4b5fd;
     --error: #f87171;
+    --warning: #fbbf24;
   }
 }
 
@@ -276,6 +278,87 @@ input {
 .danger-button:hover:not(:disabled) {
   background: var(--error);
   color: #fff;
+}
+
+.badge-warning {
+  background: var(--warning);
+  color: #1a1203;
+}
+
+.badge-danger {
+  background: var(--error);
+  color: #fff;
+}
+
+/* ---- Superadmin analytics ---- */
+
+.stat-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.stat-card {
+  flex: 1;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.stat-card-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.usage-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usage-alert-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  padding: 12px 16px;
+}
+
+.usage-alert-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.usage-alert-account {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.usage-alert-tier {
+  font-weight: 400;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.usage-meter-fill--warning {
+  background: var(--warning);
+}
+
+.usage-meter-fill--danger {
+  background: var(--error);
 }
 
 /* ---- App shell ---- */

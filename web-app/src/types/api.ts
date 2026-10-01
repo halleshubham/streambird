@@ -55,6 +55,31 @@ export interface Account {
   billingPeriodStart: string | null;
 }
 
+export interface AccountUsageRanking {
+  accountId: string;
+  accountName: string;
+  currentTier: PlanTier;
+  streamHourUsageCurrentPeriod: string;
+  includedHoursPerMonth: string;
+}
+
+export interface AnalyticsOverview {
+  streamsToday: number;
+  streamsThisWeek: number;
+  currentlyLive: number;
+  /** Fraction 0-1 (not a percentage) of recent LiveStreamDestination rows
+   * that ended up failed -- see SuperadminAnalyticsService server-side. */
+  destinationFailureRate: number;
+  topAccountsByUsage: AccountUsageRanking[];
+}
+
+export type UsageAlertBucket = 'near_limit' | 'over_limit';
+
+export interface UsageAlert extends AccountUsageRanking {
+  bucket: UsageAlertBucket;
+  ratio: number;
+}
+
 export interface PlatformConnection {
   id: string;
   platform: Platform;

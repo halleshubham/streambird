@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { AuditLogEntry, PendingCompanyAdmin } from '../types/api';
+import type { AnalyticsOverview, AuditLogEntry, PendingCompanyAdmin, UsageAlert } from '../types/api';
 
 export function listPendingCompanyAdmins(): Promise<PendingCompanyAdmin[]> {
   return api.get('/superadmin/pending-company-admins');
@@ -15,4 +15,12 @@ export function rejectCompanyAdmin(userId: string): Promise<void> {
 
 export function listAuditLog(limit = 50, offset = 0): Promise<AuditLogEntry[]> {
   return api.get(`/superadmin/audit-log?limit=${limit}&offset=${offset}`);
+}
+
+export function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+  return api.get('/superadmin/analytics/overview');
+}
+
+export function listUsageAlerts(): Promise<UsageAlert[]> {
+  return api.get('/superadmin/analytics/usage-alerts');
 }
