@@ -50,7 +50,8 @@ export function AdminAnalyticsPage() {
         {overview.topAccountsByUsage.length === 0 ? (
           <p className="empty-state">No accounts yet.</p>
         ) : (
-          <table className="data-table">
+          <div className="table-scroll">
+            <table className="data-table">
             <thead>
               <tr>
                 <th>Company</th>
@@ -70,6 +71,7 @@ export function AdminAnalyticsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

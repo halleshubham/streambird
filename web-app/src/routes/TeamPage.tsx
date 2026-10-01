@@ -29,6 +29,11 @@ export function TeamPage() {
   }
 
   useEffect(() => {
+    // Fetching team members on mount -- the textbook useEffect+setState
+    // case ("synchronizing with an external system"), not a synchronous
+    // mirror of a prop/derivable value: this can only happen via an async
+    // network call, never during render itself.
+    // oxlint-disable-next-line react/set-state-in-effect
     void load();
   }, []);
 
@@ -93,7 +98,8 @@ export function TeamPage() {
       ) : members.length === 0 ? (
         <p>No team members yet.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Email</th>
@@ -124,6 +130,7 @@ export function TeamPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

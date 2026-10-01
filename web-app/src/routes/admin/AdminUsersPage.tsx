@@ -96,7 +96,8 @@ export function AdminUsersPage() {
       ) : results.length === 0 ? (
         <p className="empty-state">No users match "{trimmedQuery}".</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Email</th>
@@ -147,6 +148,7 @@ export function AdminUsersPage() {
             })}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

@@ -159,7 +159,8 @@ export function AdminAccountDetailPage() {
       {account.users.length === 0 ? (
         <p className="empty-state">No users on this account.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Email</th>
@@ -181,13 +182,15 @@ export function AdminAccountDetailPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <h2>Stream history</h2>
       {account.streams.length === 0 ? (
         <p className="empty-state">No streams yet.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Title</th>
@@ -209,13 +212,15 @@ export function AdminAccountDetailPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <h2>Platform connections</h2>
       {account.platformConnections.length === 0 ? (
         <p className="empty-state">No platform connections.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Platform</th>
@@ -233,6 +238,7 @@ export function AdminAccountDetailPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

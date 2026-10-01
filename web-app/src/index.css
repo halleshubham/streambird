@@ -248,6 +248,15 @@ input[type="range"] {
 
 /* ---- Team / Superadmin tables ---- */
 
+.table-scroll {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.table-scroll .data-table {
+  margin: 0;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -269,6 +278,7 @@ input[type="range"] {
 
 .inline-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-start;
   margin-bottom: 16px;
@@ -595,6 +605,8 @@ input[type="range"] {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
@@ -710,6 +722,7 @@ a.stream-list-item:hover {
 
 .destination-detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -744,6 +757,7 @@ a.stream-list-item:hover {
 .connection-list li {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 16px;
   border: 1px solid var(--border);
@@ -914,6 +928,7 @@ a.icon-btn--danger {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 16px;
   padding-top: 16px;
@@ -993,6 +1008,7 @@ a.icon-btn--danger {
 .participant-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1066,12 +1082,14 @@ a.icon-btn--danger {
   padding: 10px 24px;
   display: flex;
   align-items: center;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 12px 24px;
 }
 
 .landing-nav-links {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px 20px;
   flex: 1;
 }
 
@@ -1407,4 +1425,54 @@ a.icon-btn--danger {
 @keyframes bird-loader-fly-out {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
   100% { transform: translate(160px, -70px) rotate(20deg); opacity: 0; }
+}
+
+/* ---- Mobile (both AppShell and AdminShell share .app-header/.app-main,
+   so this one breakpoint covers the whole logged-in app at once) ---- */
+
+@media (max-width: 640px) {
+  .app-main {
+    padding: 16px;
+  }
+
+  .app-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+
+  /* Forces nav onto its own full-width row below brand + logout, rather
+     than everything fighting for space on one line -- AdminShell alone
+     has 5 links, which never fits next to a brand and a logout button on
+     a phone-width screen. Horizontal scroll (not wrapping to more lines)
+     keeps each link on one line and tappable, the standard mobile-nav
+     fallback when there's no room for a hamburger menu's own complexity. */
+  .app-header nav {
+    order: 3;
+    flex: 0 0 100%;
+    flex-wrap: nowrap;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  /* Email address is the least essential thing in the header at this
+     width -- dropped so the logout button and brand still fit on one
+     line without wrapping onto a third row of their own. */
+  .user-email {
+    display: none;
+  }
+
+  .go-live-button {
+    padding: 12px 24px;
+    font-size: 15px;
+  }
+
+  .landing-hero {
+    padding: 48px 16px 32px;
+  }
+
+  .legal-page {
+    padding: 24px 16px;
+  }
 }

@@ -28,6 +28,11 @@ export function AdminDashboardPage() {
   }
 
   useEffect(() => {
+    // Fetching pending approvals on mount -- the textbook useEffect+setState
+    // case ("synchronizing with an external system"), not a synchronous
+    // mirror of a prop/derivable value: this can only happen via an async
+    // network call, never during render itself.
+    // oxlint-disable-next-line react/set-state-in-effect
     void load();
   }, []);
 
@@ -67,7 +72,8 @@ export function AdminDashboardPage() {
       ) : pending.length === 0 ? (
         <p>No accounts pending approval.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>Type</th>
@@ -105,6 +111,7 @@ export function AdminDashboardPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

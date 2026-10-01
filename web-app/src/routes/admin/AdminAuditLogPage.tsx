@@ -28,7 +28,8 @@ export function AdminAuditLogPage() {
       ) : entries.length === 0 ? (
         <p className="empty-state">No superadmin actions recorded yet.</p>
       ) : (
-        <table className="data-table">
+        <div className="table-scroll">
+          <table className="data-table">
           <thead>
             <tr>
               <th>When</th>
@@ -65,6 +66,7 @@ export function AdminAuditLogPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );
