@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { Account } from '../accounts/entities/account.entity';
@@ -14,6 +14,14 @@ export interface AccountUsageRanking {
   currentTier: PlanTier;
   streamHourUsageCurrentPeriod: string;
   includedHoursPerMonth: string;
+}
+
+export interface LiveStreamRow {
+  id: string;
+  title: string;
+  accountId: string;
+  accountName: string;
+  startedAt: Date | null;
 }
 
 export interface AnalyticsOverview {
@@ -102,6 +110,37 @@ export class SuperadminAnalyticsService {
       destinationFailureRate,
       topAccountsByUsage,
     };
+  }
+
+  /**
+   * Every stream currently marked LIVE, oldest first -- a stream's own
+   * host has no cap on how long they can stay live, but in practice one
+   * that's been "live" for many hours with a very old startedAt is
+   * usually a hung row (the host's browser closed/crashed without ever
+   * calling StreamsService.end(), which is also what would have recorded
+   * its usage hours) rather than a genuinely marathon broadcast. Ordering
+   * oldest-first surfaces the most-likely-stale ones at the top for a
+   * superadmin to force-end via SuperadminController.forceEndStream.
+   */
+  async listLiveStreams(): Promise<LiveStreamRow[]> {
+    const streams = await this.liveStreams.find({
+      where: { status: StreamStatus.LIVE },
+      order: { startedAt: 'ASC' },
+    });
+    if (streams.length === 0) return [];
+
+    const accounts = await this.accounts.findBy({
+      id: In(streams.map((s) => s.accountId)),
+    });
+    const accountNameById = new Map(accounts.map((a) => [a.id, a.name]));
+
+    return streams.map((s) => ({
+      id: s.id,
+      title: s.title,
+      accountId: s.accountId,
+      accountName: accountNameById.get(s.accountId) ?? '(unknown account)',
+      startedAt: s.startedAt,
+    }));
   }
 
   /**

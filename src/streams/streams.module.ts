@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
@@ -16,9 +16,13 @@ import { StudioModule } from '../studio/studio.module';
     ProvidersModule,
     RelayModule,
     CommonModule, // ApiKeyGuard, StreamCreateThrottlerGuard
-    StudioModule,
+    // Circular: StudioModule's signaling gateway calls back into
+    // StreamsService.end() when a host disconnects for good (see
+    // StudioSignalingGateway's doc comment on that).
+    forwardRef(() => StudioModule),
   ],
   providers: [StreamsService],
   controllers: [StreamsController],
+  exports: [StreamsService],
 })
 export class StreamsModule {}

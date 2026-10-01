@@ -2,12 +2,15 @@ import {
   Controller,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { AccountGuard } from '../common/guards/account.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -16,6 +19,8 @@ import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StreamsService } from '../streams/streams.service';
+import { LiveStream } from '../streams/entities/live-stream.entity';
 
 /**
  * Superadmin-only. AccountGuard resolves the session as usual; its
@@ -32,6 +37,9 @@ export class SuperadminController {
   constructor(
     private readonly usersService: UsersService,
     private readonly auditLog: AuditLogService,
+    private readonly streamsService: StreamsService,
+    @InjectRepository(LiveStream)
+    private readonly liveStreams: Repository<LiveStream>,
   ) {}
 
   /**
@@ -76,5 +84,28 @@ export class SuperadminController {
     const parsedLimit = Math.min(parseInt(limit ?? '50', 10) || 50, 200);
     const parsedOffset = parseInt(offset ?? '0', 10) || 0;
     return this.auditLog.list(parsedLimit, parsedOffset);
+  }
+
+  /**
+   * Cleanup for a stream stuck LIVE in the DB long after it actually
+   * stopped -- a host whose browser closed/crashed without reconnecting
+   * is now auto-ended after a minute by StudioSignalingGateway, but that
+   * only covers streams going forward; this is the companion action for
+   * rows already stuck from before that existed (see
+   * SuperadminAnalyticsService.listLiveStreams, which this pairs with on
+   * the admin UI). Reuses StreamsService.end() itself -- same destination
+   * teardown and usage-hours recording a normal "End stream" click gets,
+   * just resolving the account id first since a superadmin's caller
+   * identity isn't the stream owner's account.
+   */
+  @Post('streams/:id/force-end')
+  async forceEndStream(@CurrentUser() admin: User, @Param('id', ParseUUIDPipe) id: string) {
+    const stream = await this.liveStreams.findOne({ where: { id } });
+    if (!stream) {
+      throw new NotFoundException(`LiveStream ${id} not found`);
+    }
+    const ended = await this.streamsService.end(id, stream.accountId);
+    await this.auditLog.log(admin, 'force_end_stream', 'live_stream', id);
+    return { id: ended.id, status: ended.status, endedAt: ended.endedAt };
   }
 }

@@ -47,6 +47,15 @@ export class StudioSessionsService {
     return this.sessions.findOne({ where: { liveStreamId } });
   }
 
+  /** Unscoped by account -- used by StudioSignalingGateway's host-disconnect
+   * handling, which only ever has a sessionId (from the socket's own
+   * connection state) and needs the LiveStream's accountId/status to decide
+   * whether to end it, not to authorize anything against a caller-supplied
+   * account. */
+  async findByIdWithLiveStream(sessionId: string): Promise<StudioSession | null> {
+    return this.sessions.findOne({ where: { id: sessionId }, relations: ['liveStream'] });
+  }
+
   /** Account-scoped: verifies the session's LiveStream belongs to this account. */
   async findByIdOrThrow(sessionId: string, accountId: string): Promise<StudioSession> {
     const session = await this.sessions.findOne({

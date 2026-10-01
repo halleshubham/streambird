@@ -5,6 +5,7 @@ import type {
   AccountSummary,
   AnalyticsOverview,
   AuditLogEntry,
+  LiveStreamRow,
   PendingApproval,
   UpdateSubscriptionPayload,
   UsageAlert,
@@ -33,6 +34,14 @@ export function getAnalyticsOverview(): Promise<AnalyticsOverview> {
 
 export function listUsageAlerts(): Promise<UsageAlert[]> {
   return api.get('/superadmin/analytics/usage-alerts');
+}
+
+export function listLiveStreams(): Promise<LiveStreamRow[]> {
+  return api.get('/superadmin/analytics/live-streams');
+}
+
+export function forceEndStream(id: string): Promise<{ id: string; status: string; endedAt: string | null }> {
+  return api.post(`/superadmin/streams/${id}/force-end`);
 }
 
 export function searchUsers(email: string): Promise<UserSearchResult[]> {

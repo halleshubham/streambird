@@ -7,15 +7,26 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { Namespace, Socket } from 'socket.io';
 import { StudioSessionsService } from './studio-sessions.service';
+import { StreamsService } from '../streams/streams.service';
+import { StreamStatus } from '../common/enums/stream-status.enum';
 
 interface SocketState {
   sessionId: string;
   participantId: string;
   role: 'host' | 'guest';
 }
+
+// How long to wait after a host's socket disconnects before treating the
+// stream as actually over, rather than ending it the instant the socket
+// drops. socket.io-client auto-reconnects by default on a brief network
+// blip -- without this grace window, that alone would end an otherwise
+// healthy live stream. Long enough to cover a real reconnect, short
+// enough that a genuinely abandoned stream (closed tab, crash) doesn't
+// stay marked LIVE -- and billed as using hours -- for long after.
+const HOST_DISCONNECT_GRACE_MS = 60_000;
 
 /**
  * Pure signaling relay — SDP offers/answers and ICE candidates pass
@@ -30,6 +41,9 @@ interface SocketState {
 export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(StudioSignalingGateway.name);
   private readonly socketState = new Map<string, SocketState>();
+  // Keyed by sessionId, not socket id -- a reconnecting host gets a brand
+  // new socket id, so this has to survive that to be cancellable.
+  private readonly pendingHostEndTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // Typed as Namespace, not the root Server -- NestJS's IoAdapter binds a
   // namespaced gateway's server to server.of(namespace), so this really is
@@ -41,7 +55,11 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   @WebSocketServer()
   server!: Namespace;
 
-  constructor(private readonly studioSessionsService: StudioSessionsService) {}
+  constructor(
+    private readonly studioSessionsService: StudioSessionsService,
+    @Inject(forwardRef(() => StreamsService))
+    private readonly streamsService: StreamsService,
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
@@ -91,6 +109,15 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
 
     this.socketState.set(client.id, { sessionId, participantId: participant.id, role: 'host' });
     await client.join(this.roomName(sessionId));
+
+    // The host is back (a fresh connection after a drop, or just the
+    // first one) -- cancel any end-the-stream timer still pending from a
+    // previous disconnect of this same session.
+    const pendingEnd = this.pendingHostEndTimers.get(sessionId);
+    if (pendingEnd) {
+      clearTimeout(pendingEnd);
+      this.pendingHostEndTimers.delete(sessionId);
+    }
 
     client.emit('joined', { sessionId, participantId: participant.id, role: 'host' });
   }
@@ -142,6 +169,43 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       socketId: client.id,
       participantId: state.participantId,
     });
+
+    if (state.role === 'host') {
+      this.scheduleStreamEndIfHostGone(state.sessionId);
+    }
+  }
+
+  /**
+   * Confirmed live: hung LIVE streams in the admin "currently live" count
+   * that were actually long over -- the host's browser closed/crashed
+   * without ever hitting "End stream", so nothing ever called
+   * StreamsService.end() and the row just stayed LIVE forever (never
+   * billed its usage hours either, since that's also recorded in end()).
+   * There's no resume flow for a dropped host today (the whole compositor
+   * is in-memory React state), so once the grace window above elapses
+   * with no reconnect, the stream really is over.
+   */
+  private scheduleStreamEndIfHostGone(sessionId: string): void {
+    const existing = this.pendingHostEndTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.pendingHostEndTimers.delete(sessionId);
+      void (async () => {
+        try {
+          const session = await this.studioSessionsService.findByIdWithLiveStream(sessionId);
+          if (!session || session.liveStream.status !== StreamStatus.LIVE) return;
+          await this.streamsService.end(session.liveStreamId, session.liveStream.accountId);
+          this.logger.log(
+            `Auto-ended stream ${session.liveStreamId} -- host disconnected and never reconnected within ${HOST_DISCONNECT_GRACE_MS}ms`,
+          );
+        } catch (err) {
+          this.logger.warn(`Failed to auto-end stream for session ${sessionId}: ${(err as Error).message}`);
+        }
+      })();
+    }, HOST_DISCONNECT_GRACE_MS);
+
+    this.pendingHostEndTimers.set(sessionId, timer);
   }
 
   /**

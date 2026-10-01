@@ -14,6 +14,7 @@ import { User } from '../users/entities/user.entity';
 import { LoginCode } from '../auth/entities/login-code.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
 import { Company } from '../companies/entities/company.entity';
+import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-log-entry.entity';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { Company } from '../companies/entities/company.entity';
           LoginCode,
           UserSession,
           Company,
+          SuperadminAuditLogEntry,
         ],
         namingStrategy: new SnakeNamingStrategy(),
         // Schema is owned by migrations/*.sql (see src/config/migrate.ts), never by TypeORM.

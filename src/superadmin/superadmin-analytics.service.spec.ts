@@ -17,17 +17,21 @@ function account(overrides: Partial<Record<string, unknown>> = {}) {
 describe('SuperadminAnalyticsService', () => {
   function buildService(opts?: {
     liveStreamCount?: jest.Mock;
+    liveStreamFind?: jest.Mock;
     destinationsFind?: jest.Mock;
     accountsFind?: jest.Mock;
+    accountsFindBy?: jest.Mock;
   }) {
     const liveStreams = {
       count: opts?.liveStreamCount ?? jest.fn().mockResolvedValue(0),
+      find: opts?.liveStreamFind ?? jest.fn().mockResolvedValue([]),
     };
     const destinations = {
       find: opts?.destinationsFind ?? jest.fn().mockResolvedValue([]),
     };
     const accounts = {
       find: opts?.accountsFind ?? jest.fn().mockResolvedValue([]),
+      findBy: opts?.accountsFindBy ?? jest.fn().mockResolvedValue([]),
     };
     const service = new SuperadminAnalyticsService(
       liveStreams as any,
@@ -106,6 +110,52 @@ describe('SuperadminAnalyticsService', () => {
       // Strictly descending.
       const usages = result.topAccountsByUsage.map((a) => Number(a.streamHourUsageCurrentPeriod));
       expect(usages).toEqual([...usages].sort((a, b) => b - a));
+    });
+  });
+
+  describe('listLiveStreams', () => {
+    it('returns LIVE streams oldest-first with the owning account name joined in', async () => {
+      const oldest = new Date('2026-01-01T00:00:00Z');
+      const newest = new Date('2026-01-02T00:00:00Z');
+      const liveStreamFind = jest.fn().mockResolvedValue([
+        { id: 'stream_1', title: 'Old hung stream', accountId: 'acc_1', startedAt: oldest },
+        { id: 'stream_2', title: 'Recent stream', accountId: 'acc_2', startedAt: newest },
+      ]);
+      const accountsFindBy = jest
+        .fn()
+        .mockResolvedValue([account({ id: 'acc_1', name: 'Acme' }), account({ id: 'acc_2', name: 'Globex' })]);
+      const { service, liveStreams } = buildService({ liveStreamFind, accountsFindBy });
+
+      const result = await service.listLiveStreams();
+
+      expect(liveStreams.find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: StreamStatus.LIVE }, order: { startedAt: 'ASC' } }),
+      );
+      expect(result).toEqual([
+        { id: 'stream_1', title: 'Old hung stream', accountId: 'acc_1', accountName: 'Acme', startedAt: oldest },
+        { id: 'stream_2', title: 'Recent stream', accountId: 'acc_2', accountName: 'Globex', startedAt: newest },
+      ]);
+    });
+
+    it('returns an empty list without querying accounts when nothing is live', async () => {
+      const accountsFindBy = jest.fn();
+      const { service } = buildService({ liveStreamFind: jest.fn().mockResolvedValue([]), accountsFindBy });
+
+      const result = await service.listLiveStreams();
+
+      expect(result).toEqual([]);
+      expect(accountsFindBy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a placeholder name if the owning account is somehow missing', async () => {
+      const liveStreamFind = jest
+        .fn()
+        .mockResolvedValue([{ id: 'stream_1', title: 'Orphaned', accountId: 'acc_deleted', startedAt: null }]);
+      const { service } = buildService({ liveStreamFind, accountsFindBy: jest.fn().mockResolvedValue([]) });
+
+      const result = await service.listLiveStreams();
+
+      expect(result[0].accountName).toBe('(unknown account)');
     });
   });
 

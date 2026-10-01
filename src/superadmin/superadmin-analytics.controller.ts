@@ -28,4 +28,9 @@ export class SuperadminAnalyticsController {
   usageAlerts() {
     return this.analytics.getUsageAlerts();
   }
+
+  @Get('live-streams')
+  liveStreams() {
+    return this.analytics.listLiveStreams();
+  }
 }

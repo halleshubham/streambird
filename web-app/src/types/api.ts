@@ -93,6 +93,14 @@ export interface UsageAlert extends AccountUsageRanking {
   ratio: number;
 }
 
+export interface LiveStreamRow {
+  id: string;
+  title: string;
+  accountId: string;
+  accountName: string;
+  startedAt: string | null;
+}
+
 export interface PlatformConnection {
   id: string;
   platform: Platform;

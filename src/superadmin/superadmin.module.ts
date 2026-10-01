@@ -17,6 +17,7 @@ import { SuperadminUsersController } from './superadmin-users.controller';
 import { SuperadminAccountsController } from './superadmin-accounts.controller';
 import { SuperadminAccountsService } from './superadmin-accounts.service';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { StreamsModule } from '../streams/streams.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     AccountsModule,
     CommonModule,
     AuditLogModule,
+    StreamsModule,
   ],
   controllers: [
     SuperadminController,
