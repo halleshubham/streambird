@@ -25,7 +25,6 @@ import { AccountGuard, AccountRequest } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
 import { GoogleOAuthService } from '../auth/google-oauth.service';
-import { EncryptionService } from '../encryption/encryption.service';
 
 const YOUTUBE_OAUTH_STATE_COOKIE_NAME = 'sb_yt_oauth_state';
 const YOUTUBE_OAUTH_BASE_PATH = '/api/platform-connections/youtube';
@@ -33,9 +32,12 @@ const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube';
 
 const FACEBOOK_API_BASE = 'https://graph.facebook.com/v23.0';
 const FACEBOOK_OAUTH_STATE_COOKIE_NAME = 'sb_fb_oauth_state';
+// Holds only a small opaque selection id -- see pendingFacebookPageSelections
+// below for why the actual Page list/tokens never go in a cookie.
 const FACEBOOK_PENDING_PAGES_COOKIE_NAME = 'sb_fb_pending_pages';
 const FACEBOOK_OAUTH_BASE_PATH = '/api/platform-connections/facebook';
 const FACEBOOK_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts,publish_video';
+const FACEBOOK_PENDING_SELECTION_TTL_MS = 10 * 60_000;
 
 interface FacebookPendingPage {
   id: string;
@@ -59,10 +61,27 @@ interface FacebookPendingPage {
 export class PlatformConnectionsController {
   private readonly logger = new Logger(PlatformConnectionsController.name);
 
+  /**
+   * An account managing many Facebook Pages (confirmed live: one real
+   * account has 25) produces a Page-list-plus-access-tokens payload well
+   * past the ~4KB per-cookie limit browsers enforce -- the original design
+   * stashed that whole list, encrypted, directly in a cookie, which the
+   * browser silently refused to store for any sizeable Page count,
+   * surfacing as "sign-in expired" immediately after a successful OAuth
+   * round. Held here in memory instead, keyed by a small opaque id that's
+   * all the cookie actually carries; single-process-safe, same trust model
+   * as this controller's existing short-lived OAuth state cookies -- a
+   * guessed/stolen id is useless without also riding the account's own
+   * session cookie (checked against accountId below).
+   */
+  private readonly pendingFacebookPageSelections = new Map<
+    string,
+    { accountId: string; pages: FacebookPendingPage[]; expiresAt: number }
+  >();
+
   constructor(
     private readonly platformConnectionsService: PlatformConnectionsService,
     private readonly googleOAuth: GoogleOAuthService,
-    private readonly encryption: EncryptionService,
     private readonly config: ConfigService,
   ) {}
 
@@ -304,20 +323,23 @@ export class PlatformConnectionsController {
         return;
       }
 
-      // More than one Page -- stash the list (never sent to the browser as
-      // anything but opaque ciphertext) and let the host pick via
-      // GET/POST facebook/pages|select below.
-      res.cookie(
-        FACEBOOK_PENDING_PAGES_COOKIE_NAME,
-        this.encryption.encrypt(pages).toString('base64'),
-        {
-          httpOnly: true,
-          secure: this.config.get<boolean>('cookieSecure'),
-          sameSite: 'lax',
-          path: FACEBOOK_OAUTH_BASE_PATH,
-          maxAge: 10 * 60_000,
-        },
-      );
+      // More than one Page -- hold the list server-side (see
+      // pendingFacebookPageSelections' doc comment for why: it can be too
+      // large for a cookie) and let the host pick via GET/POST
+      // facebook/pages|select below, which only ever need this small id.
+      const selectionId = crypto.randomBytes(24).toString('base64url');
+      this.pendingFacebookPageSelections.set(selectionId, {
+        accountId: account.id,
+        pages,
+        expiresAt: Date.now() + FACEBOOK_PENDING_SELECTION_TTL_MS,
+      });
+      res.cookie(FACEBOOK_PENDING_PAGES_COOKIE_NAME, selectionId, {
+        httpOnly: true,
+        secure: this.config.get<boolean>('cookieSecure'),
+        sameSite: 'lax',
+        path: FACEBOOK_OAUTH_BASE_PATH,
+        maxAge: FACEBOOK_PENDING_SELECTION_TTL_MS,
+      });
       res.redirect('/connections?facebookPagesPending=1');
     } catch (err) {
       this.logger.error('Facebook OAuth callback threw unexpectedly', err instanceof Error ? err.stack : err);
@@ -325,19 +347,33 @@ export class PlatformConnectionsController {
     }
   }
 
+  /** Looks up a pending Page-selection by the small id the cookie actually
+   * carries, scoped to the requesting account -- never trusts the id alone,
+   * since it's only ever meant to be used alongside that account's own
+   * session cookie. Lazily evicts an expired entry rather than requiring a
+   * sweep timer, proportionate to how rarely this path is hit at all. */
+  private getPendingFacebookPages(selectionId: string | undefined, accountId: string): FacebookPendingPage[] | null {
+    if (!selectionId) return null;
+    const entry = this.pendingFacebookPageSelections.get(selectionId);
+    if (!entry || entry.accountId !== accountId) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.pendingFacebookPageSelections.delete(selectionId);
+      return null;
+    }
+    return entry.pages;
+  }
+
   /** Lists the pending Pages from a just-completed Facebook OAuth round
    * that had more than one Page to choose from -- names/ids only, the
-   * per-Page access tokens never leave the pending-pages cookie. */
+   * per-Page access tokens never leave the server (see
+   * pendingFacebookPageSelections). */
   @Get('facebook/pages')
-  listFacebookPendingPages(@Req() req: AccountRequest): { id: string; name: string }[] {
-    const cookieValue = req.cookies?.[FACEBOOK_PENDING_PAGES_COOKIE_NAME];
-    if (!cookieValue) return [];
-    try {
-      const pages = this.encryption.decrypt<FacebookPendingPage[]>(Buffer.from(cookieValue, 'base64'));
-      return pages.map((p) => ({ id: p.id, name: p.name }));
-    } catch {
-      return [];
-    }
+  listFacebookPendingPages(
+    @CurrentAccount() account: Account,
+    @Req() req: AccountRequest,
+  ): { id: string; name: string }[] {
+    const pages = this.getPendingFacebookPages(req.cookies?.[FACEBOOK_PENDING_PAGES_COOKIE_NAME], account.id);
+    return (pages ?? []).map((p) => ({ id: p.id, name: p.name }));
   }
 
   @Post('facebook/select')
@@ -347,12 +383,12 @@ export class PlatformConnectionsController {
     @Res() res: Response,
     @Body('pageId') pageId: string,
   ) {
-    const cookieValue = req.cookies?.[FACEBOOK_PENDING_PAGES_COOKIE_NAME];
-    if (!cookieValue) {
+    const selectionId = req.cookies?.[FACEBOOK_PENDING_PAGES_COOKIE_NAME];
+    const pages = this.getPendingFacebookPages(selectionId, account.id);
+    if (!pages) {
       res.status(HttpStatus.BAD_REQUEST).json({ message: 'No pending Facebook pages to select from.' });
       return;
     }
-    const pages = this.encryption.decrypt<FacebookPendingPage[]>(Buffer.from(cookieValue, 'base64'));
     const chosen = pages.find((p) => p.id === pageId);
     if (!chosen) {
       res.status(HttpStatus.BAD_REQUEST).json({ message: 'That Page was not in the pending list.' });
@@ -364,6 +400,7 @@ export class PlatformConnectionsController {
       { pageId: chosen.id, pageName: chosen.name },
       chosen.access_token,
     );
+    this.pendingFacebookPageSelections.delete(selectionId!);
     res.clearCookie(FACEBOOK_PENDING_PAGES_COOKIE_NAME, { path: FACEBOOK_OAUTH_BASE_PATH });
     res.json(plainToInstance(PlatformConnectionResponseDto, connection, { excludeExtraneousValues: true }));
   }
