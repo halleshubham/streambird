@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Radio,
@@ -61,10 +62,19 @@ const STEPS = [
   },
 ];
 
-const TIERS = [
+type Currency = 'USD' | 'INR';
+
+const TIERS: {
+  name: string;
+  price: Record<Currency, string>;
+  hours: string;
+  destinations: string;
+  guests: string;
+  highlight: boolean;
+}[] = [
   {
     name: 'Free',
-    price: '$0',
+    price: { USD: '$0', INR: '₹0' },
     hours: '2 stream-hours/mo',
     destinations: '1 destination',
     guests: '2 studio guests',
@@ -72,7 +82,7 @@ const TIERS = [
   },
   {
     name: 'Starter',
-    price: '$19',
+    price: { USD: '$19', INR: '₹999' },
     hours: '10 stream-hours/mo',
     destinations: '2 destinations',
     guests: '4 studio guests',
@@ -80,7 +90,7 @@ const TIERS = [
   },
   {
     name: 'Pro',
-    price: '$39',
+    price: { USD: '$39', INR: '₹1,999' },
     hours: '30 stream-hours/mo',
     destinations: '4 destinations',
     guests: '6 studio guests',
@@ -88,13 +98,26 @@ const TIERS = [
   },
   {
     name: 'Enterprise',
-    price: '$129',
+    price: { USD: '$129', INR: '₹6,999' },
     hours: '100 stream-hours/mo',
     destinations: '6 destinations',
     guests: '8 studio guests',
     highlight: false,
   },
 ];
+
+function detectDefaultCurrency(): Currency {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    const locale = navigator.language ?? '';
+    if (tz.includes('Calcutta') || tz.includes('Kolkata') || locale.toLowerCase().endsWith('-in')) {
+      return 'INR';
+    }
+  } catch {
+    // Intl/navigator unavailable -- fall through to the USD default.
+  }
+  return 'USD';
+}
 
 const FAQ = [
   {
@@ -117,9 +140,15 @@ const FAQ = [
     q: 'Is this built on managed cloud transcoding?',
     a: "No -- delivery runs on our own self-hosted relay, not a metered vendor pipeline. That's what lets StreamBird match StreamYard-style pricing without the vendor markup baked in.",
   },
+  {
+    q: 'Do you have India-specific pricing?',
+    a: "Yes -- toggle to INR above. Indian pricing runs well below our USD rate (and below what India-market incumbents like StreamYard charge there), since we self-host delivery instead of paying US-denominated cloud-vendor markup.",
+  },
 ];
 
 export function LandingPage() {
+  const [currency, setCurrency] = useState<Currency>(detectDefaultCurrency);
+
   return (
     <div className="landing-page">
       <header className="landing-nav">
@@ -205,12 +234,28 @@ export function LandingPage() {
           Billing is handled outside StreamBird for now -- these are the plans, reach out to get
           set up.
         </p>
+        <div className="landing-currency-toggle" role="group" aria-label="Currency">
+          <button
+            type="button"
+            className={`link-button${currency === 'USD' ? ' landing-currency-toggle--active' : ''}`}
+            onClick={() => setCurrency('USD')}
+          >
+            USD
+          </button>
+          <button
+            type="button"
+            className={`link-button${currency === 'INR' ? ' landing-currency-toggle--active' : ''}`}
+            onClick={() => setCurrency('INR')}
+          >
+            INR (India pricing)
+          </button>
+        </div>
         <div className="landing-pricing-grid">
           {TIERS.map((t) => (
             <div key={t.name} className={`landing-price-card${t.highlight ? ' landing-price-card--highlight' : ''}`}>
               <h3>{t.name}</h3>
               <p className="landing-price">
-                {t.price}
+                {t.price[currency]}
                 <span>/mo</span>
               </p>
               <ul>

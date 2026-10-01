@@ -17,6 +17,7 @@ import { StreamProvider } from '../providers/stream-provider.interface';
 import { RELAY_PROVIDER, RelayProvider, RelayLiveInput } from '../relay/relay-provider.interface';
 import { MediaMtxService } from '../relay/mediamtx.service';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
+import { AccountsService } from '../accounts/accounts.service';
 
 @Injectable()
 export class StreamsService {
@@ -33,6 +34,7 @@ export class StreamsService {
     private readonly relay: RelayProvider,
     private readonly mediaMtx: MediaMtxService,
     private readonly studioSessions: StudioSessionsService,
+    private readonly accountsService: AccountsService,
   ) {}
 
   private resolveProvider(connection: PlatformConnection): StreamProvider {
@@ -46,6 +48,12 @@ export class StreamsService {
   }
 
   async create(accountId: string, dto: CreateStreamDto): Promise<LiveStream> {
+    // Checked before anything else -- a blocked account shouldn't even
+    // reach the point of creating a LiveStream row or touching a
+    // provider's API. Never blocks a stream that's already running (see
+    // AccountsService.assertCanStartStream's docstring).
+    await this.accountsService.assertCanStartStream(accountId);
+
     const connections = await this.platformConnections.find({
       where: { id: In(dto.destinationConnectionIds), accountId },
     });
@@ -353,6 +361,16 @@ export class StreamsService {
     stream.status = StreamStatus.ENDED;
     stream.endedAt = new Date();
     await this.liveStreams.save(stream);
+
+    // Usage is recorded by actual wall-clock duration, only for a stream
+    // that really went live (startedAt is only ever set once create()
+    // reaches StreamStatus.LIVE) -- a stream that failed before going live
+    // never accrues usage. Best-effort: a failure here shouldn't block the
+    // stream from ending.
+    if (stream.startedAt) {
+      const hours = (stream.endedAt.getTime() - stream.startedAt.getTime()) / 3_600_000;
+      await this.accountsService.recordStreamUsage(accountId, hours).catch(() => {});
+    }
 
     return this.findByIdOrThrow(id, accountId);
   }

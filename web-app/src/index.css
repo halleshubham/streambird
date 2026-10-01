@@ -1042,6 +1042,18 @@ a.stream-list-item:hover {
   margin-top: 24px;
 }
 
+.landing-currency-toggle {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 16px 0 24px;
+}
+
+.landing-currency-toggle--active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .landing-pricing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

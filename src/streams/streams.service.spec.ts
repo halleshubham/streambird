@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { StreamsService } from './streams.service';
 import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
@@ -14,6 +14,7 @@ import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { StreamProvider } from '../providers/stream-provider.interface';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
+import { AccountsService } from '../accounts/accounts.service';
 
 function inMemoryRepo<T extends { id?: string }>() {
   const rows = new Map<string, T>();
@@ -115,14 +116,23 @@ describe('StreamsService', () => {
             revokeInvitesForStream: jest.fn(async () => undefined),
           },
         },
+        {
+          provide: AccountsService,
+          useValue: {
+            assertCanStartStream: jest.fn(async () => undefined),
+            recordStreamUsage: jest.fn(async () => undefined),
+          },
+        },
       ],
     }).compile();
 
     return {
       service: moduleRef.get(StreamsService),
       connectionRepo,
+      liveStreamRepo,
       relay,
       studioSessions: moduleRef.get(StudioSessionsService),
+      accountsService: moduleRef.get(AccountsService),
     };
   }
 
@@ -267,5 +277,40 @@ describe('StreamsService', () => {
     const status = await service.getStatus(stream.id, 'acc_1');
 
     expect(status.destinations[0].platformStatus).toBeNull();
+  });
+
+  it('create() refuses to even start when the account is blocked on usage, before touching any provider', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const { service, connectionRepo, accountsService } = await build([youtube]);
+    (accountsService.assertCanStartStream as jest.Mock).mockRejectedValue(
+      new ForbiddenException("You've used all your included stream hours for this billing period."),
+    );
+    const conn = makeConnection('c1', Platform.YOUTUBE);
+    connectionRepo.rows.set(conn.id, conn);
+
+    await expect(
+      service.create('acc_1', { title: 'Blocked test', destinationConnectionIds: ['c1'] }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(youtube.createBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('end() records the stream\'s actual elapsed duration as usage against the account', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const { service, connectionRepo, liveStreamRepo, accountsService } = await build([youtube]);
+    const conn = makeConnection('c1', Platform.YOUTUBE);
+    connectionRepo.rows.set(conn.id, conn);
+
+    const stream = await service.create('acc_1', {
+      title: 'Usage test',
+      destinationConnectionIds: ['c1'],
+    });
+    (liveStreamRepo.rows.get(stream.id) as any).startedAt = new Date(Date.now() - 2 * 3_600_000);
+
+    await service.end(stream.id, 'acc_1');
+
+    expect(accountsService.recordStreamUsage).toHaveBeenCalledWith('acc_1', expect.any(Number));
+    const [, hours] = (accountsService.recordStreamUsage as jest.Mock).mock.calls[0];
+    expect(hours).toBeCloseTo(2, 1);
   });
 });
