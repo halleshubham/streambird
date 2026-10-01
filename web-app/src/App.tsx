@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SuperadminRoute } from './components/SuperadminRoute';
+import { HomeRoute } from './components/HomeRoute';
 import { LoginPage } from './routes/LoginPage';
 import { SignupCompanyPage } from './routes/SignupCompanyPage';
 import { DashboardPage } from './routes/DashboardPage';
@@ -26,6 +27,10 @@ import { NotFoundPage } from './routes/NotFoundPage';
 export function App() {
   return (
     <Routes>
+      {/* Anonymous -> public marketing page; logged in -> straight to
+          /dashboard. See HomeRoute. */}
+      <Route path="/" element={<HomeRoute />} />
+
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup-company" element={<SignupCompanyPage />} />
 
@@ -61,7 +66,7 @@ export function App() {
         <Route path="/streams/:streamId/studio" element={<HostStudioPage />} />
 
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/streams/new" element={<CreateStreamPage />} />
           <Route path="/streams/:streamId" element={<StreamDetailPage />} />

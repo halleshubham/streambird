@@ -26,7 +26,7 @@ export function SignupCompanyPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (status === 'authenticated') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   async function handleRequestCode(e: FormEvent) {
@@ -50,7 +50,7 @@ export function SignupCompanyPage() {
     try {
       const res = await authApi.signupCompany(companyName.trim(), email.trim(), code.trim());
       setSession(res.user, res.accountId);
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {

@@ -6,7 +6,7 @@ export function NotFoundPage() {
       <div className="auth-card">
         <h1>Not found</h1>
         <p>That page doesn't exist.</p>
-        <Link to="/">Back to dashboard</Link>
+        <Link to="/dashboard">Back to dashboard</Link>
       </div>
     </div>
   );

@@ -102,6 +102,22 @@ export function ConnectionsPage() {
       </section>
 
       <section>
+        <h2>Connect YouTube</h2>
+        <p>
+          Connect a YouTube channel to schedule and go live directly from StreamBird. This
+          requests the YouTube scope on your Google account, separate from any "Sign in with
+          Google" login you may already use.
+        </p>
+        <a
+          className="button-like icon-btn"
+          style={{ display: 'inline-flex', width: 'auto' }}
+          href="/api/platform-connections/youtube/connect"
+        >
+          <SquarePlay size={16} /> Connect YouTube
+        </a>
+      </section>
+
+      <section>
         <h2>Connect Twitch</h2>
         <p>
           Twitch doesn't expose your stream key through its API -- copy it from your Twitch
@@ -142,22 +158,6 @@ export function ConnectionsPage() {
             <Plug size={16} /> {busy ? 'Connecting…' : 'Connect'}
           </button>
         </form>
-      </section>
-
-      <section>
-        <h2>Connect YouTube</h2>
-        <p>
-          Connect a YouTube channel to schedule and go live directly from StreamBird. This
-          requests the YouTube scope on your Google account, separate from any "Sign in with
-          Google" login you may already use.
-        </p>
-        <a
-          className="button-like icon-btn"
-          style={{ display: 'inline-flex', width: 'auto' }}
-          href="/api/platform-connections/youtube/connect"
-        >
-          <SquarePlay size={16} /> Connect YouTube
-        </a>
       </section>
 
       <section>

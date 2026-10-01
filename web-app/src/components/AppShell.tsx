@@ -8,12 +8,12 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/" className="brand">
+        <Link to="/dashboard" className="brand">
           <img src="/logo.png" alt="" className="brand-logo" />
           StreamBird
         </Link>
         <nav>
-          <Link to="/">Dashboard</Link>
+          <Link to="/dashboard">Dashboard</Link>
           <Link to="/connections">Connections</Link>
           {user?.role === 'company_admin' && <Link to="/team">Team</Link>}
         </nav>

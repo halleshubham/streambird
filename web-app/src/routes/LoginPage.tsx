@@ -24,7 +24,7 @@ export function LoginPage() {
   );
 
   if (status === 'authenticated') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   async function handleRequestCode(e: FormEvent) {
@@ -47,7 +47,7 @@ export function LoginPage() {
     setError(null);
     try {
       await login(email.trim(), code.trim());
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
