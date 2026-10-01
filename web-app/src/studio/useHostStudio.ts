@@ -4,7 +4,7 @@ import { getStream, getStreamStatus } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout } from '../api/studio';
 import { ApiError } from '../api/client';
-import type { Platform, Stream, StreamStatusDestination } from '../types/api';
+import type { PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
 
 // Mirrors StreamDetailPage's own poll interval -- see that page for why
 // 10s (fast enough to catch a destination's platformStatus climbing from
@@ -94,7 +94,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
-  const [platformById, setPlatformById] = useState<Map<string, Platform>>(new Map());
+  const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
   const [pinnedId, setPinnedId] = useState<string | null>(null);
 
   const hostTokenRef = useRef<string | null>(null);
@@ -729,7 +729,7 @@ export function useHostStudio(streamId: string | undefined) {
         // against the account's connections, same approach as
         // StreamDetailPage.
         listConnections()
-          .then((conns) => setPlatformById(new Map(conns.map((c) => [c.id, c.platform]))))
+          .then((conns) => setConnectionById(new Map(conns.map((c) => [c.id, c]))))
           .catch(() => {});
       } catch (err) {
         if (cancelled) return;
@@ -1218,7 +1218,7 @@ export function useHostStudio(streamId: string | undefined) {
     scenes,
     activeSceneName,
     destinations,
-    platformById,
+    connectionById,
     pinnedId,
     actions: {
       startCamera,

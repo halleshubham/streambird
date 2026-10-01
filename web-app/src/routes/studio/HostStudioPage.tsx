@@ -51,7 +51,7 @@ export function HostStudioPage() {
     scenes,
     activeSceneName,
     destinations,
-    platformById,
+    connectionById,
     actions,
   } = useHostStudio(streamId);
 
@@ -191,11 +191,12 @@ export function HostStudioPage() {
           </label>
           <div className="connection-list">
             {destinations.map((d) => {
-              const platform = platformById.get(d.platformConnectionId);
+              const connection = connectionById.get(d.platformConnectionId);
               return (
                 <div key={d.id} className="destination-detail-row">
                   <div className="destination-detail-main">
-                    {platform && <PlatformBadge platform={platform} />}
+                    {connection && <PlatformBadge platform={connection.platform} />}
+                    {connection && <span className="connection-label">{connection.label}</span>}
                     <span className={`status-dot status-${d.status}`} />
                     <span>{d.status}</span>
                     {d.platformStatus && <span className="empty-state">platform reports: {d.platformStatus}</span>}

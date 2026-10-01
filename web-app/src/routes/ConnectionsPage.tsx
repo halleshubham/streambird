@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Trash2, Plug, SquarePlay } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import {
   listConnections,
   connectTwitchManual,
@@ -10,6 +10,7 @@ import {
   selectFacebookPage,
 } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { PlatformLogo } from '../components/PlatformLogo';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
@@ -166,7 +167,9 @@ export function ConnectionsPage() {
       </section>
 
       <section>
-        <h2>Connect YouTube</h2>
+        <h2>
+          <PlatformLogo platform="youtube" size={18} /> Connect YouTube
+        </h2>
         <p>
           Connect a YouTube channel to schedule and go live directly from StreamBird. This
           requests the YouTube scope on your Google account, separate from any "Sign in with
@@ -177,12 +180,14 @@ export function ConnectionsPage() {
           style={{ display: 'inline-flex', width: 'auto' }}
           href="/api/platform-connections/youtube/connect"
         >
-          <SquarePlay size={16} /> Connect YouTube
+          <PlatformLogo platform="youtube" /> Connect YouTube
         </a>
       </section>
 
       <section>
-        <h2>Connect Facebook</h2>
+        <h2>
+          <PlatformLogo platform="facebook" size={18} /> Connect Facebook
+        </h2>
         <p>
           Connect a Facebook Page to go live there directly from StreamBird. This requests
           permission to post live video as a Page you manage -- a personal profile can't be
@@ -199,7 +204,7 @@ export function ConnectionsPage() {
                 disabled={selectingPageId !== null}
                 onClick={() => void handleSelectFacebookPage(p.id)}
               >
-                <Plug size={16} /> {selectingPageId === p.id ? 'Connecting…' : p.name}
+                <PlatformLogo platform="facebook" /> {selectingPageId === p.id ? 'Connecting…' : p.name}
               </button>
             ))}
             <button type="button" className="link-button" disabled={selectingPageId !== null} onClick={cancelFacebookPageSelection}>
@@ -212,13 +217,15 @@ export function ConnectionsPage() {
             style={{ display: 'inline-flex', width: 'auto' }}
             href="/api/platform-connections/facebook/connect"
           >
-            <Plug size={16} /> Connect Facebook
+            <PlatformLogo platform="facebook" /> Connect Facebook
           </a>
         )}
       </section>
 
       <section>
-        <h2>Connect Twitch</h2>
+        <h2>
+          <PlatformLogo platform="twitch" size={18} /> Connect Twitch
+        </h2>
         <p>
           Twitch doesn't expose your stream key through its API -- copy it from your Twitch
           dashboard (Creator Dashboard → Settings → Stream) and paste it below.
@@ -255,7 +262,7 @@ export function ConnectionsPage() {
 
           {error && <p className="error">{error}</p>}
           <button type="submit" className="icon-btn" disabled={busy || !ingestServerUrl.trim() || !streamKey.trim()}>
-            <Plug size={16} /> {busy ? 'Connecting…' : 'Connect'}
+            <PlatformLogo platform="twitch" /> {busy ? 'Connecting…' : 'Connect'}
           </button>
         </form>
       </section>

@@ -6,7 +6,7 @@ import { listConnections } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
-import type { Platform, Stream, StreamStatusResponse } from '../types/api';
+import type { PlatformConnection, Stream, StreamStatusResponse } from '../types/api';
 
 const STATUS_LABELS: Record<Stream['status'], string> = {
   scheduled: 'Scheduled',
@@ -26,7 +26,7 @@ export function StreamDetailPage() {
   const { streamId } = useParams<{ streamId: string }>();
   const [stream, setStream] = useState<Stream | null>(null);
   const [status, setStatus] = useState<StreamStatusResponse | null>(null);
-  const [platformById, setPlatformById] = useState<Map<string, Platform>>(new Map());
+  const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
@@ -43,7 +43,7 @@ export function StreamDetailPage() {
     Promise.all([getStream(streamId), listConnections()])
       .then(([s, conns]) => {
         setStream(s);
-        setPlatformById(new Map(conns.map((c) => [c.id, c.platform])));
+        setConnectionById(new Map(conns.map((c) => [c.id, c])));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load stream.'));
     refreshStatus();
@@ -99,12 +99,13 @@ export function StreamDetailPage() {
       <h2>Destinations</h2>
       <div className="connection-list">
         {destinations.map((d) => {
-          const platform = platformById.get(d.platformConnectionId);
+          const connection = connectionById.get(d.platformConnectionId);
           const platformStatus = d.platformStatus;
           return (
             <div key={d.id} className="destination-detail-row">
               <div className="destination-detail-main">
-                {platform && <PlatformBadge platform={platform} />}
+                {connection && <PlatformBadge platform={connection.platform} />}
+                {connection && <span className="connection-label">{connection.label}</span>}
                 <span className={`status-dot status-${d.status}`} />
                 <span>{d.status}</span>
                 {platformStatus && (
