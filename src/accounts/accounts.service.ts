@@ -56,6 +56,25 @@ export class AccountsService {
     await this.accounts.delete(id);
   }
 
+  /**
+   * Superadmin whole-company abuse lever (distinct from suspending a
+   * single User -- see UsersService.suspendUser). Deliberately minimal:
+   * a concurrent task building the account directory/detail page may
+   * also implement this exact route, see SuperadminUsersController's
+   * docstring for the overlap-avoidance note.
+   */
+  async suspend(id: string): Promise<Account> {
+    const account = await this.findByIdOrThrow(id);
+    account.suspendedAt = new Date();
+    return this.accounts.save(account);
+  }
+
+  async reactivate(id: string): Promise<Account> {
+    const account = await this.findByIdOrThrow(id);
+    account.suspendedAt = null;
+    return this.accounts.save(account);
+  }
+
   private hashApiKey(apiKey: string): string {
     return crypto.createHash('sha256').update(apiKey).digest('hex');
   }

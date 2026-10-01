@@ -1,16 +1,20 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { ILike, In, IsNull, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { Account } from '../accounts/entities/account.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { Company } from '../companies/entities/company.entity';
 import { Role } from '../common/enums/role.enum';
+
+const MIN_EMAIL_SEARCH_LENGTH = 2;
+const MAX_EMAIL_SEARCH_RESULTS = 50;
 
 @Injectable()
 export class UsersService {
@@ -170,5 +174,64 @@ export class UsersService {
       throw new ForbiddenException('Only a pending Company Admin can be rejected.');
     }
     await this.accountsService.remove(user.accountId);
+  }
+
+  /**
+   * Superadmin cross-company lookup: case-insensitive partial match on
+   * email, across every Account. Deliberately refuses a too-short query
+   * (`MIN_EMAIL_SEARCH_LENGTH`) rather than letting an empty/1-char query
+   * page through the entire user table, and caps results at
+   * `MAX_EMAIL_SEARCH_RESULTS` for the same reason.
+   */
+  async searchByEmail(
+    query: string,
+    limit: number = MAX_EMAIL_SEARCH_RESULTS,
+  ): Promise<User[]> {
+    const trimmed = query?.trim() ?? '';
+    if (trimmed.length < MIN_EMAIL_SEARCH_LENGTH) {
+      throw new BadRequestException(
+        `Search query must be at least ${MIN_EMAIL_SEARCH_LENGTH} characters.`,
+      );
+    }
+    return this.users.find({
+      where: { email: ILike(`%${trimmed}%`) },
+      relations: ['account'],
+      order: { createdAt: 'DESC' },
+      take: Math.min(limit, MAX_EMAIL_SEARCH_RESULTS),
+    });
+  }
+
+  /** Maps each given accountId to its Company name, for accounts that have
+   * one (solo accounts have no Company row at all -- see Company's
+   * docstring). Used to enrich searchByEmail results with a companyName. */
+  async companyNamesByAccountIds(accountIds: string[]): Promise<Map<string, string>> {
+    if (accountIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.companies.find({ where: { accountId: In(accountIds) } });
+    return new Map(rows.map((c) => [c.accountId, c.name]));
+  }
+
+  /**
+   * Superadmin-only abuse lever, scoped to ONE user (distinct from
+   * suspending the whole Account -- see AccountsService.suspend).
+   * Refuses to ever suspend a Superadmin through this path -- there is no
+   * legitimate reason to lock out another operator identity this way.
+   * Enforcement of the resulting suspendedAt field lives in AccountGuard,
+   * not here.
+   */
+  async suspendUser(userId: string): Promise<User> {
+    const user = await this.findByIdOrThrow(userId);
+    if (user.role === Role.SUPERADMIN) {
+      throw new ForbiddenException('Superadmins cannot be suspended.');
+    }
+    user.suspendedAt = new Date();
+    return this.users.save(user);
+  }
+
+  async reactivateUser(userId: string): Promise<User> {
+    const user = await this.findByIdOrThrow(userId);
+    user.suspendedAt = null;
+    return this.users.save(user);
   }
 }

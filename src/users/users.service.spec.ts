@@ -1,19 +1,32 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { FindOperator } from 'typeorm';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { Company } from '../companies/entities/company.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { Role } from '../common/enums/role.enum';
 
-// Minimal stand-in for TypeORM's FindOperator (e.g. IsNull()) so these
-// fakes can support the same `where` shapes the real repo accepts.
+// Minimal stand-in for TypeORM's FindOperator (e.g. IsNull(), ILike(), In())
+// so these fakes can support the same `where` shapes the real repo accepts.
 function matchesWhere(row: any, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([k, val]) => {
     if (val instanceof FindOperator) {
-      return val.type === 'isNull' ? row[k] == null : true;
+      if (val.type === 'isNull') return row[k] == null;
+      if (val.type === 'ilike') {
+        const pattern = String(val.value).replace(/%/g, '').toLowerCase();
+        return typeof row[k] === 'string' && row[k].toLowerCase().includes(pattern);
+      }
+      if (val.type === 'in') {
+        return (val.value as unknown[]).includes(row[k]);
+      }
+      return true;
     }
     return row[k] === val;
   });
@@ -34,10 +47,11 @@ function inMemoryRepo<T extends { id?: string }>(prefix: string) {
       const match = [...rows.values()].find((r: any) => matchesWhere(r, where));
       return match ?? null;
     }),
-    find: jest.fn(async ({ where }: any = {}) => {
-      return [...rows.values()]
+    find: jest.fn(async ({ where, take }: any = {}) => {
+      const matched = [...rows.values()]
         .filter((r: any) => matchesWhere(r, where ?? {}))
         .sort((a: any, b: any) => a.createdAt?.getTime() - b.createdAt?.getTime());
+      return typeof take === 'number' ? matched.slice(0, take) : matched;
     }),
     delete: jest.fn(async (id: string) => {
       rows.delete(id);
@@ -218,6 +232,86 @@ describe('UsersService', () => {
       await expect(service.rejectCompanyAdmin(user.id)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
+    });
+  });
+
+  describe('cross-company user search (superadmin)', () => {
+    it('searchByEmail returns only case-insensitive partial matches, scoped by email alone', async () => {
+      const { service } = await build();
+      await service.findOrCreateForEmail('Alice@Example.com');
+      await service.findOrCreateForEmail('bob@example.com');
+      await service.findOrCreateForEmail('alice2@other.com');
+
+      const results = await service.searchByEmail('alice');
+
+      expect(results.map((u) => u.email).sort()).toEqual(
+        ['Alice@Example.com', 'alice2@other.com'].sort(),
+      );
+    });
+
+    it('searchByEmail refuses a too-short query instead of listing every user', async () => {
+      const { service } = await build();
+      await service.findOrCreateForEmail('someone@example.com');
+
+      await expect(service.searchByEmail('a')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.searchByEmail('')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('searchByEmail caps results at the max limit', async () => {
+      const { service } = await build();
+      for (let i = 0; i < 5; i++) {
+        await service.findOrCreateForEmail(`match${i}@example.com`);
+      }
+
+      const results = await service.searchByEmail('match', 2);
+
+      expect(results).toHaveLength(2);
+    });
+
+    it('companyNamesByAccountIds maps accountId to Company name, leaving solo accounts unmapped', async () => {
+      const { service } = await build();
+      const { user: admin, account } = await service.createCompanyAdmin(
+        'Acme Inc',
+        'admin@acme.com',
+      );
+      const { account: soloAccount } = await service.findOrCreateForEmail('solo@example.com');
+
+      const map = await service.companyNamesByAccountIds([account.id, soloAccount.id]);
+
+      expect(map.get(admin.accountId)).toBe('Acme Inc');
+      expect(map.has(soloAccount.id)).toBe(false);
+    });
+  });
+
+  describe('superadmin user suspend/reactivate', () => {
+    it('suspendUser sets suspendedAt on a non-superadmin user', async () => {
+      const { service } = await build();
+      const { user } = await service.findOrCreateForEmail('target@example.com');
+
+      const suspended = await service.suspendUser(user.id);
+
+      expect(suspended.suspendedAt).not.toBeNull();
+      expect(suspended.suspendedAt).toBeInstanceOf(Date);
+    });
+
+    it('suspendUser refuses to suspend a superadmin', async () => {
+      const { service, users } = await build();
+      const admin = await users.save(
+        users.create({ email: 'root@streambird.com', role: Role.SUPERADMIN, accountId: 'acc_x' }),
+      );
+
+      await expect(service.suspendUser(admin.id)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(admin.suspendedAt ?? null).toBeNull();
+    });
+
+    it('reactivateUser clears suspendedAt', async () => {
+      const { service } = await build();
+      const { user } = await service.findOrCreateForEmail('target2@example.com');
+      await service.suspendUser(user.id);
+
+      const reactivated = await service.reactivateUser(user.id);
+
+      expect(reactivated.suspendedAt).toBeNull();
     });
   });
 });

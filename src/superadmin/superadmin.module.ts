@@ -11,6 +11,7 @@ import { SuperadminSeedService } from './superadmin-seed.service';
 import { SuperadminController } from './superadmin.controller';
 import { SuperadminAnalyticsController } from './superadmin-analytics.controller';
 import { SuperadminAnalyticsService } from './superadmin-analytics.service';
+import { SuperadminUsersController } from './superadmin-users.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
@@ -21,7 +22,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     CommonModule,
     AuditLogModule,
   ],
-  controllers: [SuperadminController, SuperadminAnalyticsController],
+  controllers: [SuperadminController, SuperadminAnalyticsController, SuperadminUsersController],
   providers: [SuperadminSeedService, SuperadminAnalyticsService],
 })
 export class SuperadminModule {}
