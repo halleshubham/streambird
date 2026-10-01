@@ -6,14 +6,21 @@ import { Role } from '../enums/role.enum';
  * This is the single most security-critical check in the whole 3-tier
  * role system: AccountGuard is what every existing protected controller
  * (streams, platform-connections, studio-sessions, accounts) already
- * relies on for auth, so the Company Admin approval gate is baked
- * directly into it (see account.guard.ts) rather than a separate opt-in
- * guard a route could forget to add. These tests exercise exactly the
- * four cases the task calls out: an unapproved Company Admin must be
- * rejected, an approved one allowed, a Superadmin always allowed, and a
- * Normal User allowed (and, separately, that the x-api-key header path
- * -- used by external/programmatic callers -- is completely unaffected,
- * since it never has a `user`/role at all).
+ * relies on for auth, so the approval gate is baked directly into it
+ * (see account.guard.ts) rather than a separate opt-in guard a route
+ * could forget to add. Every non-Superadmin role is gated now (a
+ * brand-new solo signup exactly like a new Company Admin signup) -- these
+ * tests cover an unapproved Company Admin AND an unapproved Normal User
+ * both being rejected, an approved one of each being allowed, a
+ * Superadmin always allowed regardless, and (separately) that the
+ * x-api-key header path -- used by external/programmatic callers -- is
+ * completely unaffected, since it never has a `user`/role at all.
+ *
+ * Tests further down that are specifically about suspension or CSRF
+ * deliberately use an APPROVED user (approvedAt set) even where it isn't
+ * the thing under test -- otherwise the approval gate would reject the
+ * request first and the test would "pass" without ever exercising the
+ * logic it's named for.
  */
 describe('AccountGuard', () => {
   function buildContext(opts: {
@@ -94,13 +101,23 @@ describe('AccountGuard', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
-  it('allows a Normal User through -- the approval gate only ever applies to role=company_admin', async () => {
+  it('rejects an unapproved Normal User with a 403 -- a brand-new solo signup is gated exactly like a new Company Admin', async () => {
     const account = { id: 'acc_1' };
-    const normalUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
-    const { guard } = buildGuard({ resolvedUser: normalUser });
+    const unapprovedUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
+    const { guard } = buildGuard({ resolvedUser: unapprovedUser });
     const { context } = buildContext({ cookieToken: 'tok', method: 'GET' });
 
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows an APPROVED Normal User through', async () => {
+    const account = { id: 'acc_1' };
+    const approvedUser = { id: 'u2', role: Role.USER, approvedAt: new Date(), account };
+    const { guard } = buildGuard({ resolvedUser: approvedUser });
+    const { context, request } = buildContext({ cookieToken: 'tok', method: 'GET' });
+
     await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.user).toBe(approvedUser);
   });
 
   it('rejects when there is no session cookie and no x-api-key header', async () => {
@@ -124,8 +141,11 @@ describe('AccountGuard', () => {
 
   it('rejects every user on a suspended Account with a 403, regardless of role', async () => {
     const account = { id: 'acc_1', suspendedAt: new Date() };
-    const normalUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
-    const { guard } = buildGuard({ resolvedUser: normalUser });
+    // approvedAt set deliberately -- an unapproved user would be rejected
+    // by the approval gate first, which would pass this test for the
+    // wrong reason without ever exercising the suspension check.
+    const approvedUser = { id: 'u2', role: Role.USER, approvedAt: new Date(), account };
+    const { guard } = buildGuard({ resolvedUser: approvedUser });
     const { context } = buildContext({ cookieToken: 'tok', method: 'GET' });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
@@ -133,7 +153,7 @@ describe('AccountGuard', () => {
 
   it('rejects a suspended User even on an otherwise-active Account', async () => {
     const account = { id: 'acc_1' };
-    const suspendedUser = { id: 'u2', role: Role.USER, approvedAt: null, suspendedAt: new Date(), account };
+    const suspendedUser = { id: 'u2', role: Role.USER, approvedAt: new Date(), suspendedAt: new Date(), account };
     const { guard } = buildGuard({ resolvedUser: suspendedUser });
     const { context } = buildContext({ cookieToken: 'tok', method: 'GET' });
 
@@ -150,9 +170,10 @@ describe('AccountGuard', () => {
 
   it('still enforces the pre-existing CSRF origin check on mutating cookie-path requests, unchanged by the approval gate', async () => {
     const account = { id: 'acc_1' };
-    const normalUser = { id: 'u2', role: Role.USER, approvedAt: null, account };
+    // approvedAt set deliberately -- see the suspension tests above for why.
+    const approvedUser = { id: 'u2', role: Role.USER, approvedAt: new Date(), account };
     const { guard } = buildGuard({
-      resolvedUser: normalUser,
+      resolvedUser: approvedUser,
       publicBaseUrl: 'https://app.example.com',
     });
     const { context } = buildContext({

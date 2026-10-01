@@ -29,9 +29,10 @@ export interface TeamMember {
   createdAt: string;
 }
 
-export interface PendingCompanyAdmin {
+export interface PendingApproval {
   id: string;
   email: string;
+  role: UserRole;
   companyName: string | null;
   createdAt: string;
 }

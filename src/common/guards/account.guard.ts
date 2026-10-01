@@ -64,23 +64,27 @@ export class AccountGuard implements CanActivate {
       throw new UnauthorizedException('Session expired or revoked');
     }
 
-    // Approval gate: a Company Admin cannot use ANY route this guard
-    // protects until a Superadmin has approved them. This lives here,
-    // directly in AccountGuard, rather than as an opt-in decorator on each
-    // route -- an opt-in check is one a future route can simply forget to
-    // add; baking it into the guard itself means every current AND future
+    // Approval gate: every non-Superadmin user needs approvedAt set before
+    // they can use ANY route this guard protects -- covers a brand-new
+    // solo signup (magic-code or Google, role=user) exactly the same as a
+    // new Company Admin, per an explicit decision to gate every new
+    // account rather than just company signups (see migrations/0009,
+    // which backfills approvedAt for every pre-existing role=user row so
+    // this change doesn't lock out accounts that existed before it).
+    // UsersService.inviteUser auto-approves a team member added to an
+    // ALREADY-approved company at creation time, so this only ever blocks
+    // a genuinely brand-new account, never someone joining a company a
+    // Superadmin already vetted. This lives here, directly in
+    // AccountGuard, rather than as an opt-in decorator on each route -- an
+    // opt-in check is one a future route can simply forget to add; baking
+    // it into the guard itself means every current AND future
     // AccountGuard-protected route is covered automatically, fail-secure
-    // by construction. Deliberately role-scoped to COMPANY_ADMIN only --
-    // Superadmins and Normal Users are never subject to it (Normal Users
-    // are added by an already-approved Company Admin or a Superadmin, so
-    // there's nothing to approve). The account-holder's own pending-status
-    // check (GET /api/auth/me) and the Superadmin approval endpoints
-    // themselves both intentionally sit behind SessionGuard, not
-    // AccountGuard, so they're unaffected by this check.
-    if (resolved.user.role === Role.COMPANY_ADMIN && !resolved.user.approvedAt) {
-      throw new ForbiddenException(
-        'Your company account is pending Superadmin approval.',
-      );
+    // by construction. The account-holder's own pending-status check
+    // (GET /api/auth/me) and the Superadmin approval endpoints themselves
+    // both intentionally sit behind SessionGuard, not AccountGuard, so
+    // they're unaffected by this check.
+    if (resolved.user.role !== Role.SUPERADMIN && !resolved.user.approvedAt) {
+      throw new ForbiddenException('Your account is pending Superadmin approval.');
     }
 
     // Suspension gate: a superadmin's abuse-handling lever (see

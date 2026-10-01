@@ -107,7 +107,7 @@ export function AdminUsersPage() {
           </thead>
           <tbody>
             {results.map((u) => {
-              const pendingApproval = u.role === 'company_admin' && !u.approvedAt;
+              const pendingApproval = u.role !== 'superadmin' && !u.approvedAt;
               return (
                 <tr key={u.id}>
                   <td>{u.email}</td>

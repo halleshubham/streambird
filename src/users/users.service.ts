@@ -50,6 +50,10 @@ export class UsersService {
    * continuing members' subsequent logins resolve). No apiKey is
    * surfaced here; AccountsService.create() still mints one for API-key
    * access, it's just not shown to this login flow.
+   *
+   * approvedAt is explicitly left null -- a brand-new solo account is
+   * gated by the Superadmin approval queue exactly like a new Company
+   * Admin signup (see AccountGuard, listPendingApprovals/approveUser).
    */
   async findOrCreateForEmail(email: string): Promise<{ user: User; account: Account }> {
     const existing = await this.findByEmail(email);
@@ -58,7 +62,12 @@ export class UsersService {
     }
 
     const { account } = await this.accountsService.create({ name: email });
-    const user = this.users.create({ email, accountId: account.id, role: Role.USER });
+    const user = this.users.create({
+      email,
+      accountId: account.id,
+      role: Role.USER,
+      approvedAt: null,
+    });
     await this.users.save(user);
 
     return { user, account };
@@ -111,6 +120,13 @@ export class UsersService {
    * invitee picks it up on their own first magic-code (or Google) login
    * for that exact email, which then just resolves this existing row
    * instead of creating a new solo Account for them.
+   *
+   * Auto-approved immediately (approvedAt set at creation, not left null)
+   * -- the approval gate (see AccountGuard) exists to vet brand-new
+   * accounts, and this user is joining a company a Superadmin has ALREADY
+   * approved. Requiring a second, separate approval for every team member
+   * a vetted Company Admin invites would be pure friction with no real
+   * security benefit; the inviting admin is the one vouching for them.
    */
   async inviteUser(accountId: string, email: string): Promise<User> {
     const existing = await this.users.findOne({ where: { email } });
@@ -118,7 +134,12 @@ export class UsersService {
       throw new ConflictException('This email is already registered to an account.');
     }
 
-    const user = this.users.create({ email, accountId, role: Role.USER });
+    const user = this.users.create({
+      email,
+      accountId,
+      role: Role.USER,
+      approvedAt: new Date(),
+    });
     return this.users.save(user);
   }
 
@@ -141,19 +162,25 @@ export class UsersService {
     await this.users.delete(user.id);
   }
 
-  /** Superadmin-only: every Company Admin still awaiting approval. */
-  async listPendingCompanyAdmins(): Promise<User[]> {
+  /**
+   * Superadmin-only: every account still awaiting approval -- both a new
+   * Company Admin's signup and a brand-new solo user's first login (see
+   * AccountGuard's approval gate, which now covers both; a team member
+   * invited into an already-approved company is auto-approved at
+   * creation by inviteUser and never shows up here).
+   */
+  async listPendingApprovals(): Promise<User[]> {
     return this.users.find({
-      where: { role: Role.COMPANY_ADMIN, approvedAt: IsNull() },
+      where: { role: In([Role.USER, Role.COMPANY_ADMIN]), approvedAt: IsNull() },
       relations: ['account'],
       order: { createdAt: 'ASC' },
     });
   }
 
-  async approveCompanyAdmin(userId: string, approvedByUserId: string): Promise<User> {
+  async approveUser(userId: string, approvedByUserId: string): Promise<User> {
     const user = await this.findByIdOrThrow(userId);
-    if (user.role !== Role.COMPANY_ADMIN) {
-      throw new ForbiddenException('Only a Company Admin can be approved.');
+    if (user.role === Role.SUPERADMIN) {
+      throw new ForbiddenException('A Superadmin is never subject to approval.');
     }
     user.approvedAt = new Date();
     user.approvedById = approvedByUserId;
@@ -161,17 +188,18 @@ export class UsersService {
   }
 
   /**
-   * Rejecting a pending Company Admin deletes their whole (never-yet-used)
-   * Account -- which cascades to delete the Company row and the User row
-   * with it (see migrations' ON DELETE CASCADE). Safe to do unconditionally
-   * here because an unapproved Company Admin cannot have created ANY data
-   * yet (every AccountGuard-protected route rejects them -- see
-   * AccountGuard's approval gate), so there is nothing else to clean up.
+   * Rejecting a pending account deletes its whole (never-yet-used)
+   * Account -- which cascades to delete the Company row (if any) and the
+   * User row with it (see migrations' ON DELETE CASCADE). Safe to do
+   * unconditionally here because an unapproved account cannot have
+   * created ANY data yet (every AccountGuard-protected route rejects it
+   * -- see AccountGuard's approval gate), so there is nothing else to
+   * clean up.
    */
-  async rejectCompanyAdmin(userId: string): Promise<void> {
+  async rejectUser(userId: string): Promise<void> {
     const user = await this.findByIdOrThrow(userId);
-    if (user.role !== Role.COMPANY_ADMIN || user.approvedAt) {
-      throw new ForbiddenException('Only a pending Company Admin can be rejected.');
+    if (user.role === Role.SUPERADMIN || user.approvedAt) {
+      throw new ForbiddenException('Only a pending (not yet approved) account can be rejected.');
     }
     await this.accountsService.remove(user.accountId);
   }

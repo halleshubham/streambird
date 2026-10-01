@@ -6,8 +6,8 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
  * joins required to read it back) rather than relations to User/Account,
  * since an audit entry must remain legible even after its target is long
  * gone (e.g. a rejected signup's Account is actually deleted -- see
- * UsersService.rejectCompanyAdmin -- but the fact that it was rejected,
- * by whom, and when should still be readable).
+ * UsersService.rejectUser -- but the fact that it was rejected, by whom,
+ * and when should still be readable).
  */
 @Entity('superadmin_audit_log')
 export class SuperadminAuditLogEntry {

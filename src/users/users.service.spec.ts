@@ -91,7 +91,7 @@ describe('UsersService', () => {
     return { service: moduleRef.get(UsersService), users, companies, accountsService };
   }
 
-  it('creates exactly one Account+User pair on first-ever login for an email', async () => {
+  it('creates exactly one Account+User pair on first-ever login for an email, pending approval', async () => {
     const { service, accountsService } = await build();
 
     const { user, account } = await service.findOrCreateForEmail('New@Example.com');
@@ -100,6 +100,9 @@ describe('UsersService', () => {
     expect(user.email).toBe('New@Example.com');
     expect(user.accountId).toBe(account.id);
     expect(user.role).toBe(Role.USER);
+    // A brand-new solo signup is gated by the Superadmin approval queue
+    // exactly like a new Company Admin signup -- see AccountGuard.
+    expect(user.approvedAt).toBeNull();
   });
 
   it('a returning email resolves the same User/Account instead of creating a new pair', async () => {
@@ -141,13 +144,16 @@ describe('UsersService', () => {
   });
 
   describe('company-scoped team management', () => {
-    it('inviteUser adds a Normal User scoped to the inviter\'s own account', async () => {
+    it('inviteUser adds a Normal User scoped to the inviter\'s own account, auto-approved immediately', async () => {
       const { service } = await build();
 
       const invited = await service.inviteUser('acc_1', 'teammate@acme.com');
 
       expect(invited.accountId).toBe('acc_1');
       expect(invited.role).toBe(Role.USER);
+      // Joining a company a Superadmin has ALREADY approved shouldn't
+      // require a second, separate approval -- see inviteUser's docstring.
+      expect(invited.approvedAt).not.toBeNull();
     });
 
     it('inviteUser rejects an email that already belongs to any account', async () => {
@@ -190,48 +196,72 @@ describe('UsersService', () => {
   });
 
   describe('superadmin approval workflow', () => {
-    it('listPendingCompanyAdmins returns only unapproved company_admin users', async () => {
+    it('listPendingApprovals returns unapproved company_admin AND unapproved solo-user signups, but not an auto-approved invited teammate', async () => {
       const { service } = await build();
-      const { user: pending } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      const { user: pendingAdmin } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
       const { user: approvedAdmin } = await service.createCompanyAdmin(
         'Other Co',
         'other@co.com',
       );
-      await service.approveCompanyAdmin(approvedAdmin.id, 'superadmin_1');
-      await service.inviteUser(pending.accountId, 'not-an-admin@acme.com');
+      await service.approveUser(approvedAdmin.id, 'superadmin_1');
+      await service.inviteUser(pendingAdmin.accountId, 'not-pending@acme.com'); // auto-approved, must be excluded
+      const { user: pendingSolo } = await service.findOrCreateForEmail('solo-pending@example.com');
 
-      const pendingList = await service.listPendingCompanyAdmins();
+      const pendingList = await service.listPendingApprovals();
 
-      expect(pendingList.map((u) => u.id)).toEqual([pending.id]);
+      expect(pendingList.map((u) => u.id).sort()).toEqual(
+        [pendingAdmin.id, pendingSolo.id].sort(),
+      );
     });
 
-    it('approveCompanyAdmin sets approvedAt/approvedBy, unblocking the approval gate', async () => {
+    it('approveUser sets approvedAt/approvedBy, unblocking the approval gate -- works for a Company Admin or a solo user', async () => {
       const { service } = await build();
-      const { user } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      const { user: admin } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      const { user: solo } = await service.findOrCreateForEmail('solo@example.com');
 
-      const approved = await service.approveCompanyAdmin(user.id, 'superadmin_1');
+      const approvedAdmin = await service.approveUser(admin.id, 'superadmin_1');
+      const approvedSolo = await service.approveUser(solo.id, 'superadmin_1');
 
-      expect(approved.approvedAt).not.toBeNull();
-      expect(approved.approvedById).toBe('superadmin_1');
+      expect(approvedAdmin.approvedAt).not.toBeNull();
+      expect(approvedAdmin.approvedById).toBe('superadmin_1');
+      expect(approvedSolo.approvedAt).not.toBeNull();
+      expect(approvedSolo.approvedById).toBe('superadmin_1');
     });
 
-    it('rejectCompanyAdmin deletes the whole never-yet-used account', async () => {
-      const { service, accountsService } = await build();
-      const { user } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+    it('approveUser refuses to touch a Superadmin -- never subject to approval in the first place', async () => {
+      const { service, users } = await build();
+      const superadmin = users.create({
+        id: 'root',
+        email: 'root@example.com',
+        accountId: 'acc_root',
+        role: Role.SUPERADMIN,
+        approvedAt: new Date(),
+      });
+      await users.save(superadmin);
 
-      await service.rejectCompanyAdmin(user.id);
-
-      expect(accountsService.remove).toHaveBeenCalledWith(user.accountId);
-    });
-
-    it('rejectCompanyAdmin refuses to touch an already-approved company_admin', async () => {
-      const { service } = await build();
-      const { user } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
-      await service.approveCompanyAdmin(user.id, 'superadmin_1');
-
-      await expect(service.rejectCompanyAdmin(user.id)).rejects.toBeInstanceOf(
+      await expect(service.approveUser(superadmin.id, 'superadmin_1')).rejects.toBeInstanceOf(
         ForbiddenException,
       );
+    });
+
+    it('rejectUser deletes the whole never-yet-used account -- for a pending Company Admin or a pending solo user', async () => {
+      const { service, accountsService } = await build();
+      const { user: admin } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      const { user: solo } = await service.findOrCreateForEmail('solo-reject@example.com');
+
+      await service.rejectUser(admin.id);
+      await service.rejectUser(solo.id);
+
+      expect(accountsService.remove).toHaveBeenCalledWith(admin.accountId);
+      expect(accountsService.remove).toHaveBeenCalledWith(solo.accountId);
+    });
+
+    it('rejectUser refuses to touch an already-approved account', async () => {
+      const { service } = await build();
+      const { user } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      await service.approveUser(user.id, 'superadmin_1');
+
+      await expect(service.rejectUser(user.id)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

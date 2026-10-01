@@ -5,22 +5,22 @@ import type {
   AccountSummary,
   AnalyticsOverview,
   AuditLogEntry,
-  PendingCompanyAdmin,
+  PendingApproval,
   UpdateSubscriptionPayload,
   UsageAlert,
   UserSearchResult,
 } from '../types/api';
 
-export function listPendingCompanyAdmins(): Promise<PendingCompanyAdmin[]> {
-  return api.get('/superadmin/pending-company-admins');
+export function listPendingApprovals(): Promise<PendingApproval[]> {
+  return api.get('/superadmin/pending-approvals');
 }
 
-export function approveCompanyAdmin(userId: string): Promise<{ id: string; approvedAt: string }> {
-  return api.post(`/superadmin/company-admins/${userId}/approve`);
+export function approveUser(userId: string): Promise<{ id: string; approvedAt: string }> {
+  return api.post(`/superadmin/users/${userId}/approve`);
 }
 
-export function rejectCompanyAdmin(userId: string): Promise<void> {
-  return api.post(`/superadmin/company-admins/${userId}/reject`);
+export function rejectUser(userId: string): Promise<void> {
+  return api.post(`/superadmin/users/${userId}/reject`);
 }
 
 export function listAuditLog(limit = 50, offset = 0): Promise<AuditLogEntry[]> {

@@ -48,9 +48,9 @@ export class AccountsService {
    * Deletes an Account outright, cascading to every row that references
    * it (users, companies, platform_connections, live_streams, ... -- all
    * ON DELETE CASCADE). Only ever called today for rejecting a pending,
-   * never-yet-used Company Admin signup (see
-   * UsersService.rejectCompanyAdmin) -- never on an account with real
-   * usage history.
+   * never-yet-used signup -- a Company Admin or a solo user (see
+   * UsersService.rejectUser) -- never on an account with real usage
+   * history.
    */
   async remove(id: string): Promise<void> {
     await this.accounts.delete(id);

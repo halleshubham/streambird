@@ -34,29 +34,36 @@ export class SuperadminController {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  @Get('pending-company-admins')
-  async pendingCompanyAdmins() {
-    const users = await this.usersService.listPendingCompanyAdmins();
+  /**
+   * Every account awaiting approval -- a new Company Admin signup AND a
+   * brand-new solo user's first login (see AccountGuard's approval gate,
+   * UsersService.listPendingApprovals). `role` is included so the admin
+   * UI can show which kind of account each row is.
+   */
+  @Get('pending-approvals')
+  async pendingApprovals() {
+    const users = await this.usersService.listPendingApprovals();
     return users.map((u) => ({
       id: u.id,
       email: u.email,
+      role: u.role,
       companyName: u.account?.name ?? null,
       createdAt: u.createdAt,
     }));
   }
 
-  @Post('company-admins/:userId/approve')
+  @Post('users/:userId/approve')
   async approve(@CurrentUser() admin: User, @Param('userId', ParseUUIDPipe) userId: string) {
-    const user = await this.usersService.approveCompanyAdmin(userId, admin.id);
-    await this.auditLog.log(admin, 'approve_company_admin', 'user', user.id);
+    const user = await this.usersService.approveUser(userId, admin.id);
+    await this.auditLog.log(admin, 'approve_user', 'user', user.id);
     return { id: user.id, approvedAt: user.approvedAt };
   }
 
-  @Post('company-admins/:userId/reject')
+  @Post('users/:userId/reject')
   @HttpCode(204)
   async reject(@CurrentUser() admin: User, @Param('userId', ParseUUIDPipe) userId: string): Promise<void> {
-    await this.usersService.rejectCompanyAdmin(userId);
-    await this.auditLog.log(admin, 'reject_company_admin', 'user', userId);
+    await this.usersService.rejectUser(userId);
+    await this.auditLog.log(admin, 'reject_user', 'user', userId);
   }
 
   /**
