@@ -93,6 +93,29 @@ describe('FacebookProvider', () => {
     );
   });
 
+  it('createBroadcast includes Graph API\'s type/code/subcode/fbtrace_id in the thrown message -- its own "message" field alone (e.g. "Permissions error") is too generic to debug from', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: {
+            code: 200,
+            error_subcode: 1,
+            type: 'OAuthException',
+            message: 'Permissions error',
+            fbtrace_id: 'AbCdEfGhIjK',
+          },
+        },
+        false,
+        400,
+      ),
+    );
+
+    await expect(provider.createBroadcast(conn, { title: 'Test stream' })).rejects.toThrow(
+      /OAuthException 200\/1.*fbtrace_id=AbCdEfGhIjK/,
+    );
+  });
+
   it("getBroadcastStatus reads Facebook's raw status field", async () => {
     const { provider } = buildProvider();
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'LIVE' }));

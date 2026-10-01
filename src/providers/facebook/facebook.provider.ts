@@ -55,14 +55,34 @@ export class FacebookProvider implements StreamProvider {
     });
 
     const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: number; message?: string };
+      error?: {
+        code?: number;
+        error_subcode?: number;
+        type?: string;
+        message?: string;
+        error_user_title?: string;
+        error_user_msg?: string;
+        fbtrace_id?: string;
+      };
     };
 
     if (!res.ok || body.error) {
-      const reconnectHint =
-        body.error?.code === 190 ? ' -- reconnect this Facebook Page to fix this.' : '';
+      const err = body.error;
+      const reconnectHint = err?.code === 190 ? ' -- reconnect this Facebook Page to fix this.' : '';
+      // Graph API's own `message` is often generic ("Permissions error") --
+      // `type`/`code`/`error_subcode` and the user-facing fields pin down
+      // WHICH permission/App Review gap it actually is, and `fbtrace_id` is
+      // what Meta's own support tools look up by.
+      const detail = [
+        err?.type && err?.code !== undefined ? `${err.type} ${err.code}${err.error_subcode ? `/${err.error_subcode}` : ''}` : null,
+        err?.error_user_title,
+        err?.error_user_msg,
+        err?.fbtrace_id ? `fbtrace_id=${err.fbtrace_id}` : null,
+      ]
+        .filter(Boolean)
+        .join(' -- ');
       throw new Error(
-        `Facebook API ${method} ${path} failed (${res.status}): ${body.error?.message ?? 'unknown error'}${reconnectHint}`,
+        `Facebook API ${method} ${path} failed (${res.status}): ${err?.message ?? 'unknown error'}${detail ? ` (${detail})` : ''}${reconnectHint}`,
       );
     }
     return body as T;
