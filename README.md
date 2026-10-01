@@ -22,16 +22,20 @@ Early scaffold. Working so far:
   requested destinations, with the 4th surfaced as `status: 'failed'` and
   retryable via `POST /streams/:id/destinations/:destinationId/retry`.
 - `GET /streams/:id`, `GET /streams/:id/status`, `POST /streams/:id/end`.
-- `TwitchProvider` (static ingest URL/key, pasted manually — no OAuth) and
+- `TwitchProvider` (static ingest URL/key, pasted manually — no OAuth),
   `YouTubeProvider` (full OAuth connect flow against the YouTube Data API
   v3: `liveBroadcasts.insert` + `liveStreams.insert` + `.bind`, with
   `enableAutoStart`/`enableAutoStop` so YouTube flips the broadcast
   live/complete itself the moment it sees — or stops seeing — the RTMP
-  stream) are implemented. YouTube's `youtube` OAuth scope is "sensitive"
-  on Google's side — the connect flow works today against test users, but
-  needs the OAuth consent screen to clear Google's verification review
-  before more than ~100 accounts can use it. Facebook and LinkedIn
-  adapters are still pending their own OAuth/app-review processes.
+  stream), and `FacebookProvider` (OAuth connect flow against the Graph
+  API's Live Video endpoints — `POST /{page-id}/live_videos`, with a
+  Page-picker step for accounts managing more than one Page) are all
+  implemented. Both YouTube's `youtube` scope and Facebook's
+  `pages_manage_posts`/`publish_video` scopes are "sensitive"/gated on
+  their respective platforms — each connect flow works today against the
+  app's own registered test users, but needs that platform's app-review
+  process to clear before the general public can use it. LinkedIn is
+  still pending its own OAuth/app-review process.
 - **Studio (guest-join + client-side compositing)** — `POST /streams` now
   also creates a `StudioSession`. `POST /studio-sessions/:id/invites`
   issues a single-use, short-TTL guest join link; `web-app/src/studio/`
@@ -60,10 +64,10 @@ Early scaffold. Working so far:
   not confirmed against a real API response — flagged in
   `cloudflare-relay.service.ts` pending the empirical spike.
 
-Not yet built: Facebook/LinkedIn OAuth connect/callback flows and
-`StreamProvider` adapters, and the paid server-side "Guaranteed
-Quality" compositing fallback (`compositing_mode='server_egress'` exists
-in the schema but has no implementation yet).
+Not yet built: a LinkedIn OAuth connect/callback flow and `StreamProvider`
+adapter, and the paid server-side "Guaranteed Quality" compositing
+fallback (`compositing_mode='server_egress'` exists in the schema but has
+no implementation yet).
 
 ## Running locally
 
