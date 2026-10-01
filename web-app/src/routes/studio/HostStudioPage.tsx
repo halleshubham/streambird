@@ -18,6 +18,10 @@ import {
   Save,
   Clapperboard,
   ExternalLink,
+  Pin,
+  PinOff,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useHostStudio } from '../../studio/useHostStudio';
 import { PlatformBadge } from '../../components/PlatformBadge';
@@ -204,6 +208,20 @@ export function HostStudioPage() {
                   <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
                     {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
                     {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`icon-btn icon-btn--small${p.pinned ? ' icon-btn--accent' : ''}`}
+                    onClick={() => actions.togglePin(p.id)}
+                  >
+                    {p.pinned ? <PinOff size={14} /> : <Pin size={14} />} {p.pinned ? 'Unpin' : 'Pin to spotlight'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`icon-btn icon-btn--small${p.onStage ? '' : ' icon-btn--accent'}`}
+                    onClick={() => actions.toggleOnStage(p.id)}
+                  >
+                    {p.onStage ? <EyeOff size={14} /> : <Eye size={14} />} {p.onStage ? 'Send backstage' : 'Bring on stage'}
                   </button>
                 </>
               )}

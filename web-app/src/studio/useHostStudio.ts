@@ -28,6 +28,8 @@ interface Participant {
   audioTrack: MediaStreamTrack | null;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  joinedAt: number; // performance.now() at creation -- drives the lower-third's slide-in animation
+  onStage: boolean; // false = "backstage": excluded from the composited canvas and the broadcast audio mix
 }
 
 export interface ParticipantView {
@@ -37,6 +39,8 @@ export interface ParticipantView {
   videoEnabled: boolean;
   isLocal: boolean;
   isScreenShare: boolean;
+  onStage: boolean;
+  pinned: boolean;
 }
 
 export interface Branding {
@@ -91,6 +95,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [platformById, setPlatformById] = useState<Map<string, Platform>>(new Map());
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
 
   const hostTokenRef = useRef<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -117,6 +122,15 @@ export function useHostStudio(streamId: string | undefined) {
   const whipResourceUrlRef = useRef<string | null>(null);
   const keyFrameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endingStreamRef = useRef(false);
+  const pinnedIdRef = useRef<string | null>(null);
+  // Crossfade-on-change: a snapshot of the canvas taken the instant a layout
+  // (or scene, which calls setLayout internally) change is requested, faded
+  // out over the newly-drawn frame for TRANSITION_MS so switches are a
+  // dissolve instead of a hard cut.
+  const transitionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const transitionStateRef = useRef<{ startedAt: number } | null>(null);
+  const logoAppearedAtRef = useRef<number | null>(null);
+  const tickerAppearedAtRef = useRef<number | null>(null);
 
   function renderParticipantList() {
     const view: ParticipantView[] = [...participantsRef.current.values()].map((p) => ({
@@ -126,6 +140,8 @@ export function useHostStudio(streamId: string | undefined) {
       videoEnabled: p.videoEnabled,
       isLocal: p.id === 'local',
       isScreenShare: p.id === SCREEN_SHARE_ID,
+      onStage: p.onStage,
+      pinned: p.id === pinnedIdRef.current,
     }));
     setParticipantsView(view);
   }
@@ -305,11 +321,31 @@ export function useHostStudio(streamId: string | undefined) {
 
   // ---- Canvas compositing ----------------------------------------------
 
-  function drawLogo() {
+  const LOWER_THIRD_ACCENT = '#7c3aed'; // matches --accent in index.css -- canvas can't read CSS custom properties
+  const ENTRANCE_MS = 400;
+
+  function easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function drawLogo(now: number) {
     const b = brandingRef.current;
     if (!b.logoImg) return;
+    const ctx = ctxRef.current!;
+    let alpha = 1;
+    let yOffset = 0;
+    const appearedAt = logoAppearedAtRef.current;
+    if (appearedAt !== null) {
+      const t = Math.min((now - appearedAt) / ENTRANCE_MS, 1);
+      const eased = easeOutCubic(t);
+      alpha = eased;
+      yOffset = (1 - eased) * -20;
+      if (t >= 1) logoAppearedAtRef.current = null;
+    }
     const scale = b.logoSize / b.logoImg.naturalHeight;
-    ctxRef.current!.drawImage(b.logoImg, 16, 16, b.logoImg.naturalWidth * scale, b.logoSize);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(b.logoImg, 16, 16 + yOffset, b.logoImg.naturalWidth * scale, b.logoSize);
+    ctx.globalAlpha = 1;
   }
 
   function drawNewsline(w: number, h: number, now: number) {
@@ -317,8 +353,16 @@ export function useHostStudio(streamId: string | undefined) {
     if (!b.newsText) return;
     const ctx = ctxRef.current!;
     const barH = 36;
+    let barY = h - barH;
+    const appearedAt = tickerAppearedAtRef.current;
+    if (appearedAt !== null) {
+      const t = Math.min((now - appearedAt) / ENTRANCE_MS, 1);
+      const eased = easeOutCubic(t);
+      barY = h - barH + (1 - eased) * barH; // slides up from fully below-frame into its resting position
+      if (t >= 1) tickerAppearedAtRef.current = null;
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(0, h - barH, w, barH);
+    ctx.fillRect(0, barY, w, barH);
 
     ctx.font = '18px sans-serif';
     ctx.fillStyle = '#fff';
@@ -332,10 +376,10 @@ export function useHostStudio(streamId: string | undefined) {
     newsScrollXRef.current -= dt * 0.08;
     if (newsScrollXRef.current + textWidth < 0) newsScrollXRef.current = w;
 
-    ctx.fillText(b.newsText, newsScrollXRef.current, h - barH / 2);
+    ctx.fillText(b.newsText, newsScrollXRef.current, barY + barH / 2);
   }
 
-  function drawCell(p: Participant, x: number, y: number, w: number, h: number) {
+  function drawCell(p: Participant, x: number, y: number, w: number, h: number, now: number) {
     const ctx = ctxRef.current!;
     const vw = p.videoEl.videoWidth;
     const vh = p.videoEl.videoHeight;
@@ -355,39 +399,77 @@ export function useHostStudio(streamId: string | undefined) {
     // else: video metadata not loaded yet -- skip drawing this frame rather
     // than stretching to fill or drawing garbage.
 
+    // News-room-style lower third: a colored accent bar + dark name plate,
+    // sliding in from the left over the tile's first ENTRANCE_MS*1.25ms --
+    // slightly slower than the logo/ticker so a packed grid of simultaneous
+    // joins doesn't read as everything popping in at once.
     const fontSize = brandingRef.current.nameFontSize;
     const boxH = Math.min(h, fontSize + 14);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(x, y + h - boxH, w, boxH);
+    const plateY = y + h - boxH;
+    const slideDuration = ENTRANCE_MS * 1.25;
+    const t = Math.min((now - p.joinedAt) / slideDuration, 1);
+    const eased = easeOutCubic(t);
+    const slideOffset = (1 - eased) * -Math.min(w, 200);
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y + h - boxH, w, boxH);
+    ctx.rect(x, plateY, w, boxH);
     ctx.clip();
+    ctx.translate(slideOffset, 0);
+
+    const accentW = 6;
+    ctx.fillStyle = LOWER_THIRD_ACCENT;
+    ctx.fillRect(x, plateY, accentW, boxH);
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(x + accentW, plateY, w - accentW, boxH);
+
     ctx.fillStyle = '#fff';
-    ctx.font = `${fontSize}px sans-serif`;
+    ctx.font = `600 ${fontSize}px sans-serif`;
     ctx.textBaseline = 'middle';
-    ctx.fillText(p.displayName, x + 6, y + h - boxH / 2);
+    ctx.fillText(p.displayName, x + accentW + 8, plateY + boxH / 2);
     ctx.restore();
   }
 
-  function drawGrid(entries: Participant[], w: number, h: number) {
+  function drawGrid(entries: Participant[], w: number, h: number, now: number) {
     const cols = Math.ceil(Math.sqrt(entries.length));
     const rows = Math.ceil(entries.length / cols);
     void rows;
     const cellW = w / cols;
     const cellH = h / Math.ceil(entries.length / cols);
     entries.forEach((p, i) => {
-      drawCell(p, (i % cols) * cellW, Math.floor(i / cols) * cellH, cellW, cellH);
+      drawCell(p, (i % cols) * cellW, Math.floor(i / cols) * cellH, cellW, cellH, now);
     });
   }
 
-  function drawSpotlight(entries: Participant[], w: number, h: number) {
-    drawCell(entries[0], 0, 0, w, h);
+  function drawSpotlight(entries: Participant[], w: number, h: number, now: number) {
+    const pinnedId = pinnedIdRef.current;
+    const pinnedIdx = pinnedId ? entries.findIndex((p) => p.id === pinnedId) : -1;
+    const ordered =
+      pinnedIdx > 0
+        ? [entries[pinnedIdx], ...entries.slice(0, pinnedIdx), ...entries.slice(pinnedIdx + 1)]
+        : entries;
+
+    drawCell(ordered[0], 0, 0, w, h, now);
     const thumbSize = w / 6;
-    entries.slice(1).forEach((p, i) => {
-      drawCell(p, w - thumbSize - 8, 8 + i * (thumbSize * 0.6 + 8), thumbSize, thumbSize * 0.6);
+    ordered.slice(1).forEach((p, i) => {
+      drawCell(p, w - thumbSize - 8, 8 + i * (thumbSize * 0.6 + 8), thumbSize, thumbSize * 0.6, now);
     });
+  }
+
+  /** Snapshots the current canvas so the next frame's content can crossfade
+   * in over it instead of hard-cutting -- called right before a layout (or
+   * scene, which applies a layout internally) change is applied. */
+  function beginTransition() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (!transitionCanvasRef.current) {
+      transitionCanvasRef.current = document.createElement('canvas');
+    }
+    const tCanvas = transitionCanvasRef.current;
+    tCanvas.width = canvas.width;
+    tCanvas.height = canvas.height;
+    tCanvas.getContext('2d')!.drawImage(canvas, 0, 0);
+    transitionStateRef.current = { startedAt: performance.now() };
   }
 
   function startDrawLoop() {
@@ -420,14 +502,31 @@ export function useHostStudio(streamId: string | undefined) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, w, h);
 
-      const entries = [...participantsRef.current.values()].filter((p) => p.videoEl.readyState >= 2);
+      const entries = [...participantsRef.current.values()].filter(
+        (p) => p.videoEl.readyState >= 2 && p.onStage,
+      );
       if (entries.length > 0) {
-        if (layoutModeRef.current === 'spotlight') drawSpotlight(entries, w, h);
-        else drawGrid(entries, w, h);
+        if (layoutModeRef.current === 'spotlight') drawSpotlight(entries, w, h, now);
+        else drawGrid(entries, w, h, now);
       }
 
-      drawLogo();
+      drawLogo(now);
       drawNewsline(w, h, now);
+
+      const transition = transitionStateRef.current;
+      if (transition) {
+        const TRANSITION_MS = 350;
+        const elapsed = now - transition.startedAt;
+        if (elapsed < TRANSITION_MS && transitionCanvasRef.current) {
+          const eased = easeOutCubic(elapsed / TRANSITION_MS);
+          ctx.globalAlpha = 1 - eased;
+          ctx.drawImage(transitionCanvasRef.current, 0, 0, w, h);
+          ctx.globalAlpha = 1;
+        } else {
+          transitionStateRef.current = null;
+        }
+      }
+
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
@@ -453,6 +552,8 @@ export function useHostStudio(streamId: string | undefined) {
       audioTrack: null,
       audioEnabled: true,
       videoEnabled: true,
+      joinedAt: performance.now(),
+      onStage: true,
     });
     renderParticipantList();
 
@@ -682,6 +783,8 @@ export function useHostStudio(streamId: string | undefined) {
         audioTrack,
         audioEnabled: true,
         videoEnabled: true,
+        joinedAt: performance.now(),
+        onStage: true,
       });
       connectAudioTrack('local', audioTrack);
       renderParticipantList();
@@ -698,6 +801,7 @@ export function useHostStudio(streamId: string | undefined) {
   // by both the toggle button and scene-switching) and persists it to the
   // backend exactly like the original toggle-only implementation did.
   const setLayout = useCallback((next: LayoutMode) => {
+    beginTransition();
     layoutModeRef.current = next;
     setLayoutMode(next);
     setStatus({ text: `Layout: ${next}`, isError: false });
@@ -763,6 +867,8 @@ export function useHostStudio(streamId: string | undefined) {
         audioTrack,
         audioEnabled: true,
         videoEnabled: true,
+        joinedAt: performance.now(),
+        onStage: true,
       });
 
       if (audioTrack) connectAudioTrack(SCREEN_SHARE_ID, audioTrack);
@@ -811,6 +917,39 @@ export function useHostStudio(streamId: string | undefined) {
     renderParticipantList();
   }
 
+  function togglePin(id: string) {
+    pinnedIdRef.current = pinnedIdRef.current === id ? null : id;
+    setPinnedId(pinnedIdRef.current);
+    renderParticipantList();
+  }
+
+  /** Backstage: excluded from the composited canvas (see the entries filter
+   * in the draw loop) and, here, disconnected from the broadcast's audio
+   * mix specifically -- `audioSourceNodesRef`'s node fans out to several
+   * destinations (the full mix, every other guest's mix-minus, the host's
+   * own speakers), and `AudioNode.disconnect(destinationNode)` targets only
+   * one of those, so a backstage guest stays audible to the room (and to
+   * the host) without reaching the audience. */
+  function toggleOnStage(id: string) {
+    const p = participantsRef.current.get(id);
+    if (!p) return;
+    p.onStage = !p.onStage;
+    const source = audioSourceNodesRef.current.get(id);
+    if (source && audioDestinationRef.current) {
+      if (p.onStage) {
+        source.connect(audioDestinationRef.current);
+      } else {
+        try {
+          source.disconnect(audioDestinationRef.current);
+        } catch {
+          // Already disconnected (e.g. toggled before any audio track ever
+          // arrived for this participant) -- nothing further to do.
+        }
+      }
+    }
+    renderParticipantList();
+  }
+
   const dropParticipant = useCallback((id: string) => {
     if (id === 'local' || id === SCREEN_SHARE_ID) return; // not a real guest -- use stopScreenShare instead
     const p = participantsRef.current.get(id);
@@ -829,6 +968,7 @@ export function useHostStudio(streamId: string | undefined) {
     const img = new Image();
     img.onload = () => {
       brandingRef.current.logoImg = img;
+      logoAppearedAtRef.current = performance.now();
       URL.revokeObjectURL(img.src);
     };
     img.src = URL.createObjectURL(file);
@@ -842,9 +982,13 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   function setNewsText(text: string) {
-    brandingRef.current.newsText = text.trim();
+    const trimmed = text.trim();
+    if (!brandingRef.current.newsText && trimmed) {
+      tickerAppearedAtRef.current = performance.now();
+    }
+    brandingRef.current.newsText = trimmed;
     newsScrollXRef.current = null;
-    setBranding((b) => ({ ...b, newsText: text.trim() }));
+    setBranding((b) => ({ ...b, newsText: trimmed }));
   }
 
   function setNameFontSize(size: number) {
@@ -1059,6 +1203,7 @@ export function useHostStudio(streamId: string | undefined) {
     activeSceneName,
     destinations,
     platformById,
+    pinnedId,
     actions: {
       startCamera,
       createInviteLink,
@@ -1068,6 +1213,8 @@ export function useHostStudio(streamId: string | undefined) {
       endStream,
       toggleParticipantAudio,
       toggleParticipantVideo,
+      togglePin,
+      toggleOnStage,
       dropParticipant,
       setLogoFile,
       setLogoSize,
