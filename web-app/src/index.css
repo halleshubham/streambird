@@ -775,6 +775,7 @@ a.stream-list-item:hover {
 
 .studio-local-video {
   width: 100%;
+  aspect-ratio: 16 / 9;
   background: #000;
   border-radius: 8px;
 }
@@ -1165,4 +1166,67 @@ a.stream-list-item:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* ---- BirdLoader -- a flying-logo loading indicator, flies off-screen on completion ---- */
+
+.studio-video-wrap {
+  position: relative;
+}
+
+.bird-loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #000;
+  border-radius: 8px;
+  z-index: 1;
+}
+
+.bird-loader--compact {
+  position: static;
+  padding: 20px 0;
+  background: none;
+  border-radius: 0;
+}
+
+.bird-loader-bird {
+  width: 56px;
+  height: 56px;
+}
+
+.bird-loader--compact .bird-loader-bird {
+  width: 36px;
+  height: 36px;
+}
+
+.bird-loader-bird--flying {
+  animation: bird-loader-flap 1.1s ease-in-out infinite;
+}
+
+.bird-loader-bird--exiting {
+  animation: bird-loader-fly-out 600ms ease-in forwards;
+}
+
+.bird-loader-label {
+  color: #fff;
+  font-size: 13px;
+}
+
+.bird-loader--compact .bird-loader-label {
+  color: var(--text);
+}
+
+@keyframes bird-loader-flap {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-10px) rotate(4deg); }
+}
+
+@keyframes bird-loader-fly-out {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(160px, -70px) rotate(20deg); opacity: 0; }
 }

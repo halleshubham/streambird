@@ -129,6 +129,13 @@ export function useHostStudio(streamId: string | undefined) {
   // dissolve instead of a hard cut.
   const transitionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const transitionStateRef = useRef<{ startedAt: number } | null>(null);
+  // Identity of the last frame's composited entries (ids, in draw order) --
+  // compared every frame so a guest joining/leaving (or going on/off stage)
+  // mid-session triggers the same crossfade as an explicit layout/scene
+  // change, instead of the canvas hard-cutting to the new grid the instant
+  // their video becomes ready. '' sentinel skips the very first real frame,
+  // which has no prior content worth fading from.
+  const lastEntriesKeyRef = useRef<string>('');
   const logoAppearedAtRef = useRef<number | null>(null);
   const tickerAppearedAtRef = useRef<number | null>(null);
 
@@ -499,12 +506,21 @@ export function useHostStudio(streamId: string | undefined) {
       }
       const w = canvas.width;
       const h = canvas.height;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, w, h);
 
       const entries = [...participantsRef.current.values()].filter(
         (p) => p.videoEl.readyState >= 2 && p.onStage,
       );
+      const entriesKey = entries.map((p) => p.id).join(',');
+      if (lastEntriesKeyRef.current !== '' && entriesKey !== lastEntriesKeyRef.current) {
+        // Snapshot BEFORE the black fill below overwrites it -- at this
+        // point the canvas still holds exactly what last frame drew.
+        beginTransition();
+      }
+      lastEntriesKeyRef.current = entriesKey;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+
       if (entries.length > 0) {
         if (layoutModeRef.current === 'spotlight') drawSpotlight(entries, w, h, now);
         else drawGrid(entries, w, h, now);

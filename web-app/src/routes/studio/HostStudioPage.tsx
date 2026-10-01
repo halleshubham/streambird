@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useHostStudio } from '../../studio/useHostStudio';
 import { PlatformBadge } from '../../components/PlatformBadge';
+import { BirdLoader } from '../../components/BirdLoader';
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
@@ -97,7 +98,10 @@ export function HostStudioPage() {
         <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
       </h1>
 
-      <canvas ref={canvasRef} width={1280} height={720} className="studio-canvas" />
+      <div className="studio-video-wrap">
+        <canvas ref={canvasRef} width={1280} height={720} className="studio-canvas" />
+        <BirdLoader loading={!cameraStarted} label="Waiting for your camera…" />
+      </div>
 
       <div className="panel">
         <div className="studio-toolbar">

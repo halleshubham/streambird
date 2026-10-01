@@ -31,6 +31,12 @@ export function useGuestStudio(token: string | undefined) {
   const [callIsError, setCallIsError] = useState(false);
   const [monitorStatus, setMonitorStatus] = useState('Waiting to connect…');
   const [monitorTiles, setMonitorTiles] = useState<MonitorVideoTile[]>([]);
+  // True for the brief window between a monitor-offer arriving (the host
+  // fully tears down and recreates this connection on every roster change
+  // -- see useHostStudio's refreshAllMonitorFeeds) and it reconnecting, so
+  // the UI can show "updating" instead of a silent blank grid every time
+  // some OTHER participant joins or leaves.
+  const [monitorReconnecting, setMonitorReconnecting] = useState(false);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -142,6 +148,7 @@ export function useGuestStudio(token: string | undefined) {
     const participantsByMid = payload.participantsByMid ?? {};
 
     setMonitorStatus('Room monitor offer received — connecting…');
+    setMonitorReconnecting(true);
     clearVideoTiles();
 
     try {
@@ -198,7 +205,10 @@ export function useGuestStudio(token: string | undefined) {
         // 'connected' is reported once ontrack's own play()/mute-unmute
         // settles, so as not to clobber a still-pending tap-to-enable
         // prompt with a falsely-reassuring "connected".
-        if (monitorPc.connectionState === 'connected') return;
+        if (monitorPc.connectionState === 'connected') {
+          setMonitorReconnecting(false);
+          return;
+        }
         setMonitorStatus(`Room monitor: ${monitorPc.connectionState}`);
       };
 
@@ -208,6 +218,7 @@ export function useGuestStudio(token: string | undefined) {
       socketRef.current?.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
     } catch (err) {
       setMonitorStatus(`Room monitor failed to connect: ${(err as Error).message}`);
+      setMonitorReconnecting(false);
       console.error('Room monitor negotiation failed', err);
     }
   }, []);
@@ -236,6 +247,7 @@ export function useGuestStudio(token: string | undefined) {
     socketRef.current?.disconnect();
     if (monitorAudioElRef.current) monitorAudioElRef.current.srcObject = null;
     clearVideoTiles();
+    setMonitorReconnecting(false);
   }
 
   function handleKicked() {
@@ -399,6 +411,7 @@ export function useGuestStudio(token: string | undefined) {
     callIsError,
     monitorStatus,
     monitorTiles,
+    monitorReconnecting,
     micEnabled,
     cameraEnabled,
     joining,

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Mic, MicOff, Video, VideoOff, LogOut } from 'lucide-react';
 import { useGuestStudio } from '../../studio/useGuestStudio';
 import { MediaStreamVideo } from '../../components/MediaStreamVideo';
+import { BirdLoader } from '../../components/BirdLoader';
 
 export function GuestJoinPage() {
   const { token } = useParams<{ token: string }>();
@@ -18,6 +19,7 @@ export function GuestJoinPage() {
     callIsError,
     monitorStatus,
     monitorTiles,
+    monitorReconnecting,
     micEnabled,
     cameraEnabled,
     joining,
@@ -32,14 +34,17 @@ export function GuestJoinPage() {
         <img src="/logo.png" alt="" className="brand-logo" /> Join as a guest
       </h1>
 
-      {mode === 'checking-invite' && <p className="status">Checking invite…</p>}
+      {mode === 'checking-invite' && <BirdLoader loading compact label="Checking your invite…" />}
 
       {mode === 'invite-invalid' && <p className="error">{joinError ?? 'This invite link is missing or invalid.'}</p>}
 
       {mode === 'ready-to-join' && (
         <div className="panel">
           <label>Check your camera &amp; mic before joining</label>
-          <video ref={setLocalVideoEl} autoPlay muted playsInline className="studio-local-video" />
+          <div className="studio-video-wrap">
+            <video ref={setLocalVideoEl} autoPlay muted playsInline className="studio-local-video" />
+            {!previewError && <BirdLoader loading={!previewing} label="Requesting camera & mic access…" />}
+          </div>
           {previewing ? (
             <div className="studio-toolbar">
               <button type="button" className="icon-btn" onClick={actions.toggleMic}>
@@ -56,9 +61,7 @@ export function GuestJoinPage() {
                 Try again
               </button>
             </>
-          ) : (
-            <p className="status">Requesting camera &amp; mic access…</p>
-          )}
+          ) : null}
 
           <label htmlFor="displayName">Your name</label>
           <input
@@ -112,15 +115,19 @@ export function GuestJoinPage() {
 
           <div className="panel">
             <label>Room feed (everyone else in the room — never your own camera/mic)</label>
-            {monitorTiles.length > 0 && (
-              <div className="monitor-video-grid">
-                {monitorTiles.map((tile) => (
-                  <div key={tile.participantId} className="monitor-video-tile">
-                    <MediaStreamVideo stream={tile.stream} muted />
-                    <span className="monitor-video-tile-name">{tile.displayName}</span>
-                  </div>
-                ))}
-              </div>
+            {monitorReconnecting && monitorTiles.length === 0 ? (
+              <BirdLoader loading compact label="Updating room feed…" />
+            ) : (
+              monitorTiles.length > 0 && (
+                <div className="monitor-video-grid">
+                  {monitorTiles.map((tile) => (
+                    <div key={tile.participantId} className="monitor-video-tile">
+                      <MediaStreamVideo stream={tile.stream} muted />
+                      <span className="monitor-video-tile-name">{tile.displayName}</span>
+                    </div>
+                  ))}
+                </div>
+              )
             )}
             <audio ref={setMonitorAudioEl} autoPlay />
             <p className="status">{monitorStatus}</p>
