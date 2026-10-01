@@ -2,14 +2,22 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Trash2, Plug, SquarePlay } from 'lucide-react';
-import { listConnections, connectTwitchManual, removeConnection } from '../api/connections';
+import {
+  listConnections,
+  connectTwitchManual,
+  removeConnection,
+  listFacebookPendingPages,
+  selectFacebookPage,
+} from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 
-const YOUTUBE_OAUTH_ERRORS: Record<string, string> = {
+const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   youtube_oauth_failed: "Connecting YouTube failed. Please try again.",
   youtube_no_channel: "That Google account doesn't have a YouTube channel to connect.",
+  facebook_oauth_failed: 'Connecting Facebook failed. Please try again.',
+  facebook_no_pages: "That Facebook account doesn't manage any Pages to connect.",
 };
 
 export function ConnectionsPage() {
@@ -20,18 +28,45 @@ export function ConnectionsPage() {
   const [streamKey, setStreamKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [youtubeNotice] = useState<{ text: string; isError: boolean } | null>(
+  const [oauthNotice, setOauthNotice] = useState<{ text: string; isError: boolean } | null>(
     () => {
       const err = searchParams.get('error');
-      if (err && YOUTUBE_OAUTH_ERRORS[err]) {
-        return { text: YOUTUBE_OAUTH_ERRORS[err], isError: true };
+      if (err && OAUTH_NOTICE_ERRORS[err]) {
+        return { text: OAUTH_NOTICE_ERRORS[err], isError: true };
       }
-      if (searchParams.get('connected') === 'youtube') {
-        return { text: 'YouTube connected.', isError: false };
+      const connected = searchParams.get('connected');
+      if (connected === 'youtube' || connected === 'facebook') {
+        return { text: `${connected === 'youtube' ? 'YouTube' : 'Facebook'} connected.`, isError: false };
       }
       return null;
     },
   );
+  const [facebookPendingPages, setFacebookPendingPages] = useState<{ id: string; name: string }[] | null>(null);
+  const [selectingPageId, setSelectingPageId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get('facebookPagesPending') === '1') {
+      listFacebookPendingPages()
+        .then(setFacebookPendingPages)
+        .catch(() => setOauthNotice({ text: 'Could not load your Facebook Pages. Please try connecting again.', isError: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSelectFacebookPage(pageId: string) {
+    setSelectingPageId(pageId);
+    try {
+      await selectFacebookPage(pageId);
+      setFacebookPendingPages(null);
+      setOauthNotice({ text: 'Facebook connected.', isError: false });
+      setSearchParams({}, { replace: true });
+      refresh();
+    } catch (err) {
+      setOauthNotice({ text: err instanceof ApiError ? err.message : 'Failed to connect that Facebook Page.', isError: true });
+    } finally {
+      setSelectingPageId(null);
+    }
+  }
 
   useEffect(() => {
     // Clear connect/error query params from the URL once shown, so a page
@@ -78,7 +113,7 @@ export function ConnectionsPage() {
     <div className="connections-page">
       <h1>Connections</h1>
 
-      {youtubeNotice && <p className={youtubeNotice.isError ? 'error' : 'success'}>{youtubeNotice.text}</p>}
+      {oauthNotice && <p className={oauthNotice.isError ? 'error' : 'success'}>{oauthNotice.text}</p>}
 
       <section>
         <h2>Connected platforms</h2>
@@ -115,6 +150,39 @@ export function ConnectionsPage() {
         >
           <SquarePlay size={16} /> Connect YouTube
         </a>
+      </section>
+
+      <section>
+        <h2>Connect Facebook</h2>
+        <p>
+          Connect a Facebook Page to go live there directly from StreamBird. This requests
+          permission to post live video as a Page you manage -- a personal profile can't be
+          connected, only Pages.
+        </p>
+        {facebookPendingPages ? (
+          <div className="connect-form">
+            <p>Choose which Facebook Page to connect:</p>
+            {facebookPendingPages.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="icon-btn"
+                disabled={selectingPageId !== null}
+                onClick={() => void handleSelectFacebookPage(p.id)}
+              >
+                <Plug size={16} /> {selectingPageId === p.id ? 'Connecting…' : p.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <a
+            className="button-like icon-btn"
+            style={{ display: 'inline-flex', width: 'auto' }}
+            href="/api/platform-connections/facebook/connect"
+          >
+            <Plug size={16} /> Connect Facebook
+          </a>
+        )}
       </section>
 
       <section>
@@ -162,7 +230,7 @@ export function ConnectionsPage() {
 
       <section>
         <h2>Other platforms</h2>
-        <p className="empty-state">Facebook and LinkedIn Live are coming soon.</p>
+        <p className="empty-state">LinkedIn Live is coming soon.</p>
       </section>
     </div>
   );

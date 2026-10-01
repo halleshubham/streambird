@@ -8,6 +8,7 @@ import { Platform } from '../common/enums/platform.enum';
 import { EncryptionService } from '../encryption/encryption.service';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
 import type { YouTubeCredentials } from '../providers/youtube/youtube.provider';
+import type { FacebookCredentials } from '../providers/facebook/facebook.provider';
 
 interface TwitchCredentials {
   accessToken: string;
@@ -92,6 +93,41 @@ export class PlatformConnectionsService {
       credentialsCiphertext: this.encryption.encrypt(credentials),
       externalAccountId: channel.channelId,
       label: channel.channelTitle,
+    });
+    return this.connections.save(connection);
+  }
+
+  /**
+   * Called by PlatformConnectionsController's Facebook OAuth callback (or
+   * its page-select step, when the user manages more than one Page).
+   * Upserts on (accountId, platform, pageId) for the same reason
+   * upsertYouTubeConnection upserts on channelId -- reconnecting the same
+   * Page should refresh its stored token in place, not create a duplicate.
+   */
+  async upsertFacebookConnection(
+    accountId: string,
+    page: { pageId: string; pageName: string },
+    pageAccessToken: string,
+  ): Promise<PlatformConnection> {
+    const credentials: FacebookCredentials = { pageAccessToken, pageId: page.pageId };
+
+    const existing = await this.connections.findOne({
+      where: { accountId, platform: Platform.FACEBOOK, externalAccountId: page.pageId },
+    });
+
+    if (existing) {
+      existing.credentialsCiphertext = this.encryption.encrypt(credentials);
+      existing.label = page.pageName;
+      existing.isActive = true;
+      return this.connections.save(existing);
+    }
+
+    const connection = this.connections.create({
+      accountId,
+      platform: Platform.FACEBOOK,
+      credentialsCiphertext: this.encryption.encrypt(credentials),
+      externalAccountId: page.pageId,
+      label: page.pageName,
     });
     return this.connections.save(connection);
   }

@@ -16,3 +16,11 @@ export function connectTwitchManual(dto: {
 export function removeConnection(id: string): Promise<void> {
   return api.delete(`/platform-connections/${id}`);
 }
+
+export function listFacebookPendingPages(): Promise<{ id: string; name: string }[]> {
+  return api.get('/platform-connections/facebook/pages');
+}
+
+export function selectFacebookPage(pageId: string): Promise<PlatformConnection> {
+  return api.post('/platform-connections/facebook/select', { pageId });
+}

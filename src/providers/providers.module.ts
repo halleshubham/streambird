@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { TwitchProvider } from './twitch/twitch.provider';
 import { YouTubeProvider } from './youtube/youtube.provider';
+import { FacebookProvider } from './facebook/facebook.provider';
 import { STREAM_PROVIDERS } from './provider.tokens';
 import { StreamProvider } from './stream-provider.interface';
 
@@ -19,13 +20,15 @@ import { StreamProvider } from './stream-provider.interface';
   providers: [
     TwitchProvider,
     YouTubeProvider,
+    FacebookProvider,
     {
       provide: STREAM_PROVIDERS,
-      useFactory: (twitch: TwitchProvider, youtube: YouTubeProvider): StreamProvider[] => [
-        twitch,
-        youtube,
-      ],
-      inject: [TwitchProvider, YouTubeProvider],
+      useFactory: (
+        twitch: TwitchProvider,
+        youtube: YouTubeProvider,
+        facebook: FacebookProvider,
+      ): StreamProvider[] => [twitch, youtube, facebook],
+      inject: [TwitchProvider, YouTubeProvider, FacebookProvider],
     },
   ],
   exports: [STREAM_PROVIDERS],

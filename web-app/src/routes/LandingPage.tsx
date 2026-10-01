@@ -130,7 +130,7 @@ const FAQ = [
   },
   {
     q: 'What platforms are supported today?',
-    a: 'YouTube and Twitch, with more platforms landing as their own OAuth/app-review processes clear.',
+    a: 'YouTube, Facebook, and Twitch, with more platforms landing as their own OAuth/app-review processes clear.',
   },
   {
     q: 'How does billing work?',
@@ -222,8 +222,8 @@ export function LandingPage() {
         <h2>Platforms</h2>
         <div className="landing-platforms">
           <PlatformBadge platform="youtube" />
+          <PlatformBadge platform="facebook" />
           <PlatformBadge platform="twitch" />
-          <span className="badge">Facebook -- coming soon</span>
           <span className="badge">LinkedIn -- coming soon</span>
         </div>
       </section>

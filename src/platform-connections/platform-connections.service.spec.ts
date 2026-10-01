@@ -150,4 +150,50 @@ describe('PlatformConnectionsService', () => {
       expect.objectContaining({ id: 'conn_existing', label: 'New title', isActive: true }),
     );
   });
+
+  it('upsertFacebookConnection creates a new connection when none exists for that Page yet', async () => {
+    repo.findOne.mockResolvedValue(null);
+
+    const connection = await service.upsertFacebookConnection(
+      'acc_1',
+      { pageId: 'fb_page_1', pageName: 'My Page' },
+      'page-access-token',
+    );
+
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: { accountId: 'acc_1', platform: Platform.FACEBOOK, externalAccountId: 'fb_page_1' },
+    });
+    expect(encryption.encrypt).toHaveBeenCalledWith({
+      pageAccessToken: 'page-access-token',
+      pageId: 'fb_page_1',
+    });
+    const saved = repo.create.mock.calls[0][0];
+    expect(saved.platform).toBe(Platform.FACEBOOK);
+    expect(saved.externalAccountId).toBe('fb_page_1');
+    expect(saved.label).toBe('My Page');
+    expect(connection.id).toBe('conn_1');
+  });
+
+  it('upsertFacebookConnection updates the existing row in place on a reconnect, rather than duplicating it', async () => {
+    const existing = {
+      id: 'conn_existing',
+      accountId: 'acc_1',
+      platform: Platform.FACEBOOK,
+      externalAccountId: 'fb_page_1',
+      label: 'Old name',
+      isActive: false,
+    };
+    repo.findOne.mockResolvedValue(existing);
+
+    await service.upsertFacebookConnection(
+      'acc_1',
+      { pageId: 'fb_page_1', pageName: 'New name' },
+      'new-page-access-token',
+    );
+
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn_existing', label: 'New name', isActive: true }),
+    );
+  });
 });

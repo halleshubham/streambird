@@ -55,6 +55,14 @@ export interface AppConfig {
      * `${publicBaseUrl}/api/platform-connections/youtube/callback`. */
     youtubeRedirectUri: string;
   };
+  facebook: {
+    appId: string;
+    appSecret: string;
+    /** Must exactly match a redirect URI registered on the Meta App's
+     * Facebook Login product, e.g.
+     * `${publicBaseUrl}/api/platform-connections/facebook/callback`. */
+    redirectUri: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -91,5 +99,10 @@ export default (): AppConfig => ({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     redirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
     youtubeRedirectUri: process.env.GOOGLE_YOUTUBE_REDIRECT_URI ?? '',
+  },
+  facebook: {
+    appId: process.env.FACEBOOK_APP_ID ?? '',
+    appSecret: process.env.FACEBOOK_APP_SECRET ?? '',
+    redirectUri: process.env.FACEBOOK_REDIRECT_URI ?? '',
   },
 });
