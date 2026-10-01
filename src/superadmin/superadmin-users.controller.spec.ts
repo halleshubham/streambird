@@ -10,18 +10,10 @@ describe('SuperadminUsersController', () => {
       suspendUser: jest.fn(),
       reactivateUser: jest.fn(),
     };
-    const accountsService = {
-      suspend: jest.fn(),
-      reactivate: jest.fn(),
-    };
     const auditLog = { log: jest.fn() };
-    const controller = new SuperadminUsersController(
-      usersService as any,
-      accountsService as any,
-      auditLog as any,
-    );
+    const controller = new SuperadminUsersController(usersService as any, auditLog as any);
     const admin = { id: 'admin_1', role: Role.SUPERADMIN } as any;
-    return { controller, usersService, accountsService, auditLog, admin };
+    return { controller, usersService, auditLog, admin };
   }
 
   it('searchUsers enriches each user with its companyName and omits sensitive fields', async () => {
@@ -91,17 +83,5 @@ describe('SuperadminUsersController', () => {
     expect(usersService.reactivateUser).toHaveBeenCalledWith('u1');
     expect(auditLog.log).toHaveBeenCalledWith(admin, 'reactivate_user', 'user', 'u1');
     expect(result).toEqual({ id: 'u1', suspendedAt: null });
-  });
-
-  it('suspendAccount / reactivateAccount delegate to AccountsService and audit-log the account target', async () => {
-    const { controller, accountsService, auditLog, admin } = build();
-    accountsService.suspend.mockResolvedValue({ id: 'acc_1', suspendedAt: new Date() });
-    accountsService.reactivate.mockResolvedValue({ id: 'acc_1', suspendedAt: null });
-
-    await controller.suspendAccount(admin, 'acc_1');
-    await controller.reactivateAccount(admin, 'acc_1');
-
-    expect(auditLog.log).toHaveBeenCalledWith(admin, 'suspend_account', 'account', 'acc_1');
-    expect(auditLog.log).toHaveBeenCalledWith(admin, 'reactivate_account', 'account', 'acc_1');
   });
 });

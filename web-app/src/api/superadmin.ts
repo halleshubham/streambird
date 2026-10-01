@@ -1,8 +1,12 @@
 import { api } from './client';
 import type {
+  AccountDetail,
+  AccountListResponse,
+  AccountSummary,
   AnalyticsOverview,
   AuditLogEntry,
   PendingCompanyAdmin,
+  UpdateSubscriptionPayload,
   UsageAlert,
   UserSearchResult,
 } from '../types/api';
@@ -41,4 +45,27 @@ export function suspendUser(userId: string): Promise<{ id: string; suspendedAt: 
 
 export function reactivateUser(userId: string): Promise<{ id: string; suspendedAt: string | null }> {
   return api.post(`/superadmin/users/${userId}/reactivate`);
+}
+
+export function listAccounts(limit = 50, offset = 0): Promise<AccountListResponse> {
+  return api.get(`/superadmin/accounts?limit=${limit}&offset=${offset}`);
+}
+
+export function getAccountDetail(id: string): Promise<AccountDetail> {
+  return api.get(`/superadmin/accounts/${id}`);
+}
+
+export function updateAccountSubscription(
+  id: string,
+  payload: UpdateSubscriptionPayload,
+): Promise<AccountSummary> {
+  return api.patch(`/superadmin/accounts/${id}/subscription`, payload);
+}
+
+export function suspendAccount(id: string): Promise<AccountSummary> {
+  return api.post(`/superadmin/accounts/${id}/suspend`);
+}
+
+export function reactivateAccount(id: string): Promise<AccountSummary> {
+  return api.post(`/superadmin/accounts/${id}/reactivate`);
 }

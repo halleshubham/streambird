@@ -160,3 +160,61 @@ export interface StreamListResponse {
   limit: number;
   offset: number;
 }
+
+/** Row shape for GET /superadmin/accounts -- see SuperadminAccountsService.list. */
+export interface AccountSummary {
+  id: string;
+  name: string;
+  currentTier: PlanTier;
+  includedHoursPerMonth: string;
+  streamHourUsageCurrentPeriod: string;
+  billingPeriodStart: string | null;
+  suspendedAt: string | null;
+  createdAt: string;
+  companyName: string | null;
+  userCount: number;
+}
+
+export interface AccountListResponse {
+  items: AccountSummary[];
+  total: number;
+}
+
+export interface AccountUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  approvedAt: string | null;
+  suspendedAt: string | null;
+  createdAt: string;
+}
+
+export interface AccountStreamHistoryItem {
+  id: string;
+  title: string;
+  status: StreamStatus;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface AccountPlatformConnection {
+  id: string;
+  platform: Platform;
+  label: string;
+  isActive: boolean;
+}
+
+/** Full payload for GET /superadmin/accounts/:id -- see SuperadminAccountsService.getDetail. */
+export interface AccountDetail extends AccountSummary {
+  users: AccountUser[];
+  streams: AccountStreamHistoryItem[];
+  platformConnections: AccountPlatformConnection[];
+}
+
+/** Body for PATCH /superadmin/accounts/:id/subscription -- all fields optional. */
+export interface UpdateSubscriptionPayload {
+  currentTier?: PlanTier;
+  includedHoursPerMonth?: string;
+  billingPeriodStart?: string | null;
+}
