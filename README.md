@@ -22,10 +22,16 @@ Early scaffold. Working so far:
   requested destinations, with the 4th surfaced as `status: 'failed'` and
   retryable via `POST /streams/:id/destinations/:destinationId/retry`.
 - `GET /streams/:id`, `GET /streams/:id/status`, `POST /streams/:id/end`.
-- `TwitchProvider` is the only `StreamProvider` adapter implemented so far
-  (no OAuth-review wait, no broadcast-object complexity — see the plan's
-  build order for why it's first). YouTube, Facebook, and LinkedIn adapters
-  land once their respective OAuth/app-review processes clear.
+- `TwitchProvider` (static ingest URL/key, pasted manually — no OAuth) and
+  `YouTubeProvider` (full OAuth connect flow against the YouTube Data API
+  v3: `liveBroadcasts.insert` + `liveStreams.insert` + `.bind`, with
+  `enableAutoStart`/`enableAutoStop` so YouTube flips the broadcast
+  live/complete itself the moment it sees — or stops seeing — the RTMP
+  stream) are implemented. YouTube's `youtube` OAuth scope is "sensitive"
+  on Google's side — the connect flow works today against test users, but
+  needs the OAuth consent screen to clear Google's verification review
+  before more than ~100 accounts can use it. Facebook and LinkedIn
+  adapters are still pending their own OAuth/app-review processes.
 - **Studio (guest-join + client-side compositing)** — `POST /streams` now
   also creates a `StudioSession`. `POST /studio-sessions/:id/invites`
   issues a single-use, short-TTL guest join link; `web-app/src/studio/`
@@ -54,8 +60,8 @@ Early scaffold. Working so far:
   not confirmed against a real API response — flagged in
   `cloudflare-relay.service.ts` pending the empirical spike.
 
-Not yet built: platform OAuth connect/callback flows, YouTube/Facebook/
-LinkedIn `StreamProvider` adapters, and the paid server-side "Guaranteed
+Not yet built: Facebook/LinkedIn OAuth connect/callback flows and
+`StreamProvider` adapters, and the paid server-side "Guaranteed
 Quality" compositing fallback (`compositing_mode='server_egress'` exists
 in the schema but has no implementation yet).
 

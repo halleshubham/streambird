@@ -47,6 +47,13 @@ export interface AppConfig {
     /** Must exactly match a redirect URI registered on the Google OAuth
      * client, e.g. `${publicBaseUrl}/api/auth/google/callback`. */
     redirectUri: string;
+    /** A SEPARATE registered redirect URI for the YouTube platform-connect
+     * flow (see YouTubeProvider / PlatformConnectionsController) -- a
+     * distinct path from the login flow's redirectUri above, since this
+     * one requests the sensitive `youtube.force-ssl` scope and Google
+     * treats each registered redirect URI as its own OAuth flow. e.g.
+     * `${publicBaseUrl}/api/platform-connections/youtube/callback`. */
+    youtubeRedirectUri: string;
   };
 }
 
@@ -83,5 +90,6 @@ export default (): AppConfig => ({
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     redirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
+    youtubeRedirectUri: process.env.GOOGLE_YOUTUBE_REDIRECT_URI ?? '',
   },
 });

@@ -17,6 +17,6 @@ import { EmailModule } from '../email/email.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, SessionGuard, GoogleOAuthService],
-  exports: [AuthService, SessionGuard],
+  exports: [AuthService, SessionGuard, GoogleOAuthService],
 })
 export class AuthModule {}

@@ -77,7 +77,11 @@ export class StreamsService {
     const settled = await Promise.allSettled(
       connections.map(async (conn) => {
         const provider = this.resolveProvider(conn);
-        const result = await provider.createBroadcast(conn, { title: dto.title, description: dto.description });
+        const result = await provider.createBroadcast(conn, {
+          title: dto.title,
+          description: dto.description,
+          scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+        });
         return { conn, result };
       }),
     );
@@ -256,7 +260,11 @@ export class StreamsService {
     const provider = this.resolveProvider(conn);
 
     try {
-      const result = await provider.createBroadcast(conn, { title: stream.title, description: stream.description ?? undefined });
+      const result = await provider.createBroadcast(conn, {
+        title: stream.title,
+        description: stream.description ?? undefined,
+        scheduledAt: stream.scheduledAt ?? undefined,
+      });
       destination.platformBroadcastId = result.platformBroadcastId;
       destination.ingestUrl = result.ingestUrl;
       destination.streamKey = result.streamKey;

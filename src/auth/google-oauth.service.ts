@@ -7,6 +7,22 @@ export interface GoogleProfile {
   name?: string;
 }
 
+export interface GoogleTokens {
+  accessToken: string;
+  /** Only present when the auth request used access_type=offline + prompt=consent (see YouTubeProvider's connect flow). Absent for the plain login flow, which only ever needs a short-lived access token. */
+  refreshToken?: string;
+  expiresInSeconds: number;
+}
+
+export interface GoogleAuthUrlOptions {
+  redirectUri: string;
+  scope: string;
+  /** 'offline' is required to receive a refresh_token at all -- see https://developers.google.com/identity/protocols/oauth2/web-server#offline. Defaults to 'online' (the login flow's need: no refresh_token, just this one sign-in). */
+  accessType?: 'online' | 'offline';
+  /** 'consent' forces Google to re-show the consent screen and re-issue a refresh_token even on a repeat connection -- needed for the YouTube connect flow (see PlatformConnectionsController), where a reconnect must always come back with a fresh refresh_token. */
+  prompt?: 'select_account' | 'consent';
+}
+
 /**
  * Direct fetch-based implementation of the standard Google OAuth 2.0
  * authorization-code flow -- no `passport`/`passport-google-oauth20`
@@ -15,25 +31,34 @@ export interface GoogleProfile {
  * isn't proportionate here). Node 22's global `fetch` is used directly,
  * same as this codebase's other outbound HTTP call via axios/HttpService
  * elsewhere, just without needing HttpModule for two one-off calls.
+ *
+ * Shared by two distinct flows against the SAME Google OAuth client: the
+ * "Sign in with Google" login (openid email profile, access_type=online --
+ * see AuthController) and the YouTube platform-connect flow
+ * (youtube.force-ssl, access_type=offline -- see
+ * PlatformConnectionsController / YouTubeProvider). Both need their own
+ * registered redirect URI in Google Cloud Console, which is why every
+ * method here takes redirectUri explicitly rather than reading it from
+ * config itself.
  */
 @Injectable()
 export class GoogleOAuthService {
   constructor(private readonly config: ConfigService) {}
 
-  buildAuthUrl(state: string): string {
+  buildAuthUrl(state: string, opts: GoogleAuthUrlOptions): string {
     const params = new URLSearchParams({
       client_id: this.config.get<string>('google.clientId') ?? '',
-      redirect_uri: this.config.get<string>('google.redirectUri') ?? '',
+      redirect_uri: opts.redirectUri,
       response_type: 'code',
-      scope: 'openid email profile',
-      access_type: 'online',
-      prompt: 'select_account',
+      scope: opts.scope,
+      access_type: opts.accessType ?? 'online',
+      prompt: opts.prompt ?? 'select_account',
       state,
     });
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  async exchangeCodeForProfile(code: string): Promise<GoogleProfile> {
+  async exchangeCodeForTokens(code: string, redirectUri: string): Promise<GoogleTokens> {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -41,17 +66,52 @@ export class GoogleOAuthService {
         code,
         client_id: this.config.get<string>('google.clientId') ?? '',
         client_secret: this.config.get<string>('google.clientSecret') ?? '',
-        redirect_uri: this.config.get<string>('google.redirectUri') ?? '',
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
     });
     if (!tokenRes.ok) {
       throw new Error(`Google token exchange failed with status ${tokenRes.status}`);
     }
-    const tokenBody = (await tokenRes.json()) as { access_token: string };
+    const tokenBody = (await tokenRes.json()) as {
+      access_token: string;
+      refresh_token?: string;
+      expires_in: number;
+    };
+
+    return {
+      accessToken: tokenBody.access_token,
+      refreshToken: tokenBody.refresh_token,
+      expiresInSeconds: tokenBody.expires_in,
+    };
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<GoogleTokens> {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        refresh_token: refreshToken,
+        client_id: this.config.get<string>('google.clientId') ?? '',
+        client_secret: this.config.get<string>('google.clientSecret') ?? '',
+        grant_type: 'refresh_token',
+      }),
+    });
+    if (!tokenRes.ok) {
+      throw new Error(`Google token refresh failed with status ${tokenRes.status}`);
+    }
+    const tokenBody = (await tokenRes.json()) as { access_token: string; expires_in: number };
+
+    // Google does not re-issue a refresh_token on a refresh_token grant --
+    // the original one keeps working until the user revokes access.
+    return { accessToken: tokenBody.access_token, expiresInSeconds: tokenBody.expires_in };
+  }
+
+  async exchangeCodeForProfile(code: string, redirectUri: string): Promise<GoogleProfile> {
+    const tokens = await this.exchangeCodeForTokens(code, redirectUri);
 
     const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${tokenBody.access_token}` },
+      headers: { Authorization: `Bearer ${tokens.accessToken}` },
     });
     if (!profileRes.ok) {
       throw new Error(`Google profile fetch failed with status ${profileRes.status}`);

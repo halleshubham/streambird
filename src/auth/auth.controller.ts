@@ -152,7 +152,14 @@ export class AuthController {
       path: GOOGLE_OAUTH_BASE_PATH,
       maxAge: 10 * 60_000,
     });
-    res.redirect(this.googleOAuth.buildAuthUrl(state));
+    res.redirect(
+      this.googleOAuth.buildAuthUrl(state, {
+        redirectUri: this.config.get<string>('google.redirectUri') ?? '',
+        scope: 'openid email profile',
+        accessType: 'online',
+        prompt: 'select_account',
+      }),
+    );
   }
 
   /**
@@ -182,7 +189,10 @@ export class AuthController {
     }
 
     try {
-      const profile = await this.googleOAuth.exchangeCodeForProfile(code);
+      const profile = await this.googleOAuth.exchangeCodeForProfile(
+        code,
+        this.config.get<string>('google.redirectUri') ?? '',
+      );
       if (!profile.emailVerified) {
         res.redirect('/login?error=google_email_unverified');
         return;

@@ -6,6 +6,7 @@ import { PlatformConnection } from './entities/platform-connection.entity';
 import { Platform } from '../common/enums/platform.enum';
 import { EncryptionService } from '../encryption/encryption.service';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
+import type { YouTubeCredentials } from '../providers/youtube/youtube.provider';
 
 interface TwitchCredentials {
   accessToken: string;
@@ -48,6 +49,47 @@ export class PlatformConnectionsService {
       label: dto.label,
     });
 
+    return this.connections.save(connection);
+  }
+
+  /**
+   * Called by PlatformConnectionsController's YouTube OAuth callback.
+   * Upserts on (accountId, platform, channelId) rather than always
+   * inserting -- reconnecting the same YouTube channel (e.g. after
+   * revoking access, or just to refresh the granted scopes) should update
+   * the existing row's tokens in place, not pile up duplicate
+   * connections for the same channel.
+   */
+  async upsertYouTubeConnection(
+    accountId: string,
+    channel: { channelId: string; channelTitle: string },
+    tokens: { accessToken: string; refreshToken: string; expiresAt: number },
+  ): Promise<PlatformConnection> {
+    const credentials: YouTubeCredentials = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      channelId: channel.channelId,
+    };
+
+    const existing = await this.connections.findOne({
+      where: { accountId, platform: Platform.YOUTUBE, externalAccountId: channel.channelId },
+    });
+
+    if (existing) {
+      existing.credentialsCiphertext = this.encryption.encrypt(credentials);
+      existing.label = channel.channelTitle;
+      existing.isActive = true;
+      return this.connections.save(existing);
+    }
+
+    const connection = this.connections.create({
+      accountId,
+      platform: Platform.YOUTUBE,
+      credentialsCiphertext: this.encryption.encrypt(credentials),
+      externalAccountId: channel.channelId,
+      label: channel.channelTitle,
+    });
     return this.connections.save(connection);
   }
 
