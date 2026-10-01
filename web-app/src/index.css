@@ -390,7 +390,8 @@ textarea {
   background: var(--card-bg);
 }
 
-.app-header .brand {
+.app-header .brand,
+.landing-nav .brand {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -890,6 +891,19 @@ a.stream-list-item:hover {
 
 .landing-nav-links a:hover {
   color: var(--text-h);
+}
+
+.landing-nav .icon-btn {
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+
+.landing-nav .icon-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .landing-hero {

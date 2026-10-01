@@ -287,7 +287,7 @@ export function LandingPage() {
           <Link to="/login" className="go-live-cta">
             Start free
           </Link>
-          <Link to="/signup-company" className="link-button">
+          <Link to="/signup-company" className="button-like">
             Create a company account
           </Link>
         </div>
