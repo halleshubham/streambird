@@ -1,6 +1,18 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Google tag (gtag.js) -- single insertion covers every route, since
+         this is the one index.html the SPA serves for all of them (see
+         ServeStaticModule's config in app.module.ts). Also doubles as a
+         Search Console domain-ownership verification method. -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-H2RP3TZ48X"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-H2RP3TZ48X');
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
