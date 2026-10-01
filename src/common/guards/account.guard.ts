@@ -11,6 +11,7 @@ import { AccountsService } from '../../accounts/accounts.service';
 import { AuthService } from '../../auth/auth.service';
 import { Account } from '../../accounts/entities/account.entity';
 import { User } from '../../users/entities/user.entity';
+import { Role } from '../enums/role.enum';
 
 export interface AccountRequest extends Request {
   account?: Account;
@@ -55,6 +56,25 @@ export class AccountGuard implements CanActivate {
     const resolved = await this.authService.resolveSession(token);
     if (!resolved) {
       throw new UnauthorizedException('Session expired or revoked');
+    }
+
+    // Approval gate: a Company Admin cannot use ANY route this guard
+    // protects until a Superadmin has approved them. This lives here,
+    // directly in AccountGuard, rather than as an opt-in decorator on each
+    // route -- an opt-in check is one a future route can simply forget to
+    // add; baking it into the guard itself means every current AND future
+    // AccountGuard-protected route is covered automatically, fail-secure
+    // by construction. Deliberately role-scoped to COMPANY_ADMIN only --
+    // Superadmins and Normal Users are never subject to it (Normal Users
+    // are added by an already-approved Company Admin or a Superadmin, so
+    // there's nothing to approve). The account-holder's own pending-status
+    // check (GET /api/auth/me) and the Superadmin approval endpoints
+    // themselves both intentionally sit behind SessionGuard, not
+    // AccountGuard, so they're unaffected by this check.
+    if (resolved.user.role === Role.COMPANY_ADMIN && !resolved.user.approvedAt) {
+      throw new ForbiddenException(
+        'Your company account is pending Superadmin approval.',
+      );
     }
 
     // CSRF: a cookie rides along on any cross-site request automatically,

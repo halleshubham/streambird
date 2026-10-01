@@ -1,21 +1,35 @@
 import { Routes, Route } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { SuperadminRoute } from './components/SuperadminRoute';
 import { LoginPage } from './routes/LoginPage';
+import { SignupCompanyPage } from './routes/SignupCompanyPage';
 import { DashboardPage } from './routes/DashboardPage';
 import { ConnectionsPage } from './routes/ConnectionsPage';
 import { CreateStreamPage } from './routes/CreateStreamPage';
+import { TeamPage } from './routes/TeamPage';
 import { HostStudioPage } from './routes/studio/HostStudioPage';
 import { GuestJoinPage } from './routes/studio/GuestJoinPage';
+import { AdminLoginPage } from './routes/admin/AdminLoginPage';
+import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
 import { NotFoundPage } from './routes/NotFoundPage';
 
 export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup-company" element={<SignupCompanyPage />} />
 
       {/* Public -- a guest never has an account or session cookie. */}
       <Route path="/join/:token" element={<GuestJoinPage />} />
+
+      {/* Superadmin: a wholly separate identity/login from the dashboard
+          below -- deliberately NOT nested under AppShell/ProtectedRoute,
+          see SuperadminRoute. */}
+      <Route path="/admin/login" element={<AdminLoginPage />} />
+      <Route element={<SuperadminRoute />}>
+        <Route path="/admin" element={<AdminDashboardPage />} />
+      </Route>
 
       <Route element={<ProtectedRoute />}>
         {/* Deliberately outside AppShell -- the studio is a full, distraction-free
@@ -26,6 +40,7 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/streams/new" element={<CreateStreamPage />} />
+          <Route path="/team" element={<TeamPage />} />
         </Route>
       </Route>
 

@@ -28,4 +28,22 @@ export class ResendEmailService implements EmailService {
       ),
     );
   }
+
+  async sendTeamInvite(to: string, companyName: string): Promise<void> {
+    const apiKey = this.config.get<string>('resendApiKey');
+    const from = this.config.get<string>('emailFrom');
+
+    await firstValueFrom(
+      this.http.post(
+        'https://api.resend.com/emails',
+        {
+          from,
+          to,
+          subject: `You've been invited to join ${companyName} on StreamBird`,
+          text: `You've been added to ${companyName}'s StreamBird account. Log in at any time with this email address to get started -- no separate invite link needed.`,
+        },
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+      ),
+    );
+  }
 }

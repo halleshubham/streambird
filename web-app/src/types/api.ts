@@ -7,15 +7,33 @@ export type PlanTier = 'free' | 'starter' | 'pro' | 'enterprise';
 export type StreamStatus = 'scheduled' | 'live' | 'ended' | 'failed';
 export type DestinationStatus = 'pending' | 'ready' | 'live' | 'ended' | 'failed';
 
+export type UserRole = 'superadmin' | 'company_admin' | 'user';
+
 export interface AuthUser {
   id: string;
   email: string;
+  role: UserRole;
+  approvedAt: string | null;
   createdAt?: string;
 }
 
 export interface MeResponse {
   user: AuthUser;
   accountId: string;
+}
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface PendingCompanyAdmin {
+  id: string;
+  email: string;
+  companyName: string | null;
+  createdAt: string;
 }
 
 export interface Account {

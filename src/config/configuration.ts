@@ -35,6 +35,19 @@ export interface AppConfig {
   cookieSecure: boolean;
   resendApiKey: string;
   emailFrom: string;
+  /** Seeded/reconciled on every boot -- see SuperadminSeedService. Both
+   * must be set for a Superadmin identity to exist at all; if either is
+   * missing, seeding is skipped (app still boots, just with no Superadmin
+   * login available yet). */
+  superadminEmail: string;
+  superadminPassword: string;
+  google: {
+    clientId: string;
+    clientSecret: string;
+    /** Must exactly match a redirect URI registered on the Google OAuth
+     * client, e.g. `${publicBaseUrl}/api/auth/google/callback`. */
+    redirectUri: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -64,4 +77,11 @@ export default (): AppConfig => ({
   cookieSecure: process.env.NODE_ENV === 'production',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.shackyapps.in>',
+  superadminEmail: process.env.SUPERADMIN_EMAIL ?? '',
+  superadminPassword: process.env.SUPERADMIN_PASSWORD ?? '',
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
+  },
 });

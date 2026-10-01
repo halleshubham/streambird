@@ -9,10 +9,29 @@ export function verifyCode(email: string, code: string): Promise<MeResponse> {
   return api.post('/auth/verify-code', { email, code });
 }
 
+/** Company Admin sign-up: call requestCode first (same endpoint as
+ * magic-code login), then this with the same code plus a company name. */
+export function signupCompany(
+  companyName: string,
+  email: string,
+  code: string,
+): Promise<MeResponse> {
+  return api.post('/auth/signup-company', { companyName, email, code });
+}
+
+export function superadminLogin(email: string, password: string): Promise<MeResponse> {
+  return api.post('/auth/superadmin-login', { email, password });
+}
+
 export function logout(): Promise<void> {
   return api.post('/auth/logout');
 }
 
 export function me(): Promise<MeResponse> {
   return api.get('/auth/me');
+}
+
+/** Full-page redirect -- not a fetch() call. See AuthController.googleRedirect. */
+export function googleLoginUrl(): string {
+  return '/api/auth/google';
 }

@@ -13,6 +13,7 @@ import { StudioHostToken } from '../studio/entities/studio-host-token.entity';
 import { User } from '../users/entities/user.entity';
 import { LoginCode } from '../auth/entities/login-code.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
+import { Company } from '../companies/entities/company.entity';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { UserSession } from '../auth/entities/user-session.entity';
           User,
           LoginCode,
           UserSession,
+          Company,
         ],
         namingStrategy: new SnakeNamingStrategy(),
         // Schema is owned by migrations/*.sql (see src/config/migrate.ts), never by TypeORM.

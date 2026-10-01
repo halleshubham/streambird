@@ -10,6 +10,8 @@ import { PlatformConnectionsModule } from './platform-connections/platform-conne
 import { StreamsModule } from './streams/streams.module';
 import { StudioModule } from './studio/studio.module';
 import { AuthModule } from './auth/auth.module';
+import { TeamModule } from './team/team.module';
+import { SuperadminModule } from './superadmin/superadmin.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -40,6 +42,8 @@ import { AppController } from './app.controller';
     StreamsModule,
     StudioModule,
     AuthModule,
+    TeamModule,
+    SuperadminModule,
   ],
 })
 export class AppModule {}
