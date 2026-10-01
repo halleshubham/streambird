@@ -302,6 +302,16 @@ textarea {
   color: #fff;
 }
 
+.audit-log-metadata {
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 360px;
+  margin: 0;
+  color: var(--text);
+}
+
 /* ---- Superadmin analytics ---- */
 
 .stat-card-row {
@@ -486,6 +496,11 @@ textarea {
 .usage-meter {
   flex: 1;
   min-width: 240px;
+}
+
+.usage-meter--compact {
+  min-width: 120px;
+  max-width: 160px;
 }
 
 .usage-meter-header {
@@ -753,6 +768,36 @@ a.stream-list-item:hover {
   border-color: #b91c1c;
 }
 
+/* .icon-btn's chrome (border/background/color) otherwise comes from the
+   bare `button` element selector above -- which an <a>/<Link> never gets,
+   so it was rendering as a plain text link wherever reached for on an
+   anchor (confirmed live on 3+ pages). Scoped to the `a` tag so it can
+   never affect the existing `<button class="link-button icon-btn">`
+   pattern (e.g. ConnectionsPage's Remove button), which depends on
+   .link-button's plain styling winning instead. */
+a.icon-btn {
+  text-decoration: none;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+a.icon-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+a.icon-btn--accent {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+a.icon-btn--danger {
+  background: var(--error);
+  border-color: var(--error);
+}
+
 /* ---- Studio (host + guest) ---- */
 
 .studio-page {
@@ -892,19 +937,6 @@ a.stream-list-item:hover {
 
 .landing-nav-links a:hover {
   color: var(--text-h);
-}
-
-.landing-nav .icon-btn {
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  text-decoration: none;
-}
-
-.landing-nav .icon-btn:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 
 .landing-hero {

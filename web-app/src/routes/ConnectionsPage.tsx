@@ -10,6 +10,7 @@ import {
   selectFacebookPage,
 } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 
@@ -27,6 +28,7 @@ export function ConnectionsPage() {
   const [ingestServerUrl, setIngestServerUrl] = useState('');
   const [streamKey, setStreamKey] = useState('');
   const [busy, setBusy] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [oauthNotice, setOauthNotice] = useState<{ text: string; isError: boolean } | null>(
     () => {
@@ -120,9 +122,15 @@ export function ConnectionsPage() {
     }
   }
 
-  async function handleRemove(id: string) {
-    await removeConnection(id);
-    refresh();
+  async function handleRemove(id: string, label: string) {
+    if (!window.confirm(`Remove the connection "${label}"? Any stream using it will need to be reconnected before going live again.`)) return;
+    setRemovingId(id);
+    try {
+      await removeConnection(id);
+      refresh();
+    } finally {
+      setRemovingId(null);
+    }
   }
 
   return (
@@ -134,7 +142,7 @@ export function ConnectionsPage() {
       <section>
         <h2>Connected platforms</h2>
         {!connections ? (
-          <p>Loading…</p>
+          <BirdLoader loading compact label="Loading your connections…" />
         ) : connections.length === 0 ? (
           <p className="empty-state">No platforms connected yet.</p>
         ) : (
@@ -143,8 +151,13 @@ export function ConnectionsPage() {
               <li key={c.id}>
                 <PlatformBadge platform={c.platform} />
                 <span className="connection-label">{c.label}</span>
-                <button type="button" className="link-button icon-btn" onClick={() => void handleRemove(c.id)}>
-                  <Trash2 size={14} /> Remove
+                <button
+                  type="button"
+                  className="link-button icon-btn"
+                  disabled={removingId !== null}
+                  onClick={() => void handleRemove(c.id, c.label)}
+                >
+                  <Trash2 size={14} /> {removingId === c.id ? 'Removing…' : 'Remove'}
                 </button>
               </li>
             ))}

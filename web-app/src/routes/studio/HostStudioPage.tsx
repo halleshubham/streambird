@@ -128,7 +128,14 @@ export function HostStudioPage() {
           <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.goLive()} disabled={!stream.whipUrl || isLive}>
             <Radio size={16} /> {isLive ? 'Live' : 'Go live'}
           </button>
-          <button type="button" className="icon-btn icon-btn--danger" onClick={() => void actions.endStream()} disabled={ending}>
+          <button
+            type="button"
+            className="icon-btn icon-btn--danger"
+            onClick={() => {
+              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
+            }}
+            disabled={ending}
+          >
             <PhoneOff size={16} /> End stream
           </button>
         </div>
@@ -235,7 +242,13 @@ export function HostStudioPage() {
                 </button>
               ) : (
                 !p.isLocal && (
-                  <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.dropParticipant(p.id)}>
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--small icon-btn--danger"
+                    onClick={() => {
+                      if (window.confirm(`Remove ${p.displayName} from the studio?`)) actions.dropParticipant(p.id);
+                    }}
+                  >
                     <UserX size={14} /> Remove
                   </button>
                 )

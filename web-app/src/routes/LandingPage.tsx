@@ -18,7 +18,7 @@ const FEATURES = [
   {
     icon: Radio,
     title: 'Multi-platform simulcast',
-    body: 'Broadcast live to YouTube and Twitch at once -- more platforms landing as their own adapters ship -- all from one studio and one "Go live" button.',
+    body: 'Broadcast live to YouTube, Facebook, and Twitch at once -- more platforms landing as their own adapters ship -- all from one studio and one "Go live" button.',
   },
   {
     icon: Users,
@@ -50,7 +50,7 @@ const FEATURES = [
 const STEPS = [
   {
     title: 'Connect a channel',
-    body: 'Link your YouTube or Twitch account in a couple of clicks.',
+    body: 'Link your YouTube, Facebook, or Twitch account in a couple of clicks.',
   },
   {
     title: 'Invite your guests',
@@ -171,7 +171,7 @@ export function LandingPage() {
       <section className="landing-hero">
         <h1>Go live everywhere, from one browser tab.</h1>
         <p className="landing-subhead">
-          StreamBird broadcasts to YouTube, Twitch, and more -- simultaneously -- with a built-in
+          StreamBird broadcasts to YouTube, Facebook, Twitch, and more -- simultaneously -- with a built-in
           multi-guest studio, mix-minus audio, and live branding overlays. No app to install, no
           managed-cloud markup.
         </p>

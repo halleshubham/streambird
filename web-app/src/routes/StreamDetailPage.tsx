@@ -4,6 +4,7 @@ import { Clapperboard, ExternalLink, RotateCw } from 'lucide-react';
 import { getStream, getStreamStatus, retryDestination } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { Platform, Stream, StreamStatusResponse } from '../types/api';
 
@@ -68,7 +69,7 @@ export function StreamDetailPage() {
   }
 
   if (error) return <p className="error">{error}</p>;
-  if (!stream) return <p>Loading…</p>;
+  if (!stream) return <BirdLoader loading compact label="Loading stream…" />;
 
   // Normalize to one shape regardless of whether the live status poll has
   // landed yet -- Destination (from the plain GET) has no platformStatus,

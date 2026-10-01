@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
+import { UsageBar } from '../../components/UsageMeter';
+import { BirdLoader } from '../../components/BirdLoader';
 import type { AnalyticsOverview, UsageAlert } from '../../types/api';
 
 /** Live-stream activity snapshot + usage/overage alerts. Shell/nav is
@@ -26,7 +28,7 @@ export function AdminAnalyticsPage() {
   }
 
   if (!overview || !alerts) {
-    return <p>Loading…</p>;
+    return <BirdLoader loading compact label="Loading analytics…" />;
   }
 
   return (
@@ -99,7 +101,6 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
 function UsageAlertRow({ alert }: { alert: UsageAlert }) {
   const used = Number(alert.streamHourUsageCurrentPeriod);
   const included = Number(alert.includedHoursPerMonth);
-  const pct = included > 0 ? Math.min(100, (used / included) * 100) : 0;
   const isOverLimit = alert.bucket === 'over_limit';
 
   return (
@@ -112,17 +113,7 @@ function UsageAlertRow({ alert }: { alert: UsageAlert }) {
           {isOverLimit ? 'Over limit' : 'Near limit'} · {(alert.ratio * 100).toFixed(0)}%
         </span>
       </div>
-      <div className="usage-meter">
-        <div className="usage-meter-track">
-          <div
-            className={`usage-meter-fill ${isOverLimit ? 'usage-meter-fill--danger' : 'usage-meter-fill--warning'}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <p className="usage-meter-tier">
-          {used.toFixed(1)} / {included.toFixed(1)} hrs
-        </p>
-      </div>
+      <UsageBar used={used} included={included} />
     </div>
   );
 }

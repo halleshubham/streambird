@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as superadminApi from '../../api/superadmin';
+import { BirdLoader } from '../../components/BirdLoader';
 import { ApiError } from '../../api/client';
 import type { PendingApproval } from '../../types/api';
 
@@ -43,7 +44,8 @@ export function AdminDashboardPage() {
     }
   }
 
-  async function handleReject(id: string) {
+  async function handleReject(id: string, email: string) {
+    if (!window.confirm(`Reject and permanently delete the signup for ${email}? This cannot be undone.`)) return;
     setBusyId(id);
     setError(null);
     try {
@@ -61,7 +63,7 @@ export function AdminDashboardPage() {
       <h1>Pending approvals</h1>
       {error && <p className="error">{error}</p>}
       {pending === null ? (
-        <p>Loading…</p>
+        <BirdLoader loading compact label="Loading pending approvals…" />
       ) : pending.length === 0 ? (
         <p>No accounts pending approval.</p>
       ) : (
@@ -94,7 +96,7 @@ export function AdminDashboardPage() {
                     type="button"
                     className="danger-button"
                     disabled={busyId === p.id}
-                    onClick={() => void handleReject(p.id)}
+                    onClick={() => void handleReject(p.id, p.email)}
                   >
                     Reject
                   </button>

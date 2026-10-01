@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const CONTACT_EMAIL = 'support@shackyapps.in';
 
@@ -11,6 +12,8 @@ const CONTACT_EMAIL = 'support@shackyapps.in';
  * SPA shell/theme as everything else.
  */
 export function PrivacyPolicyPage() {
+  const { status } = useAuth();
+
   return (
     <div className="legal-page">
       <div className="legal-page-inner">
@@ -128,7 +131,7 @@ export function PrivacyPolicyPage() {
         </p>
 
         <p className="legal-back">
-          <Link to="/login">Back to sign in</Link>
+          {status === 'authenticated' ? <Link to="/dashboard">Back to dashboard</Link> : <Link to="/login">Back to sign in</Link>}
         </p>
       </div>
     </div>

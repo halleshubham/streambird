@@ -5,6 +5,7 @@ import { Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
 import { createStream } from '../api/streams';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 
@@ -101,7 +102,7 @@ export function CreateStreamPage() {
 
         <label>Destinations</label>
         {!connections ? (
-          <p>Loading…</p>
+          <BirdLoader loading compact label="Loading your connections…" />
         ) : (
           <div className="destination-checkboxes">
             {connections.map((c) => (

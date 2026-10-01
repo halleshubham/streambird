@@ -5,6 +5,7 @@ import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { UsageMeter } from '../components/UsageMeter';
+import { BirdLoader } from '../components/BirdLoader';
 import { StreamListItem } from '../components/StreamListItem';
 import { PlatformBadge } from '../components/PlatformBadge';
 import type { Account, PlatformConnection, StreamListItem as StreamListItemType } from '../types/api';
@@ -32,7 +33,7 @@ export function DashboardPage() {
   }
 
   if (loading) {
-    return <p>Loading…</p>;
+    return <BirdLoader loading compact label="Loading your dashboard…" />;
   }
 
   const hasConnections = connections.length > 0;

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as superadminApi from '../../api/superadmin';
+import { BirdLoader } from '../../components/BirdLoader';
 import { ApiError } from '../../api/client';
 import type { AuditLogEntry } from '../../types/api';
 
@@ -22,7 +24,7 @@ export function AdminAuditLogPage() {
       <h1>Audit log</h1>
       {error && <p className="error">{error}</p>}
       {entries === null ? (
-        <p>Loading…</p>
+        <BirdLoader loading compact label="Loading audit log…" />
       ) : entries.length === 0 ? (
         <p className="empty-state">No superadmin actions recorded yet.</p>
       ) : (
@@ -42,9 +44,23 @@ export function AdminAuditLogPage() {
                 <td>{e.action}</td>
                 <td>
                   {e.targetType}
-                  {e.targetId ? ` · ${e.targetId}` : ''}
+                  {e.targetId &&
+                    (e.targetType === 'account' ? (
+                      <>
+                        {' · '}
+                        <Link to={`/admin/accounts/${e.targetId}`}>{e.targetId}</Link>
+                      </>
+                    ) : (
+                      ` · ${e.targetId}`
+                    ))}
                 </td>
-                <td>{e.metadata ? JSON.stringify(e.metadata) : '—'}</td>
+                <td>
+                  {e.metadata ? (
+                    <pre className="audit-log-metadata">{JSON.stringify(e.metadata, null, 2)}</pre>
+                  ) : (
+                    '—'
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

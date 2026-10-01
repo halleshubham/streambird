@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
+import { UsageBar } from '../../components/UsageMeter';
+import { BirdLoader } from '../../components/BirdLoader';
 import type { AccountSummary } from '../../types/api';
 
 /** Directory of every Account (company/solo) -- tier, usage, user count,
@@ -24,7 +26,7 @@ export function AdminAccountsPage() {
       <h1>Companies</h1>
       {error && <p className="error">{error}</p>}
       {accounts === null ? (
-        <p>Loading…</p>
+        <BirdLoader loading compact label="Loading companies…" />
       ) : accounts.length === 0 ? (
         <p className="empty-state">No accounts yet.</p>
       ) : (
@@ -47,10 +49,14 @@ export function AdminAccountsPage() {
                 <td>{a.companyName ?? '—'}</td>
                 <td>{a.currentTier}</td>
                 <td>
-                  {a.streamHourUsageCurrentPeriod} / {a.includedHoursPerMonth}
+                  <UsageBar
+                    compact
+                    used={Number(a.streamHourUsageCurrentPeriod)}
+                    included={Number(a.includedHoursPerMonth)}
+                  />
                 </td>
                 <td>{a.userCount}</td>
-                <td>{a.suspendedAt ? <span className="badge">Suspended</span> : '—'}</td>
+                <td>{a.suspendedAt ? <span className="badge badge-danger">Suspended</span> : '—'}</td>
                 <td>
                   <Link to={`/admin/accounts/${a.id}`}>View</Link>
                 </td>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as superadminApi from '../../api/superadmin';
+import { BirdLoader } from '../../components/BirdLoader';
 import { ApiError } from '../../api/client';
 import type { UserSearchResult } from '../../types/api';
 
@@ -91,7 +92,7 @@ export function AdminUsersPage() {
       {trimmedQuery.length < MIN_QUERY_LENGTH ? (
         <p className="empty-state">Type at least {MIN_QUERY_LENGTH} characters to search.</p>
       ) : results === null ? (
-        <p>Loading…</p>
+        <BirdLoader loading compact label="Searching…" />
       ) : results.length === 0 ? (
         <p className="empty-state">No users match "{trimmedQuery}".</p>
       ) : (
@@ -117,11 +118,7 @@ export function AdminUsersPage() {
                   </td>
                   <td>
                     {pendingApproval && <span className="badge">Pending approval</span>}{' '}
-                    {u.suspendedAt && (
-                      <span className="badge" style={{ background: 'var(--error)', color: '#fff' }}>
-                        Suspended
-                      </span>
-                    )}
+                    {u.suspendedAt && <span className="badge badge-danger">Suspended</span>}
                     {!pendingApproval && !u.suspendedAt && '—'}
                   </td>
                   <td>

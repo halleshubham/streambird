@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as teamApi from '../api/team';
+import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { TeamMember } from '../types/api';
 
@@ -16,6 +17,7 @@ export function TeamPage() {
   const [members, setMembers] = useState<TeamMember[] | null>(null);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -53,8 +55,9 @@ export function TeamPage() {
     }
   }
 
-  async function handleRemove(userId: string) {
-    setBusy(true);
+  async function handleRemove(userId: string, email: string) {
+    if (!window.confirm(`Remove ${email} from your team? They'll immediately lose access.`)) return;
+    setRemovingId(userId);
     setError(null);
     try {
       await teamApi.removeTeamMember(userId);
@@ -62,7 +65,7 @@ export function TeamPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to remove that user.');
     } finally {
-      setBusy(false);
+      setRemovingId(null);
     }
   }
 
@@ -86,7 +89,7 @@ export function TeamPage() {
       {error && <p className="error">{error}</p>}
 
       {members === null ? (
-        <p>Loading…</p>
+        <BirdLoader loading compact label="Loading your team…" />
       ) : members.length === 0 ? (
         <p>No team members yet.</p>
       ) : (
@@ -110,10 +113,10 @@ export function TeamPage() {
                     <button
                       type="button"
                       className="danger-button"
-                      disabled={busy}
-                      onClick={() => void handleRemove(m.id)}
+                      disabled={removingId !== null}
+                      onClick={() => void handleRemove(m.id, m.email)}
                     >
-                      Remove
+                      {removingId === m.id ? 'Removing…' : 'Remove'}
                     </button>
                   )}
                 </td>

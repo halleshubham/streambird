@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
+import { UsageBar } from '../../components/UsageMeter';
+import { BirdLoader } from '../../components/BirdLoader';
 import type { AccountDetail, PlanTier } from '../../types/api';
 
 const PLAN_TIERS: PlanTier[] = ['free', 'starter', 'pro', 'enterprise'];
@@ -60,6 +62,12 @@ export function AdminAccountDetailPage() {
 
   async function handleToggleSuspend() {
     if (!id || !account) return;
+    const confirmed = account.suspendedAt
+      ? true
+      : window.confirm(
+          `Suspend ${account.name}? This immediately blocks every user on this account from logging in or streaming.`,
+        );
+    if (!confirmed) return;
     setSuspending(true);
     setError(null);
     try {
@@ -86,7 +94,7 @@ export function AdminAccountDetailPage() {
   }
 
   if (account === null) {
-    return <p>Loading…</p>;
+    return <BirdLoader loading compact label="Loading account…" />;
   }
 
   return (
@@ -95,7 +103,7 @@ export function AdminAccountDetailPage() {
         <Link to="/admin/accounts">← Back to companies</Link>
       </p>
       <h1>
-        {account.name} {account.suspendedAt && <span className="badge">Suspended</span>}
+        {account.name} {account.suspendedAt && <span className="badge badge-danger">Suspended</span>}
       </h1>
       {error && <p className="error">{error}</p>}
       <p>Company: {account.companyName ?? '—'}</p>
@@ -133,9 +141,11 @@ export function AdminAccountDetailPage() {
           Save
         </button>
       </form>
-      <p>
-        Usage this period: {account.streamHourUsageCurrentPeriod} / {account.includedHoursPerMonth} hrs
-      </p>
+      <p>Usage this period:</p>
+      <UsageBar
+        used={Number(account.streamHourUsageCurrentPeriod)}
+        included={Number(account.includedHoursPerMonth)}
+      />
       <button
         type="button"
         className={account.suspendedAt ? '' : 'danger-button'}
@@ -165,7 +175,7 @@ export function AdminAccountDetailPage() {
                 <td>{u.email}</td>
                 <td>{u.role}</td>
                 <td>{u.approvedAt ? new Date(u.approvedAt).toLocaleString() : '—'}</td>
-                <td>{u.suspendedAt ? <span className="badge">Suspended</span> : '—'}</td>
+                <td>{u.suspendedAt ? <span className="badge badge-danger">Suspended</span> : '—'}</td>
                 <td>{new Date(u.createdAt).toLocaleString()}</td>
               </tr>
             ))}

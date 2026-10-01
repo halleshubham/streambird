@@ -1,9 +1,12 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const CONTACT_EMAIL = 'support@shackyapps.in';
 
 /** Public, unauthenticated route -- see PrivacyPolicyPage for why. */
 export function TermsOfServicePage() {
+  const { status } = useAuth();
+
   return (
     <div className="legal-page">
       <div className="legal-page-inner">
@@ -92,7 +95,7 @@ export function TermsOfServicePage() {
         </p>
 
         <p className="legal-back">
-          <Link to="/login">Back to sign in</Link>
+          {status === 'authenticated' ? <Link to="/dashboard">Back to dashboard</Link> : <Link to="/login">Back to sign in</Link>}
         </p>
       </div>
     </div>
