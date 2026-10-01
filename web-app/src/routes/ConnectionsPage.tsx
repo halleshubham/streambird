@@ -47,11 +47,27 @@ export function ConnectionsPage() {
   useEffect(() => {
     if (searchParams.get('facebookPagesPending') === '1') {
       listFacebookPendingPages()
-        .then(setFacebookPendingPages)
+        .then((pages) => {
+          if (pages.length === 0) {
+            // The pending-pages cookie (10 min lifetime) has expired, or
+            // this URL was revisited later -- nothing left to pick, so
+            // drop back to the plain "Connect Facebook" button instead of
+            // leaving the page stuck showing an empty picker forever.
+            setSearchParams({}, { replace: true });
+            setOauthNotice({ text: 'That Facebook sign-in expired. Please connect again.', isError: true });
+            return;
+          }
+          setFacebookPendingPages(pages);
+        })
         .catch(() => setOauthNotice({ text: 'Could not load your Facebook Pages. Please try connecting again.', isError: true }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function cancelFacebookPageSelection() {
+    setFacebookPendingPages(null);
+    setSearchParams({}, { replace: true });
+  }
 
   async function handleSelectFacebookPage(pageId: string) {
     setSelectingPageId(pageId);
@@ -159,7 +175,7 @@ export function ConnectionsPage() {
           permission to post live video as a Page you manage -- a personal profile can't be
           connected, only Pages.
         </p>
-        {facebookPendingPages ? (
+        {facebookPendingPages && facebookPendingPages.length > 0 ? (
           <div className="connect-form">
             <p>Choose which Facebook Page to connect:</p>
             {facebookPendingPages.map((p) => (
@@ -173,6 +189,9 @@ export function ConnectionsPage() {
                 <Plug size={16} /> {selectingPageId === p.id ? 'Connecting…' : p.name}
               </button>
             ))}
+            <button type="button" className="link-button" disabled={selectingPageId !== null} onClick={cancelFacebookPageSelection}>
+              Cancel / start over
+            </button>
           </div>
         ) : (
           <a
