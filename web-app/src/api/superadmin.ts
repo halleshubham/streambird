@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { AuditLogEntry, PendingCompanyAdmin } from '../types/api';
+import type { AuditLogEntry, PendingCompanyAdmin, UserSearchResult } from '../types/api';
 
 export function listPendingCompanyAdmins(): Promise<PendingCompanyAdmin[]> {
   return api.get('/superadmin/pending-company-admins');
@@ -15,4 +15,16 @@ export function rejectCompanyAdmin(userId: string): Promise<void> {
 
 export function listAuditLog(limit = 50, offset = 0): Promise<AuditLogEntry[]> {
   return api.get(`/superadmin/audit-log?limit=${limit}&offset=${offset}`);
+}
+
+export function searchUsers(email: string): Promise<UserSearchResult[]> {
+  return api.get(`/superadmin/users?email=${encodeURIComponent(email)}`);
+}
+
+export function suspendUser(userId: string): Promise<{ id: string; suspendedAt: string }> {
+  return api.post(`/superadmin/users/${userId}/suspend`);
+}
+
+export function reactivateUser(userId: string): Promise<{ id: string; suspendedAt: string | null }> {
+  return api.post(`/superadmin/users/${userId}/reactivate`);
 }

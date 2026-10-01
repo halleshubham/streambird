@@ -36,6 +36,18 @@ export interface PendingCompanyAdmin {
   createdAt: string;
 }
 
+export interface UserSearchResult {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: UserRole;
+  accountId: string;
+  companyName: string | null;
+  approvedAt: string | null;
+  suspendedAt: string | null;
+  createdAt: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   actorUserId: string | null;

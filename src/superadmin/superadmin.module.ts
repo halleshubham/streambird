@@ -6,6 +6,7 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { CommonModule } from '../common/common.module';
 import { SuperadminSeedService } from './superadmin-seed.service';
 import { SuperadminController } from './superadmin.controller';
+import { SuperadminUsersController } from './superadmin-users.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
@@ -16,7 +17,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
     CommonModule,
     AuditLogModule,
   ],
-  controllers: [SuperadminController],
+  controllers: [SuperadminController, SuperadminUsersController],
   providers: [SuperadminSeedService],
 })
 export class SuperadminModule {}

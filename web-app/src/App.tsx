@@ -13,6 +13,7 @@ import { GuestJoinPage } from './routes/studio/GuestJoinPage';
 import { AdminShell } from './components/AdminShell';
 import { AdminLoginPage } from './routes/admin/AdminLoginPage';
 import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
+import { AdminUsersPage } from './routes/admin/AdminUsersPage';
 import { AdminAuditLogPage } from './routes/admin/AdminAuditLogPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
@@ -42,6 +43,7 @@ export function App() {
       <Route element={<SuperadminRoute />}>
         <Route element={<AdminShell />}>
           <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
         </Route>
       </Route>
