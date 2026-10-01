@@ -153,6 +153,17 @@ export function useHostStudio(streamId: string | undefined) {
     for (const [guestId, dest] of guestMixMinusDestinationsRef.current) {
       if (guestId !== key) source.connect(dest);
     }
+
+    // Also route to the host's own speakers so the producer can actually
+    // hear everyone live while producing -- audioDestinationRef only ever
+    // feeds the outbound WHIP broadcast and other guests' monitor feeds,
+    // never the host's local output device, so without this the host had
+    // no way to literally hear a guest (or a shared screen's audio) at all.
+    // Skip the host's own mic ('local') to avoid feeding it straight back
+    // into the host's own speakers (echo/feedback).
+    if (key !== 'local') {
+      source.connect(audioContextRef.current!.destination);
+    }
   }
 
   /** Every guest gets everyone else's already-connected sources, never their own. */
@@ -464,6 +475,17 @@ export function useHostStudio(streamId: string | undefined) {
       if (event.candidate) {
         socketRef.current?.emit('signal', { to: fromSocketId, type: 'ice-candidate', payload: event.candidate });
       }
+    };
+
+    // Diagnostic only -- this guest-publish connection previously had no
+    // visibility into ICE/connection failures (unlike every other
+    // RTCPeerConnection in this file), making a silently-stuck negotiation
+    // indistinguishable from "it's just slow" in the console.
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[guest ${fromSocketId}] ICE connection state: ${pc.iceConnectionState}`);
+    };
+    pc.onconnectionstatechange = () => {
+      console.log(`[guest ${fromSocketId}] connection state: ${pc.connectionState}`);
     };
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
