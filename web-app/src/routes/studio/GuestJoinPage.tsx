@@ -12,6 +12,8 @@ export function GuestJoinPage() {
     mode,
     joinError,
     passwordRequired,
+    previewing,
+    previewError,
     callStatus,
     callIsError,
     monitorStatus,
@@ -36,6 +38,28 @@ export function GuestJoinPage() {
 
       {mode === 'ready-to-join' && (
         <div className="panel">
+          <label>Check your camera &amp; mic before joining</label>
+          <video ref={setLocalVideoEl} autoPlay muted playsInline className="studio-local-video" />
+          {previewing ? (
+            <div className="studio-toolbar">
+              <button type="button" className="icon-btn" onClick={actions.toggleMic}>
+                {micEnabled ? <Mic size={16} /> : <MicOff size={16} />} {micEnabled ? 'Mute mic' : 'Unmute mic'}
+              </button>
+              <button type="button" className="icon-btn" onClick={actions.toggleCamera}>
+                {cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />} {cameraEnabled ? 'Disable camera' : 'Enable camera'}
+              </button>
+            </div>
+          ) : previewError ? (
+            <>
+              <p className="error">{previewError}</p>
+              <button type="button" className="link-button" onClick={() => void actions.startPreview()}>
+                Try again
+              </button>
+            </>
+          ) : (
+            <p className="status">Requesting camera &amp; mic access…</p>
+          )}
+
           <label htmlFor="displayName">Your name</label>
           <input
             id="displayName"

@@ -34,6 +34,14 @@ export function useGuestStudio(token: string | undefined) {
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [joining, setJoining] = useState(false);
+  // Pre-join ("green room") preview state -- distinct from `joining`/`mode`
+  // since acquiring the camera happens BEFORE the guest clicks Join, while
+  // still on the 'ready-to-join' screen, so they can check their framing
+  // and mute status first. `previewing` is set directly after the getUserMedia
+  // call succeeds (not after mode flips to 'in-call', which only happens
+  // once Join is actually clicked).
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const monitorAudioElRef = useRef<HTMLAudioElement | null>(null);
@@ -220,6 +228,11 @@ export function useGuestStudio(token: string | undefined) {
     monitorPcRef.current?.close();
     monitorPcRef.current = null;
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    // Null it out (not just stopped) -- otherwise startPreview()'s "already
+    // have a stream" guard would see this now-dead MediaStream object and
+    // skip re-acquiring a fresh one after a leave-then-rejoin.
+    localStreamRef.current = null;
+    setPreviewing(false);
     socketRef.current?.disconnect();
     if (monitorAudioElRef.current) monitorAudioElRef.current.srcObject = null;
     clearVideoTiles();
@@ -230,6 +243,26 @@ export function useGuestStudio(token: string | undefined) {
     setCallIsError(true);
     stopLocalMedia();
   }
+
+  /**
+   * Acquires the camera/mic as soon as the guest lands on the 'ready-to-join'
+   * screen, so they can see their own framing and check mute status before
+   * ever actually joining the stage -- a standard "green room" pattern.
+   * Idempotent: a second call while a stream is already held is a no-op,
+   * so re-running this on every render (e.g. via an effect) is safe.
+   */
+  const startPreview = useCallback(async () => {
+    if (localStreamRef.current) return;
+    setPreviewError(null);
+    try {
+      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
+      localStreamRef.current = localStream;
+      if (localVideoElRef.current) localVideoElRef.current.srcObject = localStream;
+      setPreviewing(true);
+    } catch (err) {
+      setPreviewError(`Could not access camera/mic: ${(err as Error).message}`);
+    }
+  }, []);
 
   const join = useCallback(async (displayName: string, password?: string) => {
     if (!token) return;
@@ -244,13 +277,20 @@ export function useGuestStudio(token: string | undefined) {
       return;
     }
 
-    let localStream: MediaStream;
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
-    } catch (err) {
-      setJoinError(`Could not access camera/mic: ${(err as Error).message}`);
-      setJoining(false);
-      return;
+    // Reuse the preview's already-acquired stream when there is one (the
+    // common case -- startPreview runs as soon as this screen loads) rather
+    // than calling getUserMedia a second time, which would both be
+    // redundant and transiently drop the preview's video while the new
+    // permission prompt/grant round-trips.
+    let localStream = localStreamRef.current;
+    if (!localStream) {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
+      } catch (err) {
+        setJoinError(`Could not access camera/mic: ${(err as Error).message}`);
+        setJoining(false);
+        return;
+      }
     }
 
     localStreamRef.current = localStream;
@@ -339,10 +379,22 @@ export function useGuestStudio(token: string | undefined) {
     };
   }, [token]);
 
+  // Auto-starts the green-room preview the moment the join screen is ready
+  // (and again after a leave-then-return, since stopLocalMedia resets
+  // `previewing`) -- the guest shouldn't have to click a separate button
+  // just to see their own camera before deciding to join.
+  useEffect(() => {
+    if (mode === 'ready-to-join') {
+      void startPreview();
+    }
+  }, [mode, startPreview]);
+
   return {
     mode,
     joinError,
     passwordRequired,
+    previewing,
+    previewError,
     callStatus,
     callIsError,
     monitorStatus,
@@ -351,6 +403,6 @@ export function useGuestStudio(token: string | undefined) {
     cameraEnabled,
     joining,
     refs: { setLocalVideoEl, setMonitorAudioEl },
-    actions: { join, toggleMic, toggleCamera, leave },
+    actions: { join, toggleMic, toggleCamera, leave, startPreview },
   };
 }
