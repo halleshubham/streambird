@@ -12,6 +12,8 @@ import { HostStudioPage } from './routes/studio/HostStudioPage';
 import { GuestJoinPage } from './routes/studio/GuestJoinPage';
 import { AdminLoginPage } from './routes/admin/AdminLoginPage';
 import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
+import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
+import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
 
 export function App() {
@@ -19,6 +21,13 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup-company" element={<SignupCompanyPage />} />
+
+      {/* Public and unauthenticated -- required to be reachable without
+          logging in by both Google Cloud's OAuth consent screen
+          verification and Facebook's app review (Privacy Policy / Terms of
+          Service URL fields). */}
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms" element={<TermsOfServicePage />} />
 
       {/* Public -- a guest never has an account or session cookie. */}
       <Route path="/join/:token" element={<GuestJoinPage />} />

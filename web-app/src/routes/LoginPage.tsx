@@ -128,6 +128,10 @@ export function LoginPage() {
             </button>
           </form>
         )}
+
+        <p className="auth-legal-links">
+          <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+        </p>
       </div>
     </div>
   );

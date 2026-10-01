@@ -62,6 +62,11 @@ p {
   font-size: 14px;
 }
 
+.success {
+  color: #16a34a;
+  font-size: 14px;
+}
+
 button {
   font: inherit;
   cursor: pointer;
@@ -138,6 +143,52 @@ input {
   height: 56px;
   display: block;
   margin-bottom: 12px;
+}
+
+.auth-legal-links {
+  margin: 20px 0 0;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text);
+}
+
+.auth-legal-links a {
+  color: var(--text);
+}
+
+/* ---- Legal pages (Privacy Policy / Terms of Service) ---- */
+
+.legal-page {
+  min-height: 100svh;
+  padding: 40px 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.legal-page-inner {
+  max-width: 720px;
+  width: 100%;
+}
+
+.legal-updated {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.legal-page h2 {
+  margin-top: 28px;
+}
+
+.legal-page ul {
+  padding-left: 22px;
+}
+
+.legal-page li {
+  margin-bottom: 8px;
+}
+
+.legal-back {
+  margin-top: 32px;
 }
 
 .auth-divider {
@@ -300,6 +351,18 @@ input {
   max-width: 960px;
   width: 100%;
   margin: 0 auto;
+}
+
+.app-footer {
+  padding: 16px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+
+.app-footer a {
+  color: var(--text);
 }
 
 .page-loading {

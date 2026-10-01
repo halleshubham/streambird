@@ -27,6 +27,9 @@ export function AppShell() {
       <main className="app-main">
         <Outlet />
       </main>
+      <footer className="app-footer">
+        <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+      </footer>
     </div>
   );
 }
