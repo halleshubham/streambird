@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
@@ -56,6 +57,8 @@ interface FacebookPendingPage {
 @Controller('platform-connections')
 @UseGuards(AccountGuard)
 export class PlatformConnectionsController {
+  private readonly logger = new Logger(PlatformConnectionsController.name);
+
   constructor(
     private readonly platformConnectionsService: PlatformConnectionsService,
     private readonly googleOAuth: GoogleOAuthService,
@@ -223,6 +226,9 @@ export class PlatformConnectionsController {
     res.clearCookie(FACEBOOK_OAUTH_STATE_COOKIE_NAME, { path: FACEBOOK_OAUTH_BASE_PATH });
 
     if (!code || !state || !cookieState || state !== cookieState) {
+      this.logger.warn(
+        `Facebook OAuth callback: CSRF state mismatch (code present: ${!!code}, state present: ${!!state}, cookie present: ${!!cookieState})`,
+      );
       res.redirect('/connections?error=facebook_oauth_failed');
       return;
     }
@@ -241,6 +247,9 @@ export class PlatformConnectionsController {
         }).toString()}`,
       );
       if (!shortLivedRes.ok) {
+        this.logger.error(
+          `Facebook short-lived token exchange failed (${shortLivedRes.status}): ${await shortLivedRes.text()}`,
+        );
         res.redirect('/connections?error=facebook_oauth_failed');
         return;
       }
@@ -255,6 +264,9 @@ export class PlatformConnectionsController {
         }).toString()}`,
       );
       if (!longLivedRes.ok) {
+        this.logger.error(
+          `Facebook long-lived token exchange failed (${longLivedRes.status}): ${await longLivedRes.text()}`,
+        );
         res.redirect('/connections?error=facebook_oauth_failed');
         return;
       }
@@ -264,15 +276,23 @@ export class PlatformConnectionsController {
         `${FACEBOOK_API_BASE}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(longLivedToken)}`,
       );
       if (!pagesRes.ok) {
+        this.logger.error(`Facebook /me/accounts lookup failed (${pagesRes.status}): ${await pagesRes.text()}`);
         res.redirect('/connections?error=facebook_oauth_failed');
         return;
       }
       const { data: pages } = (await pagesRes.json()) as { data: FacebookPendingPage[] };
 
       if (!pages || pages.length === 0) {
+        this.logger.warn(`Facebook account for account.id=${account.id} manages no Pages -- nothing to connect.`);
         res.redirect('/connections?error=facebook_no_pages');
         return;
       }
+
+      this.logger.log(
+        `Facebook OAuth callback for account.id=${account.id}: found ${pages.length} Page(s) (${pages
+          .map((p) => p.name)
+          .join(', ')})`,
+      );
 
       if (pages.length === 1) {
         await this.platformConnectionsService.upsertFacebookConnection(
@@ -299,7 +319,8 @@ export class PlatformConnectionsController {
         },
       );
       res.redirect('/connections?facebookPagesPending=1');
-    } catch {
+    } catch (err) {
+      this.logger.error('Facebook OAuth callback threw unexpectedly', err instanceof Error ? err.stack : err);
       res.redirect('/connections?error=facebook_oauth_failed');
     }
   }
