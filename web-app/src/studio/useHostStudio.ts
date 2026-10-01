@@ -19,6 +19,22 @@ const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, auto
 
 export type LayoutMode = 'grid' | 'spotlight';
 
+export type StreamResolution = 'sd' | 'hd' | 'fhd';
+
+/** Compositing canvas size + the encoder bitrate cap that goes with it --
+ * one shared encode fans out via MediaMTX to every destination at once
+ * (YouTube/Facebook/Twitch/the relay), so resolution is necessarily a
+ * single global choice per stream, not a per-destination setting. Locked
+ * once live (see HostStudioPage) rather than supporting a mid-stream
+ * resize -- resizing the canvas itself is harmless, but changing
+ * resolution out from under an already-negotiated RTMP destination's own
+ * transcode pipeline is an unnecessary risk for what this needs to do. */
+export const RESOLUTIONS: Record<StreamResolution, { width: number; height: number; maxBitrate: number; label: string }> = {
+  sd: { width: 640, height: 360, maxBitrate: 1_000_000, label: 'SD (360p)' },
+  hd: { width: 1280, height: 720, maxBitrate: 3_000_000, label: 'HD (720p)' },
+  fhd: { width: 1920, height: 1080, maxBitrate: 6_000_000, label: 'Full HD (1080p)' },
+};
+
 interface Participant {
   id: string; // 'local' or a guest's socketId
   pc: RTCPeerConnection | null; // null for 'local' -- it never negotiates with itself
@@ -83,6 +99,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [inviteMessage, setInviteMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [participantsView, setParticipantsView] = useState<ParticipantView[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
+  const [resolution, setResolution] = useState<StreamResolution>('hd');
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
@@ -1119,6 +1136,18 @@ export function useHostStudio(streamId: string | undefined) {
       // destinations need one roughly every ~2s to recognize the stream at
       // all. Two different APIs exist across browser versions -- try both.
       const sender = videoTransceiver.sender;
+
+      // Cap the encoder to the chosen resolution tier's bitrate -- the
+      // canvas is already sized for it (see the <canvas> element's
+      // width/height), this just stops the browser's own bitrate
+      // heuristics from over- or under-shooting what that resolution
+      // actually needs.
+      const bitrateParams = sender.getParameters();
+      if (bitrateParams.encodings && bitrateParams.encodings.length > 0) {
+        bitrateParams.encodings[0].maxBitrate = RESOLUTIONS[resolution].maxBitrate;
+        await sender.setParameters(bitrateParams).catch(() => {});
+      }
+
       const forceKeyFrame = () => {
         const s = sender as RTCRtpSender & { generateKeyFrame?: () => Promise<void> };
         if (typeof s.generateKeyFrame === 'function') {
@@ -1144,7 +1173,7 @@ export function useHostStudio(streamId: string | undefined) {
     } catch (err) {
       setStatus({ text: `Failed to go live: ${(err as Error).message}`, isError: true });
     }
-  }, [stream]);
+  }, [stream, resolution]);
 
   const endStream = useCallback(async () => {
     setEnding(true);
@@ -1209,6 +1238,7 @@ export function useHostStudio(streamId: string | undefined) {
     inviteMessage,
     participants: participantsView,
     layoutMode,
+    resolution,
     cameraStarting,
     cameraStarted,
     isLive,
@@ -1225,6 +1255,7 @@ export function useHostStudio(streamId: string | undefined) {
       createInviteLink,
       toggleLayout,
       setLayout,
+      setResolution,
       goLive,
       endStream,
       toggleParticipantAudio,

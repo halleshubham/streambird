@@ -886,6 +886,25 @@ a.icon-btn--danger {
   color: var(--text);
 }
 
+.studio-resolution-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+}
+
+.studio-resolution-select select {
+  width: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+}
+
 /* Go Live is the single most consequential control on this page --
    visually isolated and sized up so it never reads as just another
    button in the toolbar, with End Stream pushed well away from it

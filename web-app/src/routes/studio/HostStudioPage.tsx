@@ -22,8 +22,10 @@ import {
   PinOff,
   Eye,
   EyeOff,
+  Gauge,
 } from 'lucide-react';
-import { useHostStudio } from '../../studio/useHostStudio';
+import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
+import type { StreamResolution } from '../../studio/useHostStudio';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
 
@@ -42,6 +44,7 @@ export function HostStudioPage() {
     inviteMessage,
     participants,
     layoutMode,
+    resolution,
     cameraStarting,
     cameraStarted,
     isLive,
@@ -99,7 +102,12 @@ export function HostStudioPage() {
       </h1>
 
       <div className="studio-video-wrap">
-        <canvas ref={canvasRef} width={1280} height={720} className="studio-canvas" />
+        <canvas
+          ref={canvasRef}
+          width={RESOLUTIONS[resolution].width}
+          height={RESOLUTIONS[resolution].height}
+          className="studio-canvas"
+        />
         <BirdLoader loading={!cameraStarted} label="Waiting for your camera…" />
       </div>
 
@@ -117,6 +125,20 @@ export function HostStudioPage() {
             >
               <Copy size={16} /> Create guest invite
             </button>
+            <label className="studio-resolution-select" title={isLive ? 'Locked while live -- end the stream to change it' : undefined}>
+              <Gauge size={16} />
+              <select
+                value={resolution}
+                disabled={isLive}
+                onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
+              >
+                {Object.entries(RESOLUTIONS).map(([value, r]) => (
+                  <option key={value} value={value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
 
