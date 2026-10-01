@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { PlatformConnection } from './entities/platform-connection.entity';
+import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { Platform } from '../common/enums/platform.enum';
 import { EncryptionService } from '../encryption/encryption.service';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
@@ -20,6 +21,8 @@ export class PlatformConnectionsService {
   constructor(
     @InjectRepository(PlatformConnection)
     private readonly connections: Repository<PlatformConnection>,
+    @InjectRepository(LiveStreamDestination)
+    private readonly destinations: Repository<LiveStreamDestination>,
     private readonly encryption: EncryptionService,
   ) {}
 
@@ -93,10 +96,31 @@ export class PlatformConnectionsService {
     return this.connections.save(connection);
   }
 
+  /**
+   * A connection referenced by any live_stream_destinations row can't be
+   * hard-deleted -- that FK is ON DELETE RESTRICT by design (stream
+   * history must survive a connection being removed later), and
+   * previously this just let Postgres's raw constraint-violation error
+   * surface as an unhandled 500 instead of a clean response. If the
+   * connection has any stream history, deactivate it instead (consistent
+   * with the existing isActive flag findAllForAccount already filters
+   * on) -- it disappears from the account's active connections exactly
+   * like a real delete would, without breaking past streams' records.
+   * Only a connection that was NEVER actually used is hard-deleted.
+   */
   async remove(id: string, accountId: string): Promise<void> {
-    const result = await this.connections.delete({ id, accountId });
-    if (result.affected === 0) {
+    const connection = await this.connections.findOne({ where: { id, accountId } });
+    if (!connection) {
       throw new NotFoundException(`PlatformConnection ${id} not found`);
     }
+
+    const usedByAStream = await this.destinations.count({ where: { platformConnectionId: id } });
+    if (usedByAStream > 0) {
+      connection.isActive = false;
+      await this.connections.save(connection);
+      return;
+    }
+
+    await this.connections.delete({ id, accountId });
   }
 }

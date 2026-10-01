@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { PlatformConnectionsService } from './platform-connections.service';
 import { PlatformConnection } from './entities/platform-connection.entity';
+import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { EncryptionService } from '../encryption/encryption.service';
 import { Platform } from '../common/enums/platform.enum';
 
@@ -15,6 +16,7 @@ describe('PlatformConnectionsService', () => {
     create: jest.Mock;
     save: jest.Mock;
   };
+  let destinationsRepo: { count: jest.Mock };
   let encryption: { encrypt: jest.Mock };
 
   beforeEach(async () => {
@@ -25,12 +27,14 @@ describe('PlatformConnectionsService', () => {
       create: jest.fn((v) => v),
       save: jest.fn(async (v) => ({ id: 'conn_1', ...v })),
     };
+    destinationsRepo = { count: jest.fn().mockResolvedValue(0) };
     encryption = { encrypt: jest.fn(() => Buffer.from('ciphertext')) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         PlatformConnectionsService,
         { provide: getRepositoryToken(PlatformConnection), useValue: repo },
+        { provide: getRepositoryToken(LiveStreamDestination), useValue: destinationsRepo },
         { provide: EncryptionService, useValue: encryption },
       ],
     }).compile();
@@ -47,15 +51,32 @@ describe('PlatformConnectionsService', () => {
     expect(result).toEqual([{ id: 'c1' }]);
   });
 
-  it('removes a connection scoped to the requesting account', async () => {
-    repo.delete.mockResolvedValue({ affected: 1 });
+  it('hard-deletes a connection scoped to the requesting account when it has no stream history', async () => {
+    repo.findOne.mockResolvedValue({ id: 'c1', accountId: 'acc_1', isActive: true });
+    destinationsRepo.count.mockResolvedValue(0);
+
     await service.remove('c1', 'acc_1');
+
+    expect(destinationsRepo.count).toHaveBeenCalledWith({ where: { platformConnectionId: 'c1' } });
     expect(repo.delete).toHaveBeenCalledWith({ id: 'c1', accountId: 'acc_1' });
+    expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it('throws NotFoundException when nothing matched the account-scoped delete', async () => {
-    repo.delete.mockResolvedValue({ affected: 0 });
+  it('deactivates instead of hard-deleting a connection that has stream history -- avoids the ON DELETE RESTRICT FK violation', async () => {
+    const connection = { id: 'c1', accountId: 'acc_1', isActive: true };
+    repo.findOne.mockResolvedValue(connection);
+    destinationsRepo.count.mockResolvedValue(2);
+
+    await service.remove('c1', 'acc_1');
+
+    expect(repo.delete).not.toHaveBeenCalled();
+    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', isActive: false }));
+  });
+
+  it('throws NotFoundException when the connection does not belong to (or does not exist for) the requesting account', async () => {
+    repo.findOne.mockResolvedValue(null);
     await expect(service.remove('c1', 'acc_1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(destinationsRepo.count).not.toHaveBeenCalled();
   });
 
   it('createManualTwitchConnection encrypts the pasted ingest URL/key and stores it as a Twitch connection', async () => {
