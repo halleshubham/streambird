@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { getStream } from '../api/streams';
+import { getStream, getStreamStatus } from '../api/streams';
+import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout } from '../api/studio';
 import { ApiError } from '../api/client';
-import type { Stream } from '../types/api';
+import type { Platform, Stream, StreamStatusDestination } from '../types/api';
+
+// Mirrors StreamDetailPage's own poll interval -- see that page for why
+// 10s (fast enough to catch a destination's platformStatus climbing from
+// "testing" to "live" without hammering every provider's API every call).
+const DESTINATION_STATUS_POLL_MS = 10_000;
 
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 // Explicit rather than relying on browser defaults -- VDO.Ninja (a mature
@@ -83,6 +89,8 @@ export function useHostStudio(streamId: string | undefined) {
   // in-memory React state, deliberately not persisted to the backend/DB.
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
+  const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
+  const [platformById, setPlatformById] = useState<Map<string, Platform>>(new Map());
 
   const hostTokenRef = useRef<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -598,6 +606,14 @@ export function useHostStudio(streamId: string | undefined) {
 
         connectSignaling(streamRow, hostToken);
         startDrawLoop();
+
+        // Platform per destination isn't on the stream/status response
+        // itself (only platformConnectionId) -- resolve it client-side
+        // against the account's connections, same approach as
+        // StreamDetailPage.
+        listConnections()
+          .then((conns) => setPlatformById(new Map(conns.map((c) => [c.id, c.platform]))))
+          .catch(() => {});
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
@@ -615,6 +631,31 @@ export function useHostStudio(streamId: string | undefined) {
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamId]);
+
+  // Destination status (our own LIVE/FAILED/etc. status AND, where the
+  // provider supports it, the platform's own real lifecycle status -- see
+  // StreamsService.getStatus server-side for why both matter) -- polled
+  // independently of the WHIP/signaling setup above so it keeps refreshing
+  // for as long as this page is open, including before the host has
+  // actually gone live yet.
+  useEffect(() => {
+    if (!streamId) return;
+    let cancelled = false;
+
+    const poll = () => {
+      getStreamStatus(streamId)
+        .then((s) => {
+          if (!cancelled) setDestinations(s.destinations);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const interval = setInterval(poll, DESTINATION_STATUS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [streamId]);
 
   // ---- 2. Actions exposed to the page ----------------------------------
@@ -1016,6 +1057,8 @@ export function useHostStudio(streamId: string | undefined) {
     branding,
     scenes,
     activeSceneName,
+    destinations,
+    platformById,
     actions: {
       startCamera,
       createInviteLink,

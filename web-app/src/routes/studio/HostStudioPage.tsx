@@ -17,13 +17,16 @@ import {
   MonitorOff,
   Save,
   Clapperboard,
+  ExternalLink,
 } from 'lucide-react';
 import { useHostStudio } from '../../studio/useHostStudio';
+import { PlatformBadge } from '../../components/PlatformBadge';
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
   const [requireInvitePassword, setRequireInvitePassword] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
+  const [copiedDestinationId, setCopiedDestinationId] = useState<string | null>(null);
   const {
     canvasRef,
     loading,
@@ -42,8 +45,21 @@ export function HostStudioPage() {
     branding,
     scenes,
     activeSceneName,
+    destinations,
+    platformById,
     actions,
   } = useHostStudio(streamId);
+
+  async function copyWatchUrl(id: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedDestinationId(id);
+      setTimeout(() => setCopiedDestinationId((cur) => (cur === id ? null : cur)), 2000);
+    } catch {
+      // Clipboard access can be denied (permissions, non-HTTPS, etc.) --
+      // not worth surfacing as an error, the Watch link still works.
+    }
+  }
 
   if (needsLogin) {
     return (
@@ -79,147 +95,196 @@ export function HostStudioPage() {
 
       <canvas ref={canvasRef} width={1280} height={720} className="studio-canvas" />
 
-      <div className="studio-toolbar">
-        <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
-          <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
-        >
-          <Copy size={16} /> Create guest invite
-        </button>
-        <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
-          {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
-        >
-          {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
-        </button>
-        <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.goLive()} disabled={!stream.whipUrl || isLive}>
-          <Radio size={16} /> {isLive ? 'Live' : 'Go live'}
-        </button>
-        <button type="button" className="icon-btn icon-btn--danger" onClick={() => void actions.endStream()} disabled={ending}>
-          <PhoneOff size={16} /> End stream
-        </button>
-      </div>
-
-      <div className="studio-invite-controls">
-        <label>
-          <input
-            type="checkbox"
-            checked={requireInvitePassword}
-            onChange={(e) => setRequireInvitePassword(e.target.checked)}
-          />
-          {' '}Require a password to join
-        </label>
-        {requireInvitePassword && (
-          <input
-            type="text"
-            placeholder="Invite password"
-            value={invitePassword}
-            onChange={(e) => setInvitePassword(e.target.value)}
-          />
-        )}
-      </div>
-
-      {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}
-      {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
-
-      <label className="studio-section-label">Participants</label>
-      <div className="participant-list">
-        {participants.map((p) => (
-          <div key={p.id} className="participant-row">
-            <span>{p.displayName}</span>
-            {!p.isScreenShare && (
-              <>
-                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
-                  {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
-                  {p.audioEnabled === false ? 'Unmute' : 'Mute'}
-                </button>
-                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
-                  {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
-                  {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
-                </button>
-              </>
-            )}
-            {p.isScreenShare ? (
-              <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.stopScreenShare()}>
-                <MonitorOff size={14} /> Stop sharing
-              </button>
-            ) : (
-              !p.isLocal && (
-                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.dropParticipant(p.id)}>
-                  <UserX size={14} /> Remove
-                </button>
-              )
-            )}
-          </div>
-        ))}
-      </div>
-
-      <label className="studio-section-label" htmlFor="logoInput">
-        <ImageIcon size={14} /> Logo (shown top-left)
-      </label>
-      <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
-
-      <label htmlFor="logoSizeInput">Logo size (px height)</label>
-      <input
-        id="logoSizeInput"
-        type="number"
-        min={16}
-        max={240}
-        value={branding.logoSize}
-        onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
-      />
-
-      <label htmlFor="newsInput">News ticker text (shown at the bottom)</label>
-      <input
-        id="newsInput"
-        type="text"
-        placeholder="Breaking: ..."
-        value={branding.newsText}
-        onChange={(e) => actions.setNewsText(e.target.value)}
-      />
-
-      <label htmlFor="nameFontSizeInput">Name label size (px)</label>
-      <input
-        id="nameFontSizeInput"
-        type="number"
-        min={8}
-        max={48}
-        value={branding.nameFontSize}
-        onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
-      />
-
-      <label className="studio-section-label">
-        <Clapperboard size={14} /> Scenes
-      </label>
-      <div className="studio-toolbar">
-        <button
-          type="button"
-          className="icon-btn icon-btn--small"
-          onClick={() => {
-            const name = window.prompt('Name this scene:');
-            if (name && name.trim()) actions.saveScene(name);
-          }}
-        >
-          <Save size={14} /> Save current as scene
-        </button>
-        {scenes.map((scene) => (
-          <button
-            key={scene.name}
-            type="button"
-            className={`icon-btn icon-btn--small${scene.name === activeSceneName ? ' icon-btn--accent' : ''}`}
-            onClick={() => actions.applyScene(scene.name)}
-          >
-            <Clapperboard size={14} /> {scene.name}
+      <div className="panel">
+        <div className="studio-toolbar">
+          <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
+            <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
           </button>
-        ))}
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
+          >
+            <Copy size={16} /> Create guest invite
+          </button>
+          <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
+            {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
+          >
+            {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
+          </button>
+          <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.goLive()} disabled={!stream.whipUrl || isLive}>
+            <Radio size={16} /> {isLive ? 'Live' : 'Go live'}
+          </button>
+          <button type="button" className="icon-btn icon-btn--danger" onClick={() => void actions.endStream()} disabled={ending}>
+            <PhoneOff size={16} /> End stream
+          </button>
+        </div>
+
+        <div className="studio-invite-controls">
+          <label>
+            <input
+              type="checkbox"
+              checked={requireInvitePassword}
+              onChange={(e) => setRequireInvitePassword(e.target.checked)}
+            />
+            {' '}Require a password to join
+          </label>
+          {requireInvitePassword && (
+            <input
+              type="text"
+              placeholder="Invite password"
+              value={invitePassword}
+              onChange={(e) => setInvitePassword(e.target.value)}
+            />
+          )}
+        </div>
+
+        {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}
+        {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
+      </div>
+
+      {destinations.length > 0 && (
+        <div className="panel">
+          <label className="studio-section-label">
+            <Radio size={14} /> Destinations
+          </label>
+          <div className="connection-list">
+            {destinations.map((d) => {
+              const platform = platformById.get(d.platformConnectionId);
+              return (
+                <div key={d.id} className="destination-detail-row">
+                  <div className="destination-detail-main">
+                    {platform && <PlatformBadge platform={platform} />}
+                    <span className={`status-dot status-${d.status}`} />
+                    <span>{d.status}</span>
+                    {d.platformStatus && <span className="empty-state">platform reports: {d.platformStatus}</span>}
+                    {d.viewerCount !== null && <span className="empty-state">{d.viewerCount} viewers</span>}
+                  </div>
+                  <div className="destination-detail-actions">
+                    {d.watchUrl && (
+                      <>
+                        <a href={d.watchUrl} target="_blank" rel="noopener noreferrer" className="icon-btn icon-btn--small">
+                          <ExternalLink size={14} /> Watch
+                        </a>
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn--small"
+                          onClick={() => void copyWatchUrl(d.id, d.watchUrl!)}
+                        >
+                          <Copy size={14} /> {copiedDestinationId === d.id ? 'Copied!' : 'Copy link'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {d.errorMessage && <p className="error">{d.errorMessage}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="panel">
+        <label className="studio-section-label">Participants</label>
+        <div className="participant-list">
+          {participants.map((p) => (
+            <div key={p.id} className="participant-row">
+              <span>{p.displayName}</span>
+              {!p.isScreenShare && (
+                <>
+                  <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
+                    {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
+                    {p.audioEnabled === false ? 'Unmute' : 'Mute'}
+                  </button>
+                  <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
+                    {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
+                    {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                  </button>
+                </>
+              )}
+              {p.isScreenShare ? (
+                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.stopScreenShare()}>
+                  <MonitorOff size={14} /> Stop sharing
+                </button>
+              ) : (
+                !p.isLocal && (
+                  <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.dropParticipant(p.id)}>
+                    <UserX size={14} /> Remove
+                  </button>
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <label className="studio-section-label" htmlFor="logoInput">
+          <ImageIcon size={14} /> Logo (shown top-left)
+        </label>
+        <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
+
+        <label htmlFor="logoSizeInput">Logo size (px height)</label>
+        <input
+          id="logoSizeInput"
+          type="number"
+          min={16}
+          max={240}
+          value={branding.logoSize}
+          onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
+        />
+
+        <label htmlFor="newsInput">News ticker text (shown at the bottom)</label>
+        <input
+          id="newsInput"
+          type="text"
+          placeholder="Breaking: ..."
+          value={branding.newsText}
+          onChange={(e) => actions.setNewsText(e.target.value)}
+        />
+
+        <label htmlFor="nameFontSizeInput">Name label size (px)</label>
+        <input
+          id="nameFontSizeInput"
+          type="number"
+          min={8}
+          max={48}
+          value={branding.nameFontSize}
+          onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
+        />
+      </div>
+
+      <div className="panel">
+        <label className="studio-section-label">
+          <Clapperboard size={14} /> Scenes
+        </label>
+        <div className="studio-toolbar">
+          <button
+            type="button"
+            className="icon-btn icon-btn--small"
+            onClick={() => {
+              const name = window.prompt('Name this scene:');
+              if (name && name.trim()) actions.saveScene(name);
+            }}
+          >
+            <Save size={14} /> Save current as scene
+          </button>
+          {scenes.map((scene) => (
+            <button
+              key={scene.name}
+              type="button"
+              className={`icon-btn icon-btn--small${scene.name === activeSceneName ? ' icon-btn--accent' : ''}`}
+              onClick={() => actions.applyScene(scene.name)}
+            >
+              <Clapperboard size={14} /> {scene.name}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
