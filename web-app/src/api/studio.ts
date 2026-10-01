@@ -7,9 +7,9 @@ export function mintHostToken(studioSessionId: string): Promise<HostTokenRespons
 
 export function createInvite(
   studioSessionId: string,
-  expiresInMinutes = 60,
+  opts: { label?: string; password?: string } = {},
 ): Promise<CreateInviteResponse> {
-  return api.post(`/studio-sessions/${studioSessionId}/invites`, { expiresInMinutes });
+  return api.post(`/studio-sessions/${studioSessionId}/invites`, opts);
 }
 
 export function updateLayout(

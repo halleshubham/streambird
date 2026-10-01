@@ -7,9 +7,11 @@ import { MediaStreamVideo } from '../../components/MediaStreamVideo';
 export function GuestJoinPage() {
   const { token } = useParams<{ token: string }>();
   const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
   const {
     mode,
     joinError,
+    passwordRequired,
     callStatus,
     callIsError,
     monitorStatus,
@@ -43,7 +45,22 @@ export function GuestJoinPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
-          <button type="button" disabled={joining} onClick={() => void actions.join(displayName.trim() || 'Guest')}>
+          {passwordRequired && (
+            <>
+              <label htmlFor="invitePassword">Invite password</label>
+              <input
+                id="invitePassword"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </>
+          )}
+          <button
+            type="button"
+            disabled={joining}
+            onClick={() => void actions.join(displayName.trim() || 'Guest', passwordRequired ? password : undefined)}
+          >
             {joining ? 'Joining…' : 'Join'}
           </button>
           {joinError && <p className="error">{joinError}</p>}

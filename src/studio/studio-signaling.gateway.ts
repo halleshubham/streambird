@@ -96,17 +96,24 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   }
 
   private async handleGuestConnection(client: Socket) {
-    const { token, displayName } = client.handshake.auth as {
+    const { token, displayName, password } = client.handshake.auth as {
       token?: string;
       displayName?: string;
+      password?: string;
     };
     if (!token) {
       throw new Error('guest connections require an invite token');
     }
 
-    const participant = await this.studioSessionsService.consumeInviteAndJoin(
+    // Throws (caught by handleConnection, which disconnects the socket with
+    // a clear error message) if the token is unknown/revoked/expired, or if
+    // the invite requires a password and none/the wrong one was supplied.
+    // Does NOT revoke the invite -- a guest whose connection drops can
+    // reconnect with the same token and displayName.
+    const participant = await this.studioSessionsService.joinAsGuest(
       token,
       displayName || 'Guest',
+      password,
     );
 
     const sessionId = participant.studioSessionId;

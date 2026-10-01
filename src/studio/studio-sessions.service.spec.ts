@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { StudioSessionsService } from './studio-sessions.service';
 import { StudioSession } from './entities/studio-session.entity';
 import { StudioGuestInvite } from './entities/studio-guest-invite.entity';
@@ -97,52 +98,125 @@ describe('StudioSessionsService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('resolveInviteToken rejects an expired invite', async () => {
-    const { service, inviteRepo } = await build();
-    inviteRepo.rows.set('i1', {
-      id: 'i1',
-      token: 'tok',
-      studioSessionId: 's1',
-      revokedAt: null,
-      expiresAt: new Date(Date.now() - 1000),
-    } as any);
-
-    await expect(service.resolveInviteToken('tok')).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('resolveInviteToken rejects an already-consumed invite', async () => {
+  it('resolveInviteToken rejects a revoked invite', async () => {
     const { service, inviteRepo } = await build();
     inviteRepo.rows.set('i1', {
       id: 'i1',
       token: 'tok',
       studioSessionId: 's1',
       revokedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60_000),
+      expiresAt: null,
     } as any);
 
     await expect(service.resolveInviteToken('tok')).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('consumeInviteAndJoin marks the invite used and records a guest participant exactly once', async () => {
+  it('resolveInviteToken honors a legacy expiresAt if one is still set, but new invites never set one', async () => {
+    const { service, sessionRepo, inviteRepo } = await build();
+    sessionRepo.rows.set('s1', { id: 's1', liveStream: { accountId: 'acc_1' } } as any);
+    inviteRepo.rows.set('i1', {
+      id: 'i1',
+      token: 'expired-legacy',
+      studioSessionId: 's1',
+      revokedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+    } as any);
+
+    await expect(service.resolveInviteToken('expired-legacy')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+
+    const created = await service.createInvite('s1', 'acc_1', { label: 'Co-host' });
+    expect(created.expiresAt).toBeNull();
+  });
+
+  it('joinAsGuest does not revoke the invite -- the same token can join/rejoin repeatedly', async () => {
     const { service, inviteRepo, participantRepo } = await build();
     inviteRepo.rows.set('i1', {
       id: 'i1',
       token: 'tok',
       studioSessionId: 's1',
       revokedAt: null,
-      expiresAt: new Date(Date.now() + 60_000),
+      expiresAt: null,
+      passwordHash: null,
     } as any);
 
-    const participant = await service.consumeInviteAndJoin('tok', 'Alex');
+    const participant = await service.joinAsGuest('tok', 'Alex');
 
     expect(participant.role).toBe(ParticipantRole.GUEST);
     expect(participant.displayName).toBe('Alex');
-    expect(inviteRepo.rows.get('i1')!.revokedAt).not.toBeNull();
+    expect(inviteRepo.rows.get('i1')!.revokedAt).toBeNull();
 
-    // Second attempt with the same (now-consumed) token must fail.
-    await expect(service.consumeInviteAndJoin('tok', 'Alex again')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    // A reconnect with the same token (network blip, tab refresh) must
+    // keep succeeding -- this is exactly the bug being fixed.
+    const rejoined = await service.joinAsGuest('tok', 'Alex again');
+    expect(rejoined.role).toBe(ParticipantRole.GUEST);
+    expect(inviteRepo.rows.get('i1')!.revokedAt).toBeNull();
+  });
+
+  it('createInvite stores a sha256 password hash when a password is provided', async () => {
+    const { service, sessionRepo, inviteRepo } = await build();
+    sessionRepo.rows.set('s1', { id: 's1', liveStream: { accountId: 'acc_1' } } as any);
+
+    const result = await service.createInvite('s1', 'acc_1', { password: 'secret123' });
+
+    const stored = [...inviteRepo.rows.values()].find((r: any) => r.token === result.token) as any;
+    expect(stored.passwordHash).toBeTruthy();
+    expect(stored.passwordHash).not.toBe('secret123');
+  });
+
+  it('joinAsGuest rejects a missing or wrong password when the invite requires one', async () => {
+    const { service, inviteRepo } = await build();
+    inviteRepo.rows.set('i1', {
+      id: 'i1',
+      token: 'tok',
+      studioSessionId: 's1',
+      revokedAt: null,
+      expiresAt: null,
+      // sha256('correct-password')
+      passwordHash: crypto.createHash('sha256').update('correct-password').digest('hex'),
+    } as any);
+
+    await expect(service.joinAsGuest('tok', 'Alex')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.joinAsGuest('tok', 'Alex', 'wrong-password'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('joinAsGuest accepts the correct password when the invite requires one', async () => {
+    const { service, inviteRepo } = await build();
+    inviteRepo.rows.set('i1', {
+      id: 'i1',
+      token: 'tok',
+      studioSessionId: 's1',
+      revokedAt: null,
+      expiresAt: null,
+      passwordHash: crypto.createHash('sha256').update('correct-password').digest('hex'),
+    } as any);
+
+    const participant = await service.joinAsGuest('tok', 'Alex', 'correct-password');
+    expect(participant.role).toBe(ParticipantRole.GUEST);
+  });
+
+  it('revokeInvitesForStream revokes every invite on that stream\'s studio session', async () => {
+    const { service, sessionRepo, inviteRepo } = await build();
+    sessionRepo.rows.set('s1', { id: 's1', liveStreamId: 'stream_1' } as any);
+    inviteRepo.rows.set('i1', {
+      id: 'i1',
+      studioSessionId: 's1',
+      token: 'tok-1',
+      revokedAt: null,
+      expiresAt: null,
+    } as any);
+
+    await service.revokeInvitesForStream('stream_1');
+
+    expect(inviteRepo.rows.get('i1')!.revokedAt).not.toBeNull();
+  });
+
+  it('revokeInvitesForStream is a no-op when the stream has no studio session', async () => {
+    const { service } = await build();
+    await expect(service.revokeInvitesForStream('unknown_stream')).resolves.toBeUndefined();
   });
 
   it('revokeInvite marks the invite revoked when owned by the account', async () => {

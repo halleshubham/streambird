@@ -61,13 +61,16 @@ export interface HostTokenResponse {
 export interface CreateInviteResponse {
   token: string;
   joinUrl: string;
-  expiresAt: string;
+  // null means "valid until the host ends the stream" -- the only behavior
+  // going forward; invites no longer carry a fixed TTL.
+  expiresAt: string | null;
 }
 
 export interface ResolveInviteResponse {
   studioSessionId: string;
   label: string | null;
-  expiresAt: string;
+  expiresAt: string | null;
+  passwordRequired: boolean;
 }
 
 export interface DestinationSummary {
