@@ -142,6 +142,9 @@ export function ScheduledStreamPanel({
             <strong>Note to guests:</strong> {detail.guestNotes}
           </p>
         )}
+        <p className="field-hint">
+          <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Other destinations (Facebook, Twitch) are created when you start the stream.
+        </p>
         <div className="destination-status-list">
           {detail.destinations.map((d) => (
             <div key={d.id} className="destination-status-row">

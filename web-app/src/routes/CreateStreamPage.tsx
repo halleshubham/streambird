@@ -203,6 +203,11 @@ export function CreateStreamPage() {
         )}
 
         <label>Destinations</label>
+        {mode === 'schedule' && (
+          <p className="notice">
+            <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Facebook (Meta retired scheduled lives) and Twitch are created when you start the stream.
+          </p>
+        )}
         {!connections ? (
           <BirdLoader loading compact label="Loading your connections…" />
         ) : (
