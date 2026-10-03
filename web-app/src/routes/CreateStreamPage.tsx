@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarClock, Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
-import { createStream, scheduleStream } from '../api/streams';
+import { createStream, scheduleStream, uploadScheduleThumbnail } from '../api/streams';
+import { ThumbnailPicker } from '../components/ThumbnailPicker';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
 import { PlatformBadge } from '../components/PlatformBadge';
@@ -24,6 +25,7 @@ export function CreateStreamPage() {
   const [guestNotes, setGuestNotes] = useState('');
   const [guestEmailsText, setGuestEmailsText] = useState('');
   const [createOnPlatforms, setCreateOnPlatforms] = useState(false);
+  const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [requirePassword, setRequirePassword] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
   const timeZone = browserTimeZone();
@@ -89,8 +91,19 @@ export function CreateStreamPage() {
           invitePassword: requirePassword ? invitePassword.trim() : undefined,
           createOnPlatforms: createOnPlatforms && precreatable.length > 0 ? true : undefined,
         });
+        // The stream now exists, so the thumbnail can be uploaded (and pushed to any
+        // broadcast just created). A failure here must not lose the schedule.
+        const warnings = [...(detail.platformWarnings ?? [])];
+        if (thumbnail) {
+          try {
+            const withThumb = await uploadScheduleThumbnail(detail.id, thumbnail);
+            warnings.push(...(withThumb.platformWarnings ?? []));
+          } catch (err) {
+            warnings.push(`The thumbnail wasn't saved (${err instanceof ApiError ? err.message : 'upload failed'}) -- add it on the next page.`);
+          }
+        }
         navigate(`/streams/${detail.id}`, {
-          state: { justScheduled: true, emailFailures: detail.emailFailures ?? [], platformWarnings: detail.platformWarnings ?? [] },
+          state: { justScheduled: true, emailFailures: detail.emailFailures ?? [], platformWarnings: warnings },
         });
         return;
       }
@@ -173,6 +186,10 @@ export function CreateStreamPage() {
               required
             />
             <p className="field-hint">Your time zone: {timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.</p>
+
+            <label>Thumbnail (optional)</label>
+            <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
+            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Shown on YouTube and as Facebook's scheduled-live image.</p>
 
             <label htmlFor="duration">Expected duration</label>
             <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>

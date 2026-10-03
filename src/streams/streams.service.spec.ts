@@ -4,6 +4,7 @@ import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common
 import { StreamsService } from './streams.service';
 import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
+import { StreamThumbnail } from './entities/stream-thumbnail.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { STREAM_PROVIDERS } from '../providers/provider.tokens';
 import { RELAY_PROVIDER } from '../relay/relay-provider.interface';
@@ -82,6 +83,8 @@ describe('StreamsService', () => {
     const destinationRepo = inMemoryRepo<LiveStreamDestination>();
     const connectionRepo = inMemoryRepo<PlatformConnection>();
     const relay = new FakeRelayProvider();
+    const thumbnailRows = new Map<string, any>();
+    const thumbnailRepo = { findOne: jest.fn(async ({ where }: any) => thumbnailRows.get(where.liveStreamId) ?? null) };
 
     // findByIdOrThrow relies on TypeORM's `relations: ['destinations']` to
     // populate the nested array; the mocked repo has no such feature, so
@@ -102,6 +105,7 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(LiveStream), useValue: liveStreamRepo },
         { provide: getRepositoryToken(LiveStreamDestination), useValue: destinationRepo },
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
+        { provide: getRepositoryToken(StreamThumbnail), useValue: thumbnailRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
         { provide: RELAY_PROVIDER, useValue: relay },
         {
@@ -136,6 +140,7 @@ describe('StreamsService', () => {
       connectionRepo,
       liveStreamRepo,
       destinationRepo,
+      thumbnailRows,
       relay,
       studioSessions: moduleRef.get(StudioSessionsService),
       accountsService: moduleRef.get(AccountsService),
@@ -386,6 +391,52 @@ describe('StreamsService', () => {
       (accountsService.assertCanStartStream as jest.Mock).mockRejectedValueOnce(new ForbiddenException('suspended'));
 
       await expect(service.start('stream_1', 'acc_1')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    describe('thumbnail at start', () => {
+      const image = { liveStreamId: 'stream_1', contentType: 'image/png', data: Buffer.from([1, 2, 3]), width: 1280, height: 720 };
+
+      function withThumbnailSupport(appliesWhenLive: boolean, fails = false) {
+        const p: any = fakeProvider(Platform.TWITCH, 'succeed');
+        p.thumbnailAppliesWhenLive = appliesWhenLive;
+        p.setBroadcastThumbnail = jest.fn(async () => {
+          if (fails) throw new Error('403 not verified');
+        });
+        return p;
+      }
+
+      it('sets it on a freshly created broadcast where it still matters once live', async () => {
+        const provider = withThumbnailSupport(true);
+        const { service, thumbnailRows } = await scheduled([provider]);
+        thumbnailRows.set('stream_1', image);
+
+        await service.start('stream_1', 'acc_1');
+
+        expect(provider.setBroadcastThumbnail).toHaveBeenCalledWith(expect.anything(), 'twitch-broadcast-1', expect.objectContaining({ contentType: 'image/png' }));
+      });
+
+      it('skips platforms where it is only the scheduled lobby image, and does nothing without a saved thumbnail', async () => {
+        const lobbyOnly = withThumbnailSupport(false);
+        const a = await scheduled([lobbyOnly]);
+        a.thumbnailRows.set('stream_1', image);
+        await a.service.start('stream_1', 'acc_1');
+        expect(lobbyOnly.setBroadcastThumbnail).not.toHaveBeenCalled();
+
+        const none = withThumbnailSupport(true);
+        const b = await scheduled([none]);
+        await b.service.start('stream_1', 'acc_1');
+        expect(none.setBroadcastThumbnail).not.toHaveBeenCalled();
+      });
+
+      it('a thumbnail failure never fails or undoes a stream that is live', async () => {
+        const provider = withThumbnailSupport(true, true);
+        const { service, thumbnailRows } = await scheduled([provider]);
+        thumbnailRows.set('stream_1', image);
+
+        const stream = await service.start('stream_1', 'acc_1');
+
+        expect(stream.status).toBe(StreamStatus.LIVE);
+      });
     });
 
     describe('reusing broadcasts pre-created while scheduling', () => {

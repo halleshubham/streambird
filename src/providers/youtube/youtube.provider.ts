@@ -6,6 +6,7 @@ import { EncryptionService } from '../../encryption/encryption.service';
 import { GoogleOAuthService } from '../../auth/google-oauth.service';
 import { PlatformConnection } from '../../platform-connections/entities/platform-connection.entity';
 import { BroadcastMeta, BroadcastResult, StreamProvider } from '../stream-provider.interface';
+import type { ThumbnailImage } from '../../streams/thumbnail.util';
 
 export interface YouTubeCredentials {
   accessToken: string;
@@ -16,6 +17,7 @@ export interface YouTubeCredentials {
 }
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+const YOUTUBE_UPLOAD_BASE = 'https://www.googleapis.com/upload/youtube/v3';
 // Refresh a bit before actual expiry so a slow createBroadcast() call never
 // straddles the token going stale mid-request.
 const REFRESH_SKEW_MS = 60_000;
@@ -35,6 +37,7 @@ const REFRESH_SKEW_MS = 60_000;
 export class YouTubeProvider implements StreamProvider {
   readonly identifier = Platform.YOUTUBE;
   readonly canPrescheduleBroadcast = true;
+  readonly thumbnailAppliesWhenLive = true;
 
   constructor(
     private readonly encryption: EncryptionService,
@@ -169,6 +172,32 @@ export class YouTubeProvider implements StreamProvider {
         status: { privacyStatus: meta.visibility ?? 'unlisted', selfDeclaredMadeForKids: false },
       },
     });
+  }
+
+  /**
+   * thumbnails.set on the broadcast's id (a broadcast is a video). The
+   * liveBroadcast resource's own snippet.thumbnails is read-only, so this
+   * is the only way. Needs a verified channel -- YouTube answers 403
+   * otherwise, which is surfaced with that hint.
+   */
+  async setBroadcastThumbnail(conn: PlatformConnection, platformBroadcastId: string, image: ThumbnailImage): Promise<void> {
+    const accessToken = await this.getValidAccessToken(conn);
+    const res = await fetch(
+      `${YOUTUBE_UPLOAD_BASE}/thumbnails/set?videoId=${encodeURIComponent(platformBroadcastId)}&uploadType=media`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': image.contentType },
+        body: new Uint8Array(image.data),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      const hint =
+        res.status === 403
+          ? ' -- YouTube only allows custom thumbnails on a verified channel (verify at youtube.com/verify).'
+          : '';
+      throw new Error(`YouTube thumbnails.set failed (${res.status}): ${body}${hint}`);
+    }
   }
 
   async deleteBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {

@@ -3,6 +3,7 @@ import { Platform } from '../../common/enums/platform.enum';
 import { EncryptionService } from '../../encryption/encryption.service';
 import { PlatformConnection } from '../../platform-connections/entities/platform-connection.entity';
 import { BroadcastMeta, BroadcastResult, StreamProvider } from '../stream-provider.interface';
+import type { ThumbnailImage } from '../../streams/thumbnail.util';
 
 export interface FacebookCredentials {
   pageAccessToken: string;
@@ -38,10 +39,11 @@ export class FacebookProvider implements StreamProvider {
   private async callApi<T>(
     path: string,
     accessToken: string,
-    init?: { method?: string; body?: Record<string, string> },
+    init?: { method?: string; body?: Record<string, string>; form?: FormData },
   ): Promise<T> {
     const method = init?.method ?? 'GET';
     const params = new URLSearchParams({ ...(init?.body ?? {}), access_token: accessToken });
+    if (init?.form) init.form.set('access_token', accessToken);
 
     const url =
       method === 'GET'
@@ -50,9 +52,12 @@ export class FacebookProvider implements StreamProvider {
 
     const res = await fetch(url, {
       method,
-      ...(method !== 'GET'
-        ? { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() }
-        : {}),
+      ...(init?.form
+        ? // multipart: fetch sets the Content-Type (with boundary) itself
+          { body: init.form }
+        : method !== 'GET'
+          ? { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() }
+          : {}),
     });
 
     const body = (await res.json().catch(() => ({}))) as {
@@ -134,6 +139,21 @@ export class FacebookProvider implements StreamProvider {
         ...(meta.scheduledAt ? { planned_start_time: String(Math.floor(meta.scheduledAt.getTime() / 1000)) } : {}),
       },
     });
+  }
+
+  /**
+   * The image shown in a scheduled live's story and lobby
+   * (`schedule_custom_profile_image` on the live video). Meta documents it
+   * on creation; whether an existing scheduled live accepts it on update
+   * isn't documented, so a rejection is expected to be reported as a
+   * warning by the caller, not treated as an error.
+   */
+  async setBroadcastThumbnail(conn: PlatformConnection, platformBroadcastId: string, image: ThumbnailImage): Promise<void> {
+    const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    const form = new FormData();
+    const ext = image.contentType === 'image/png' ? 'png' : 'jpg';
+    form.set('schedule_custom_profile_image', new Blob([new Uint8Array(image.data)], { type: image.contentType }), `thumbnail.${ext}`);
+    await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, { method: 'POST', form });
   }
 
   async deleteBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {

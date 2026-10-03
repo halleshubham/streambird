@@ -9,9 +9,16 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { plainToInstance } from 'class-transformer';
 import { StreamsService } from './streams.service';
@@ -66,6 +73,39 @@ export class StreamsController {
     @Body() dto: UpdateScheduleDto,
   ) {
     return this.scheduling.update(account, id, dto);
+  }
+
+  /**
+   * Multipart upload (field "file"). multer's limit is deliberately looser
+   * than the real one so an over-limit image gets parseThumbnail's friendly
+   * message instead of a bare 413.
+   */
+  @Put(':id/schedule/thumbnail')
+  @UseGuards(StreamCreateThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 4 * 1024 * 1024, files: 1 } }))
+  uploadThumbnail(
+    @CurrentAccount() account: Account,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: { buffer: Buffer } | undefined,
+  ) {
+    return this.scheduling.setThumbnail(account, id, file?.buffer);
+  }
+
+  @Get(':id/schedule/thumbnail')
+  async getThumbnail(
+    @CurrentAccount() account: Account,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const thumbnail = await this.scheduling.getThumbnail(account, id);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(thumbnail.data, { type: thumbnail.contentType });
+  }
+
+  @Delete(':id/schedule/thumbnail')
+  removeThumbnail(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
+    return this.scheduling.removeThumbnail(account, id);
   }
 
   @Post(':id/schedule/guests')

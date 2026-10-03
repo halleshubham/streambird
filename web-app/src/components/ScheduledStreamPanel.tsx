@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Clapperboard, Copy, ExternalLink, Mail, Pencil, Play, Trash2, UserPlus, X } from 'lucide-react';
+import { CalendarClock, Clapperboard, Copy, ExternalLink, ImagePlus, Mail, Pencil, Play, Trash2, UserPlus, X } from 'lucide-react';
 import {
   addScheduleGuests,
   cancelSchedule,
   deleteScheduledStream,
   getSchedule,
   removeScheduleGuest,
+  removeScheduleThumbnail,
+  scheduleThumbnailUrl,
+  uploadScheduleThumbnail,
   resendScheduleInvite,
   startStream,
   updateSchedule,
@@ -16,6 +19,7 @@ import { ApiError } from '../api/client';
 import { BirdLoader } from './BirdLoader';
 import { GuestEmailsField } from './GuestEmailsField';
 import { PlatformBadge } from './PlatformBadge';
+import { thumbnailProblem } from './ThumbnailPicker';
 import { DURATION_OPTIONS, formatWhen, parseEmails, toLocalInputValue } from '../lib/schedule';
 import type { ScheduleDetail } from '../types/api';
 
@@ -47,6 +51,7 @@ export function ScheduledStreamPanel({
   const [editing, setEditing] = useState(false);
   const [newGuests, setNewGuests] = useState('');
   const [copyFallback, setCopyFallback] = useState<string | null>(null);
+  const thumbInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSchedule(streamId)
@@ -259,6 +264,51 @@ export function ScheduledStreamPanel({
           }
         />
       )}
+
+      <section className="panel">
+        <div className="section-header">
+          <h2>Thumbnail</h2>
+        </div>
+        <div className="thumbnail-picker">
+          {detail.hasThumbnail ? (
+            <img className="thumbnail-img" src={scheduleThumbnailUrl(streamId, detail.thumbnailUpdatedAt)} alt="Stream thumbnail" />
+          ) : (
+            <p className="empty-state">No thumbnail yet.</p>
+          )}
+          <div className="scheduled-actions">
+            <button type="button" className="icon-btn" disabled={busy !== null} onClick={() => thumbInput.current?.click()}>
+              <ImagePlus size={16} /> {busy === 'thumb' ? 'Uploading…' : detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}
+            </button>
+            {detail.hasThumbnail && (
+              <button
+                type="button"
+                className="icon-btn icon-btn--danger"
+                disabled={busy !== null}
+                onClick={() => void run('thumb-rm', () => removeScheduleThumbnail(streamId), () => 'Thumbnail removed.')}
+              >
+                <Trash2 size={16} /> Remove
+              </button>
+            )}
+          </div>
+          <input
+            ref={thumbInput}
+            type="file"
+            accept="image/jpeg,image/png"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              const problem = thumbnailProblem(file);
+              if (problem) return setError(problem);
+              void run('thumb', () => uploadScheduleThumbnail(streamId, file), () => 'Thumbnail saved and sent to the platforms.');
+            }}
+          />
+          <p className="field-hint">
+            JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. YouTube needs a verified channel for custom thumbnails; Facebook uses it as the scheduled-live image. It is also applied to broadcasts created later, e.g. at start.
+          </p>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="section-header">

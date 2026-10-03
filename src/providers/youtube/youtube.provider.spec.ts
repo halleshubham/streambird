@@ -211,4 +211,28 @@ describe('YouTubeProvider', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/liveBroadcasts?id=b');
     expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
   });
+
+  it('setBroadcastThumbnail uploads the image bytes to thumbnails.set for the broadcast id', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    const data = Buffer.from([1, 2, 3, 4]);
+
+    await provider.setBroadcastThumbnail(conn, 'b_1', { contentType: 'image/png', data, width: 1280, height: 720 });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=b_1&uploadType=media');
+    expect(init.method).toBe('POST');
+    expect(init.headers['Content-Type']).toBe('image/png');
+    expect(init.headers.Authorization).toMatch(/^Bearer /);
+    expect(Buffer.from(init.body)).toEqual(data);
+  });
+
+  it('setBroadcastThumbnail explains the verified-channel requirement on a 403', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'forbidden' }, false, 403));
+
+    await expect(
+      provider.setBroadcastThumbnail(conn, 'b_1', { contentType: 'image/jpeg', data: Buffer.from([1]), width: 1280, height: 720 }),
+    ).rejects.toThrow(/verified channel/);
+  });
 });

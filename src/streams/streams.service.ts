@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
+import { StreamThumbnail } from './entities/stream-thumbnail.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { CreateStreamDto } from './dto/create-stream.dto';
 import { StreamStatus } from '../common/enums/stream-status.enum';
@@ -21,6 +23,8 @@ import { AccountsService } from '../accounts/accounts.service';
 
 @Injectable()
 export class StreamsService {
+  private readonly logger = new Logger(StreamsService.name);
+
   constructor(
     @InjectRepository(LiveStream)
     private readonly liveStreams: Repository<LiveStream>,
@@ -28,6 +32,8 @@ export class StreamsService {
     private readonly destinations: Repository<LiveStreamDestination>,
     @InjectRepository(PlatformConnection)
     private readonly platformConnections: Repository<PlatformConnection>,
+    @InjectRepository(StreamThumbnail)
+    private readonly thumbnails: Repository<StreamThumbnail>,
     @Inject(STREAM_PROVIDERS)
     private readonly providers: StreamProvider[],
     @Inject(RELAY_PROVIDER)
@@ -249,7 +255,7 @@ export class StreamsService {
     if (!fresh) throw new NotFoundException(`LiveStream ${id} not found`);
 
     try {
-      return await this.provision(
+      const started = await this.provision(
         fresh,
         connections,
         {
@@ -259,6 +265,8 @@ export class StreamsService {
         },
         reuse,
       );
+      await this.applyThumbnailToFreshBroadcasts(started, connections, reuse);
+      return started;
     } catch (err) {
       // provision() marked it FAILED and left FAILED destination rows --
       // undo that so a scheduled stream is never lost to one bad start.
@@ -268,6 +276,38 @@ export class StreamsService {
       await this.liveStreams.save(fresh);
       throw err;
     }
+  }
+
+  /**
+   * The host's thumbnail goes onto broadcasts created at start (the ones not
+   * reused from scheduling, which already got it) on platforms where it
+   * still means something once live (YouTube). Best-effort: a rejection
+   * must never undo or fail a stream that is already live.
+   */
+  private async applyThumbnailToFreshBroadcasts(
+    stream: LiveStream,
+    connections: PlatformConnection[],
+    reuse: Map<string, unknown>,
+  ): Promise<void> {
+    const row = await this.thumbnails.findOne({ where: { liveStreamId: stream.id } });
+    if (!row) return;
+    const image = { contentType: row.contentType as 'image/jpeg' | 'image/png', data: row.data, width: row.width, height: row.height };
+
+    await Promise.all(
+      stream.destinations
+        .filter((d) => d.platformBroadcastId && !reuse.has(d.platformConnectionId))
+        .map(async (d) => {
+          const conn = connections.find((c) => c.id === d.platformConnectionId);
+          if (!conn) return;
+          const provider = this.resolveProvider(conn);
+          if (!provider.thumbnailAppliesWhenLive || !provider.setBroadcastThumbnail) return;
+          try {
+            await provider.setBroadcastThumbnail(conn, d.platformBroadcastId!, image);
+          } catch (err) {
+            this.logger.warn(`Could not set the thumbnail for stream ${stream.id} on ${conn.platform}: ${(err as Error).message}`);
+          }
+        }),
+    );
   }
 
   /**

@@ -1,5 +1,6 @@
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { Platform } from '../common/enums/platform.enum';
+import type { ThumbnailImage } from '../streams/thumbnail.util';
 
 export interface BroadcastMeta {
   title: string;
@@ -46,6 +47,17 @@ export interface StreamProvider {
    * concept and is only ever created at start.
    */
   readonly canPrescheduleBroadcast?: boolean;
+
+  /**
+   * Sets the thumbnail of an existing broadcast -- YouTube (thumbnails.set,
+   * works on the broadcast's video id) and Facebook (the scheduled-live
+   * image). Best-effort: callers treat a rejection (unverified YouTube
+   * channel, Facebook refusing the image) as a warning, never a failure.
+   */
+  setBroadcastThumbnail?(conn: PlatformConnection, platformBroadcastId: string, image: ThumbnailImage): Promise<void>;
+
+  /** True when the thumbnail also applies once the broadcast is live (YouTube); false when it is only the scheduled/lobby image (Facebook), so it is pointless to send at start. */
+  readonly thumbnailAppliesWhenLive?: boolean;
 
   /** Re-syncs a pre-created broadcast's title/description/time/visibility after the host edits the schedule. */
   updateBroadcast?(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void>;
