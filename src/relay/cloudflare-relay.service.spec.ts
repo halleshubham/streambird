@@ -25,6 +25,9 @@ describe('CloudflareRelayService', () => {
           result: {
             uid: 'input-1',
             rtmps: { url: 'rtmps://x', streamKey: 'key-1' },
+            // Cloudflare's real response also carries a webRTC.url (WHIP
+            // publish endpoint) -- deliberately unused, see
+            // CloudflareRelayService's own doc comment for why.
             webRTC: { url: 'https://x/input-1/webRTC/publish' },
           },
         },
@@ -43,7 +46,6 @@ describe('CloudflareRelayService', () => {
       uid: 'input-1',
       ingestUrl: 'rtmps://x',
       streamKey: 'key-1',
-      whipUrl: 'https://x/input-1/webRTC/publish',
     });
   });
 

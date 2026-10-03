@@ -23,7 +23,6 @@ export class FakeRelayProvider implements RelayProvider {
       uid,
       ingestUrl: `rtmps://fake.local/${uid}`,
       streamKey: 'fake-stream-key',
-      whipUrl: `https://fake.local/${uid}/webRTC/publish`,
     };
   }
 

@@ -2,13 +2,6 @@ export interface RelayLiveInput {
   uid: string;
   ingestUrl: string;
   streamKey: string;
-  /**
-   * WHIP (WebRTC) publish URL for this live input, if the provider supports
-   * browser-based ingest -- null otherwise. The host studio's client-side
-   * compositor requires this; a provider without it can still be used for
-   * the OBS/RTMP ingest fallback, but not the browser studio.
-   */
-  whipUrl: string | null;
 }
 
 export interface RelayLiveInputStatus {

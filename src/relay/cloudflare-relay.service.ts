@@ -4,6 +4,21 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { RelayProvider, RelayLiveInput, RelayLiveInputStatus } from './relay-provider.interface';
 
+/**
+ * RTMP-only on purpose: Cloudflare Stream Live Inputs also support WHIP
+ * (WebRTC) ingest directly (confirmed current as of
+ * https://developers.cloudflare.com/stream/webrtc-beta/, now GA, response
+ * field is `result.webRTC.url`) — but Cloudflare's own docs are explicit
+ * that "Simulcasting (restreaming via RTMP/SRT) is not supported" for a
+ * WHIP-ingested Live Input, and WHIP/WHEP inputs can't be recorded or
+ * played back via HLS/DASH either. That rules it out as a replacement for
+ * MediaMtxService: this app's whole point is one browser publish fanning
+ * out to several RTMP destinations at once, which is exactly the
+ * capability Cloudflare's WHIP path doesn't have. An earlier version of
+ * this class surfaced a `whipUrl` field for exactly that
+ * publish-directly-to-Cloudflare idea; removed once this limitation was
+ * confirmed, rather than carrying it as unused dead code indefinitely.
+ */
 @Injectable()
 export class CloudflareRelayService implements RelayProvider {
   constructor(
@@ -46,12 +61,6 @@ export class CloudflareRelayService implements RelayProvider {
       uid: result.uid,
       ingestUrl: result.rtmps.url,
       streamKey: result.rtmps.streamKey,
-      // TODO(empirical-spike): confirm this field name against a real
-      // Cloudflare Live Input response before relying on it in production —
-      // this matches Cloudflare's documented WHIP publish URL shape
-      // (result.webRTC.url) but hasn't been verified against a live account
-      // yet (see the implementation plan's Build Order step 3).
-      whipUrl: result.webRTC?.url ?? null,
     };
   }
 

@@ -13,20 +13,16 @@ const MUX_RTMP_INGEST_URL = 'rtmps://global-live.mux.com:443/app';
  * Swappable alternative to CloudflareRelayService, for failing over the
  * managed relay/simulcast layer during a Cloudflare outage without a code
  * change -- see RelayModule, which picks the active provider from config.
- *
- * One real capability gap versus Cloudflare: Mux's live ingest is RTMP/SRT
- * only as of this writing, with no WHIP (WebRTC) publish endpoint. So
- * whipUrl is always null here -- a Mux-backed stream works for the OBS/RTMP
- * ingest fallback, but the browser-based host studio (which publishes via
- * WHIP) has nothing to publish to until Mux ships WHIP ingest, if ever.
+ * RTMP/SRT ingest only, same as CloudflareRelayService is now deliberately
+ * scoped to -- see that class's own doc comment for why WHIP ingest (which
+ * neither provider is used for) doesn't fit this app's multi-destination
+ * simulcast requirement regardless of which provider ships it.
  *
  * TODO(empirical-spike): the response field names below (result.id,
  * result.stream_key, result.status, simulcast_targets[].status) match Mux's
  * documented Video API shape but haven't been verified against a real Mux
  * account/live stream yet -- confirm against a live create-live-stream
- * response before relying on this as the active provider in production
- * (same caveat CloudflareRelayService already carries for its own
- * unverified whipUrl field).
+ * response before relying on this as the active provider in production.
  */
 @Injectable()
 export class MuxRelayService implements RelayProvider {
@@ -74,7 +70,6 @@ export class MuxRelayService implements RelayProvider {
       uid: result.id,
       ingestUrl: MUX_RTMP_INGEST_URL,
       streamKey: result.stream_key,
-      whipUrl: null,
     };
   }
 
