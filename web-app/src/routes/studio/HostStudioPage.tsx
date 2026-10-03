@@ -1,3 +1,4 @@
+import { NameBadge } from '../../components/NameBadge';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -253,27 +254,35 @@ export function HostStudioPage() {
         <div className="participant-list">
           {participants.map((p) => (
             <div key={p.id} className="participant-row">
-              <span className="participant-row-name">{p.displayName}</span>
+              <span className="participant-row-name"><NameBadge name={p.displayName} /><span>{p.displayName}</span></span>
               {!p.isScreenShare && (
+                <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
+              )}
+              {p.pinned && <span className="badge badge-accent">Pinned</span>}
+              {(!p.isScreenShare || p.hasAudio) && (
                 <>
-                  <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
-                  {p.pinned && <span className="badge badge-accent">Pinned</span>}
                   {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
                   <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
                     {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
                     {p.audioEnabled === false ? 'Unmute' : 'Mute'}
                   </button>
-                  <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
-                    {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
-                    {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`icon-btn icon-btn--small${p.pinned ? ' icon-btn--accent' : ''}`}
-                    onClick={() => actions.togglePin(p.id)}
-                  >
-                    {p.pinned ? <PinOff size={14} /> : <Pin size={14} />} {p.pinned ? 'Unpin' : 'Pin to spotlight'}
-                  </button>
+                </>
+              )}
+              {!p.isScreenShare && (
+                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
+                  {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
+                  {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={`icon-btn icon-btn--small${p.pinned ? ' icon-btn--accent' : ''}`}
+                onClick={() => actions.togglePin(p.id)}
+              >
+                {p.pinned ? <PinOff size={14} /> : <Pin size={14} />} {p.pinned ? 'Unpin' : 'Pin to spotlight'}
+              </button>
+              {!p.isScreenShare && (
+                <>
                   <button
                     type="button"
                     className={`icon-btn icon-btn--small${p.onStage ? '' : ' icon-btn--accent'}`}

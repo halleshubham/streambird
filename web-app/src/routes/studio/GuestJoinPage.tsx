@@ -1,3 +1,4 @@
+import { NameBadge } from '../../components/NameBadge';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Mic, MicOff, Video, VideoOff, LogOut } from 'lucide-react';
@@ -97,12 +98,12 @@ export function GuestJoinPage() {
           <div className="meeting-grid">
             <div className="meeting-tile meeting-tile--self">
               <video ref={setLocalVideoEl} autoPlay muted playsInline />
-              <span className="meeting-tile-name">You</span>
+              <span className="meeting-tile-name"><NameBadge name="You" size={20} /><span>You</span></span>
             </div>
             {tiles.map((tile) => (
               <div key={tile.participantId} className="meeting-tile">
                 <MediaStreamVideo stream={tile.stream} unmute />
-                <span className="meeting-tile-name">{tile.displayName}</span>
+                <span className="meeting-tile-name"><NameBadge name={tile.displayName} size={20} /><span>{tile.displayName}</span></span>
               </div>
             ))}
           </div>
