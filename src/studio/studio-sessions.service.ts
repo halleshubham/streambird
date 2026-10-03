@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { StudioSession } from './entities/studio-session.entity';
@@ -80,7 +80,7 @@ export class StudioSessionsService {
     sessionId: string,
     accountId: string,
     dto: CreateInviteDto,
-  ): Promise<{ token: string; joinUrl: string; expiresAt: Date | null }> {
+  ): Promise<{ id: string; token: string; joinUrl: string; expiresAt: Date | null }> {
     const session = await this.findByIdOrThrow(sessionId, accountId);
 
     const token = crypto.randomBytes(24).toString('base64url');
@@ -89,6 +89,7 @@ export class StudioSessionsService {
       studioSessionId: session.id,
       token,
       label: dto.label ?? null,
+      email: dto.email ? dto.email.trim().toLowerCase() : null,
       expiresAt: null,
       passwordHash: dto.password ? this.hash(dto.password) : null,
     });
@@ -97,7 +98,65 @@ export class StudioSessionsService {
     const baseUrl = this.config.get<string>('publicBaseUrl');
     const joinUrl = `${baseUrl}/join/${token}`;
 
-    return { token, joinUrl, expiresAt: invite.expiresAt };
+    return { id: invite.id, token, joinUrl, expiresAt: invite.expiresAt };
+  }
+
+  joinUrlFor(token: string): string {
+    return `${this.config.get<string>('publicBaseUrl')}/join/${token}`;
+  }
+
+  /** Every non-revoked invite on the session, oldest first -- the owner's view of who was invited. */
+  async listActiveInvites(sessionId: string, accountId: string): Promise<StudioGuestInvite[]> {
+    await this.findByIdOrThrow(sessionId, accountId); // ownership check
+    return this.invites.find({
+      where: { studioSessionId: sessionId, revokedAt: IsNull() },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Internal (not exposed by the controller, which would leak the password
+   * hash): creates an invite addressed to one email and returns the row.
+   * Takes either a plain password or an already-hashed one, so a guest
+   * added later can share the stream's existing password.
+   */
+  async createEmailInvite(
+    sessionId: string,
+    accountId: string,
+    opts: { email: string; password?: string; passwordHash?: string | null },
+  ): Promise<StudioGuestInvite> {
+    await this.findByIdOrThrow(sessionId, accountId); // ownership check
+    const email = opts.email.trim().toLowerCase();
+    return this.invites.save(
+      this.invites.create({
+        studioSessionId: sessionId,
+        token: crypto.randomBytes(24).toString('base64url'),
+        label: email,
+        email,
+        expiresAt: null,
+        passwordHash: opts.passwordHash ?? (opts.password ? this.hash(opts.password) : null),
+      }),
+    );
+  }
+
+  /** Number of email-addressed, non-revoked invites per live stream -- for list views. */
+  async countGuestsByStream(liveStreamIds: string[]): Promise<Map<string, number>> {
+    if (liveStreamIds.length === 0) return new Map();
+    const rows = await this.invites
+      .createQueryBuilder('i')
+      .innerJoin('i.studioSession', 's')
+      .select('s.liveStreamId', 'liveStreamId')
+      .addSelect('COUNT(*)', 'count')
+      .where('s.liveStreamId IN (:...ids)', { ids: liveStreamIds })
+      .andWhere('i.email IS NOT NULL')
+      .andWhere('i.revokedAt IS NULL')
+      .groupBy('s.liveStreamId')
+      .getRawMany<{ liveStreamId: string; count: string }>();
+    return new Map(rows.map((r) => [r.liveStreamId, Number(r.count)]));
+  }
+
+  async markInviteEmailed(inviteId: string): Promise<void> {
+    await this.invites.update({ id: inviteId }, { emailedAt: new Date() });
   }
 
   async revokeInvite(sessionId: string, inviteId: string, accountId: string): Promise<void> {

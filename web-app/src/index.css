@@ -1526,3 +1526,156 @@ a.icon-btn--danger {
   border-color: var(--accent);
   font-size: 14px;
 }
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.mode-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mode-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.checkbox-row,
+.create-stream-form .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.create-stream-form .checkbox-row input[type='checkbox'] {
+  width: auto;
+  flex: none;
+}
+
+.scheduled-actions + .field-hint {
+  margin-top: 8px;
+}
+
+.scheduled-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scheduled-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scheduled-when {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 16px;
+}
+
+.scheduled-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 14px;
+}
+
+.notice.error {
+  border-color: var(--error);
+}
+
+.copy-fallback {
+  width: 100%;
+  margin-top: 12px;
+  font-family: inherit;
+}
+
+.upcoming-item .stream-list-item-main {
+  gap: 10px;
+}
+
+.upcoming-guests {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.upcoming-day {
+  margin: 20px 0 8px;
+  font-size: 15px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upcoming-row .upcoming-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.upcoming-delete {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.destination-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.destination-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.precreate-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.precreate-toggle .field-hint {
+  margin: 0;
+}

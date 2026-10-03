@@ -1,4 +1,5 @@
 import { NameBadge } from '../../components/NameBadge';
+import { formatWhen } from '../../lib/schedule';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -58,6 +59,7 @@ export function HostStudioPage() {
     connectionById,
     audioBlocked,
     resumeAttempted,
+    startingScheduled,
     actions,
   } = useHostStudio(streamId);
 
@@ -103,6 +105,19 @@ export function HostStudioPage() {
       <h1 className="brand-heading">
         <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
       </h1>
+
+      {stream?.status === 'scheduled' && (
+        <div className="panel studio-resume-banner" role="status">
+          <span>
+            This stream is scheduled
+            {stream.scheduledAt ? ` for ${formatWhen(stream.scheduledAt, stream.timezone ?? 'UTC')}` : ''}. You can set up your camera and let guests join now;
+            start the stream when you are ready to go on air.
+          </span>
+          <button type="button" className="icon-btn icon-btn--accent" disabled={startingScheduled} onClick={() => void actions.startScheduledStream()}>
+            {startingScheduled ? 'Starting…' : 'Start stream'}
+          </button>
+        </div>
+      )}
 
       {((resumeAttempted && !isLive) || (isLive && audioBlocked)) && (
         <div className="panel studio-resume-banner" role="status">

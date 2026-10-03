@@ -13,6 +13,12 @@ export class StreamResponseDto {
   @Expose() whipUrl!: string | null;
   @Expose() visibility!: string | null;
   @Expose() studioSessionId?: string;
+  @Expose() description!: string | null;
+  @Expose() scheduledAt!: Date | null;
+  @Expose() isScheduledEvent!: boolean;
+  @Expose() timezone!: string | null;
+  @Expose() expectedDurationMinutes!: number | null;
+  @Expose() cancelledAt!: Date | null;
 
   @Expose()
   @Type(() => DestinationResponseDto)

@@ -172,4 +172,43 @@ describe('YouTubeProvider', () => {
     const status = await provider.getBroadcastStatus(conn, 'broadcast_1');
     expect(status).toBeNull();
   });
+
+  it('createBroadcast schedules the broadcast at the given time (used when a scheduled stream pre-creates it)', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'b' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 's', cdn: { ingestionInfo: { ingestionAddress: 'rtmp://x/live2', streamName: 'k' } } }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'b' }));
+    const at = new Date('2026-10-10T13:00:00Z');
+
+    await provider.createBroadcast(conn, { title: 'T', scheduledAt: at, precreate: true });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).snippet.scheduledStartTime).toBe(at.toISOString());
+  });
+
+  it('updateBroadcast PUTs the new snippet (title + scheduledStartTime are mandatory) and privacy', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'b' }));
+    const at = new Date('2026-10-11T09:30:00Z');
+
+    await provider.updateBroadcast(conn, 'b', { title: 'New title', description: 'd', scheduledAt: at, visibility: 'public' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/liveBroadcasts?part=snippet,status');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({
+      id: 'b',
+      snippet: { title: 'New title', description: 'd', scheduledStartTime: at.toISOString() },
+      status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+    });
+  });
+
+  it('deleteBroadcast DELETEs the broadcast and copes with the empty 204 response', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 204, json: async () => { throw new Error('no body'); }, text: async () => '' });
+
+    await expect(provider.deleteBroadcast(conn, 'b')).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0][0]).toContain('/liveBroadcasts?id=b');
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+  });
 });

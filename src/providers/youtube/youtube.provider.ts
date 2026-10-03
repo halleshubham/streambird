@@ -34,6 +34,7 @@ const REFRESH_SKEW_MS = 60_000;
 @Injectable()
 export class YouTubeProvider implements StreamProvider {
   readonly identifier = Platform.YOUTUBE;
+  readonly canPrescheduleBroadcast = true;
 
   constructor(
     private readonly encryption: EncryptionService,
@@ -84,6 +85,8 @@ export class YouTubeProvider implements StreamProvider {
       const body = await res.text();
       throw new Error(`YouTube API ${init?.method ?? 'GET'} ${path} failed (${res.status}): ${body}`);
     }
+    // DELETE (and some updates) answer 204 with no body.
+    if (res.status === 204) return undefined as T;
     return res.json() as Promise<T>;
   }
 
@@ -149,6 +152,28 @@ export class YouTubeProvider implements StreamProvider {
       // the broadcast actually starts receiving data.
       watchUrl: `https://www.youtube.com/watch?v=${broadcast.id}`,
     };
+  }
+
+  async updateBroadcast(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void> {
+    const accessToken = await this.getValidAccessToken(conn);
+    await this.callApi('/liveBroadcasts?part=snippet,status', accessToken, {
+      method: 'PUT',
+      body: {
+        id: platformBroadcastId,
+        // snippet.title and snippet.scheduledStartTime are required on every update.
+        snippet: {
+          title: meta.title,
+          description: meta.description ?? '',
+          scheduledStartTime: (meta.scheduledAt ?? new Date(Date.now() + 10_000)).toISOString(),
+        },
+        status: { privacyStatus: meta.visibility ?? 'unlisted', selfDeclaredMadeForKids: false },
+      },
+    });
+  }
+
+  async deleteBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {
+    const accessToken = await this.getValidAccessToken(conn);
+    await this.callApi(`/liveBroadcasts?id=${encodeURIComponent(platformBroadcastId)}`, accessToken, { method: 'DELETE' });
   }
 
   /**

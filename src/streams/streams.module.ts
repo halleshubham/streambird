@@ -5,6 +5,8 @@ import { LiveStreamDestination } from './entities/live-stream-destination.entity
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { StreamsService } from './streams.service';
 import { GlitchRecoveryService } from './glitch-recovery.service';
+import { StreamSchedulingService } from './stream-scheduling.service';
+import { EmailModule } from '../email/email.module';
 import { StreamsController } from './streams.controller';
 import { ProvidersModule } from '../providers/providers.module';
 import { RelayModule } from '../relay/relay.module';
@@ -17,12 +19,13 @@ import { StudioModule } from '../studio/studio.module';
     ProvidersModule,
     RelayModule,
     CommonModule, // ApiKeyGuard, StreamCreateThrottlerGuard
+    EmailModule,
     // Circular: StudioModule's signaling gateway calls back into
     // StreamsService.end() when a host disconnects for good (see
     // StudioSignalingGateway's doc comment on that).
     forwardRef(() => StudioModule),
   ],
-  providers: [StreamsService, GlitchRecoveryService],
+  providers: [StreamsService, GlitchRecoveryService, StreamSchedulingService],
   controllers: [StreamsController],
   exports: [StreamsService, GlitchRecoveryService],
 })

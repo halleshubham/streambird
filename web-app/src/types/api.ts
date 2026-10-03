@@ -127,7 +127,56 @@ export interface Stream {
   whipUrl: string | null;
   visibility: 'public' | 'unlisted' | 'private' | null;
   studioSessionId?: string;
+  description: string | null;
+  scheduledAt: string | null;
+  isScheduledEvent: boolean;
+  timezone: string | null;
+  expectedDurationMinutes: number | null;
+  cancelledAt: string | null;
   destinations: Destination[];
+}
+
+export interface ScheduleGuest {
+  id: string;
+  email: string;
+  joinUrl: string;
+  emailedAt: string | null;
+}
+
+/** GET/PATCH/POST /streams/:id/schedule -- see StreamSchedulingService.buildDetail server-side. */
+export interface ScheduleDetail {
+  id: string;
+  title: string;
+  description: string | null;
+  visibility: 'public' | 'unlisted' | 'private' | null;
+  status: StreamStatus;
+  scheduledAt: string;
+  timezone: string;
+  durationMinutes: number | null;
+  guestNotes: string | null;
+  studioSessionId: string;
+  passwordProtected: boolean;
+  /** Platform broadcasts (YouTube, Facebook) are created now rather than at start. */
+  precreateOnPlatforms: boolean;
+  destinations: Array<{
+    id: string;
+    platformConnectionId: string;
+    platform: Platform;
+    label: string;
+    /** This platform can hold a scheduled broadcast ahead of time. */
+    canPrecreate: boolean;
+    /** The broadcast already exists on the platform. */
+    onPlatform: boolean;
+    watchUrl: string | null;
+    errorMessage: string | null;
+  }>;
+  guests: ScheduleGuest[];
+  generalJoinUrl: string | null;
+  invitationText: string;
+  /** Set on responses that sent email: addresses that could not be reached. */
+  emailFailures?: string[];
+  /** What couldn't be created/updated/removed on the platforms by this call. */
+  platformWarnings?: string[];
 }
 
 /** GET /streams/:id/status's shape -- distinct from Stream/Destination above (which come from the plain create/get endpoints) because this one additionally carries each destination's real, freshly-polled platform status. */
@@ -179,6 +228,10 @@ export interface StreamListItem {
   scheduledAt: string | null;
   startedAt: string | null;
   endedAt: string | null;
+  cancelledAt: string | null;
+  isScheduledEvent: boolean;
+  /** Upcoming view only. */
+  guestCount?: number;
   createdAt: string;
   destinationsSummary: DestinationSummary[];
 }

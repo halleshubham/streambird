@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class ListStreamsDto {
   @IsOptional()
@@ -14,4 +14,9 @@ export class ListStreamsDto {
   @IsInt()
   @Min(0)
   offset: number = 0;
+
+  /** 'upcoming' = scheduled streams that haven't started, soonest first. */
+  @IsOptional()
+  @IsIn(['upcoming'])
+  view?: 'upcoming';
 }

@@ -37,7 +37,8 @@ export class StreamsService {
     private readonly accountsService: AccountsService,
   ) {}
 
-  private resolveProvider(connection: PlatformConnection): StreamProvider {
+  /** Public: StreamSchedulingService pre-creates/updates/deletes platform broadcasts through the same providers. */
+  resolveProvider(connection: PlatformConnection): StreamProvider {
     const provider = this.providers.find((p) => p.identifier === connection.platform);
     if (!provider) {
       throw new UnprocessableEntityException(
@@ -80,17 +81,40 @@ export class StreamsService {
     const studioSession = await this.studioSessions.createForStream(stream);
     stream.studioSessionId = studioSession.id;
 
+    return this.provision(stream, connections, {
+      title: dto.title,
+      description: dto.description,
+      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+      visibility: dto.visibility,
+    });
+  }
+
+  /**
+   * Creates the platform broadcasts, registers the MediaMTX forward and
+   * flips the stream LIVE -- the part of going live that talks to the
+   * outside world. Shared by create() (go live now) and start() (a
+   * previously scheduled stream whose time has come).
+   */
+  private async provision(
+    stream: LiveStream,
+    connections: PlatformConnection[],
+    meta: { title: string; description?: string; scheduledAt?: Date; visibility?: 'public' | 'unlisted' | 'private' },
+    /** Broadcasts already created on the platform (scheduled streams that pre-created them), keyed by connection id -- used as-is instead of creating a new one. */
+    reuse?: Map<string, Awaited<ReturnType<StreamProvider['createBroadcast']>>>,
+  ): Promise<LiveStream> {
     // Fan out createBroadcast() in parallel; a rejection here never blocks
     // the destinations that succeeded — that is the whole point of
     // Promise.allSettled over Promise.all for this step.
     const settled = await Promise.allSettled(
       connections.map(async (conn) => {
+        const reused = reuse?.get(conn.id);
+        if (reused) return { conn, result: reused };
         const provider = this.resolveProvider(conn);
         const result = await provider.createBroadcast(conn, {
-          title: dto.title,
-          description: dto.description,
-          scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
-          visibility: dto.visibility,
+          title: meta.title,
+          description: meta.description,
+          scheduledAt: meta.scheduledAt,
+          visibility: meta.visibility,
         });
         return { conn, result };
       }),
@@ -174,7 +198,115 @@ export class StreamsService {
     stream.startedAt = new Date();
     await this.liveStreams.save(stream);
 
-    return this.findByIdOrThrow(stream.id, accountId);
+    return this.findByIdOrThrow(stream.id, stream.accountId);
+  }
+
+  /**
+   * Starts a scheduled stream: creates the broadcasts on every chosen
+   * destination and flips it LIVE (billing starts here, not when it was
+   * scheduled). If every destination fails, the stream goes back to
+   * SCHEDULED with its destinations intact so the host can fix the
+   * connection and try again.
+   */
+  async start(id: string, accountId: string): Promise<LiveStream> {
+    const stream = await this.findByIdOrThrow(id, accountId);
+    if (!stream.isScheduledEvent || stream.status !== StreamStatus.SCHEDULED) {
+      throw new UnprocessableEntityException('Only a scheduled stream that has not started yet can be started.');
+    }
+
+    await this.accountsService.assertCanStartStream(accountId);
+
+    const connectionIds = stream.destinations.map((d) => d.platformConnectionId);
+    const connections = await this.platformConnections.find({ where: { id: In(connectionIds), accountId } });
+    if (connections.length === 0) {
+      throw new UnprocessableEntityException('None of this stream\'s destinations are connected any more.');
+    }
+
+    // Broadcasts the host pre-created on the platforms when scheduling are
+    // reused -- but only if still alive (not deleted or completed on the
+    // platform since); a dead one is silently created afresh instead.
+    const reuse = await this.collectReusableBroadcasts(stream.destinations, connections);
+
+    // Snapshot the rows so a failed start can put them back exactly as they were.
+    const snapshot = stream.destinations.map((d) => ({
+      liveStreamId: d.liveStreamId,
+      platformConnectionId: d.platformConnectionId,
+      platformBroadcastId: d.platformBroadcastId,
+      ingestUrl: d.ingestUrl,
+      streamKey: d.streamKey,
+      watchUrl: d.watchUrl,
+      status: d.status,
+      errorMessage: d.errorMessage,
+    }));
+
+    // Placeholder rows would collide with the real ones (unique per
+    // stream + connection), so clear them for the provisioning run. Then
+    // re-read the stream WITHOUT its destinations relation: saving the
+    // already-loaded entity after its placeholders are gone makes TypeORM
+    // try to null out their foreign keys (a NOT NULL violation).
+    await this.destinations.delete({ liveStreamId: stream.id });
+    const fresh = await this.liveStreams.findOne({ where: { id: stream.id, accountId } });
+    if (!fresh) throw new NotFoundException(`LiveStream ${id} not found`);
+
+    try {
+      return await this.provision(
+        fresh,
+        connections,
+        {
+          title: fresh.title,
+          description: fresh.description ?? undefined,
+          visibility: (fresh.visibility as 'public' | 'unlisted' | 'private' | null) ?? undefined,
+        },
+        reuse,
+      );
+    } catch (err) {
+      // provision() marked it FAILED and left FAILED destination rows --
+      // undo that so a scheduled stream is never lost to one bad start.
+      await this.destinations.delete({ liveStreamId: stream.id });
+      await this.destinations.save(snapshot.map((row) => this.destinations.create(row)));
+      fresh.status = StreamStatus.SCHEDULED;
+      await this.liveStreams.save(fresh);
+      throw err;
+    }
+  }
+
+  /**
+   * For each destination that already has a platform broadcast (pre-created
+   * while scheduling), checks the platform still considers it usable and
+   * tells it to be ready for data. Anything dead, missing or erroring is
+   * left out so start() creates a fresh broadcast for that destination.
+   */
+  private async collectReusableBroadcasts(
+    rows: LiveStreamDestination[],
+    connections: PlatformConnection[],
+  ): Promise<Map<string, { ingestUrl: string; streamKey: string; platformBroadcastId: string; watchUrl: string | null }>> {
+    const DEAD_STATUSES = new Set(['complete', 'revoked', 'LIVE_STOPPED', 'VOD']);
+    const reuse = new Map<string, { ingestUrl: string; streamKey: string; platformBroadcastId: string; watchUrl: string | null }>();
+
+    await Promise.all(
+      rows.map(async (row) => {
+        if (!row.platformBroadcastId || !row.ingestUrl || !row.streamKey) return;
+        const conn = connections.find((c) => c.id === row.platformConnectionId);
+        if (!conn) return;
+        try {
+          const provider = this.resolveProvider(conn);
+          if (provider.getBroadcastStatus) {
+            const status = await provider.getBroadcastStatus(conn, row.platformBroadcastId);
+            if (!status || DEAD_STATUSES.has(status)) return; // gone/finished on the platform -- recreate
+          }
+          await provider.prepareToGoLive?.(conn, row.platformBroadcastId);
+          reuse.set(conn.id, {
+            ingestUrl: row.ingestUrl,
+            streamKey: row.streamKey,
+            platformBroadcastId: row.platformBroadcastId,
+            watchUrl: row.watchUrl,
+          });
+        } catch {
+          // Can't confirm it's usable -- fall back to a fresh broadcast.
+        }
+      }),
+    );
+    return reuse;
   }
 
   async findByIdOrThrow(id: string, accountId: string): Promise<LiveStream> {
@@ -200,11 +332,15 @@ export class StreamsService {
     accountId: string,
     limit: number,
     offset: number,
+    upcomingOnly = false,
   ): Promise<{ items: LiveStream[]; total: number }> {
+    // "Upcoming" = deliberately scheduled, not yet started, soonest first.
     const [items, total] = await this.liveStreams.findAndCount({
-      where: { accountId },
+      where: upcomingOnly
+        ? { accountId, isScheduledEvent: true, status: StreamStatus.SCHEDULED }
+        : { accountId },
       relations: ['destinations', 'destinations.platformConnection'],
-      order: { createdAt: 'DESC' },
+      order: upcomingOnly ? { scheduledAt: 'ASC' } : { createdAt: 'DESC' },
       take: limit,
       skip: offset,
     });

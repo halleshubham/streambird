@@ -48,6 +48,29 @@ export class LiveStream {
   @Column({ type: 'text', nullable: true })
   whipUrl!: string | null;
 
+  /** True for a stream deliberately scheduled ahead of time (see StreamSchedulingService) -- as opposed to the transient 'scheduled' status every stream passes through inside create(). */
+  @Column({ default: false })
+  isScheduledEvent!: boolean;
+
+  /** IANA timezone the host scheduled in -- only used to render the start time in invites; scheduledAt itself is an absolute instant. */
+  @Column({ type: 'text', nullable: true })
+  timezone!: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  expectedDurationMinutes!: number | null;
+
+  /** Free-text message from the host, included in every guest invite. */
+  @Column({ type: 'text', nullable: true })
+  guestNotes!: string | null;
+
+  /** The host chose to create the platform-side broadcasts (YouTube, Facebook) when scheduling instead of at start -- see StreamSchedulingService. */
+  @Column({ default: false })
+  precreateOnPlatforms!: boolean;
+
+  /** Set when a scheduled stream is cancelled before ever starting (status then becomes ENDED). */
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelledAt!: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   startedAt!: Date | null;
 

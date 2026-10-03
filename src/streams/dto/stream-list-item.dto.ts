@@ -20,6 +20,10 @@ export class StreamListItemDto {
   @Expose() scheduledAt!: Date | null;
   @Expose() startedAt!: Date | null;
   @Expose() endedAt!: Date | null;
+  @Expose() cancelledAt!: Date | null;
+  @Expose() isScheduledEvent!: boolean;
+  /** Upcoming view only: how many guests were invited by email. */
+  @Expose() guestCount?: number;
   @Expose() createdAt!: Date;
 
   @Expose()

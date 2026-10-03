@@ -16,6 +16,9 @@ export function AppShell() {
           <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Dashboard
           </NavLink>
+          <NavLink to="/streams/upcoming" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Upcoming
+          </NavLink>
           <NavLink to="/connections" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Connections
           </NavLink>

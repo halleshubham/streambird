@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateInviteDto {
   @IsOptional()
@@ -17,4 +17,10 @@ export class CreateInviteDto {
   @MinLength(1)
   @MaxLength(200)
   password?: string;
+
+  /** Records who this link was addressed to (scheduled-stream guests). */
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(320)
+  email?: string;
 }

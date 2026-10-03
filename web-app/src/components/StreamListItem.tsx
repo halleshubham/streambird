@@ -21,7 +21,7 @@ export function StreamListItem({ stream }: { stream: StreamListItemType }) {
       <div className="stream-list-item-main">
         <span className={`status-dot status-${stream.status}`} />
         <span className="stream-title">{stream.title}</span>
-        <span className="stream-status">{STATUS_LABELS[stream.status]}</span>
+        <span className="stream-status">{stream.cancelledAt ? 'Cancelled' : STATUS_LABELS[stream.status]}</span>
       </div>
       <div className="stream-list-item-meta">
         <span className="stream-date">{new Date(date).toLocaleString()}</span>

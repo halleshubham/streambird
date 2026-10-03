@@ -31,6 +31,7 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v23.0';
 @Injectable()
 export class FacebookProvider implements StreamProvider {
   readonly identifier = Platform.FACEBOOK;
+  readonly canPrescheduleBroadcast = true;
 
   constructor(private readonly encryption: EncryptionService) {}
 
@@ -102,6 +103,53 @@ export class FacebookProvider implements StreamProvider {
     return { ingestUrl: url.slice(0, idx), streamKey: url.slice(idx + 1) };
   }
 
+  /**
+   * LIVE_NOW (Meta's default) means "go live the moment RTMP data actually
+   * arrives" -- not a literal instant transition -- the same
+   * enableAutoStart-style semantics YouTubeProvider relies on. A
+   * pre-created broadcast for a scheduled stream is instead created as a
+   * scheduled live video with a planned start time, which shows up in the
+   * Page's Live Producer: hidden from the public (SCHEDULED_UNPUBLISHED)
+   * unless the host chose public visibility, in which case Facebook also
+   * posts the upcoming-live promo to the Page (SCHEDULED_LIVE) -- mirroring
+   * YouTubeProvider's "never publicly visible unless asked" default.
+   */
+  private statusFields(meta: BroadcastMeta): Record<string, string> {
+    if (meta.precreate && meta.scheduledAt) {
+      return {
+        status: meta.visibility === 'public' ? 'SCHEDULED_LIVE' : 'SCHEDULED_UNPUBLISHED',
+        planned_start_time: String(Math.floor(meta.scheduledAt.getTime() / 1000)),
+      };
+    }
+    return { status: 'LIVE_NOW' };
+  }
+
+  async updateBroadcast(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void> {
+    const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, {
+      method: 'POST',
+      body: {
+        title: meta.title,
+        description: meta.description ?? '',
+        ...(meta.scheduledAt ? { planned_start_time: String(Math.floor(meta.scheduledAt.getTime() / 1000)) } : {}),
+      },
+    });
+  }
+
+  async deleteBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {
+    const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, { method: 'DELETE' });
+  }
+
+  /** A scheduled live video is told to go live now when the host actually starts, so data arriving on its stream URL airs immediately. */
+  async prepareToGoLive(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {
+    const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, {
+      method: 'POST',
+      body: { status: 'LIVE_NOW' },
+    });
+  }
+
   async createBroadcast(conn: PlatformConnection, meta: BroadcastMeta): Promise<BroadcastResult> {
     const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
 
@@ -113,10 +161,7 @@ export class FacebookProvider implements StreamProvider {
         body: {
           title: meta.title,
           description: meta.description ?? '',
-          // LIVE_NOW (Meta's default) means "go live the moment RTMP data
-          // actually arrives" -- not a literal instant transition -- the
-          // same enableAutoStart-style semantics YouTubeProvider relies on.
-          status: 'LIVE_NOW',
+          ...this.statusFields(meta),
         },
       },
     );

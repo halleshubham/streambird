@@ -43,6 +43,13 @@ export class StudioGuestInvite {
   @Column({ type: 'text', nullable: true })
   passwordHash!: string | null;
 
+  /** Set for an invite addressed to a specific email (scheduled-stream guests); null for plain shareable links. */
+  @Column({ type: 'text', nullable: true })
+  email!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  emailedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 }
