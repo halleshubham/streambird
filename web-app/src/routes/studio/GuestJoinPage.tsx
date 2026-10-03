@@ -17,19 +17,17 @@ export function GuestJoinPage() {
     previewError,
     callStatus,
     callIsError,
-    monitorStatus,
-    monitorTiles,
-    monitorReconnecting,
+    tiles,
     micEnabled,
     cameraEnabled,
     joining,
     refs,
     actions,
   } = useGuestStudio(token);
-  const { setLocalVideoEl, setMonitorAudioEl } = refs;
+  const { setLocalVideoEl } = refs;
 
   return (
-    <div className="studio-page studio-page--narrow">
+    <div className={`studio-page${mode === 'in-call' ? '' : ' studio-page--narrow'}`}>
       <h1 className="brand-heading">
         <img src="/logo.png" alt="" className="brand-logo" /> Join as a guest
       </h1>
@@ -95,44 +93,32 @@ export function GuestJoinPage() {
       )}
 
       {mode === 'in-call' && (
-        <>
-          <div className="panel">
-            <label>Your camera</label>
-            <video ref={setLocalVideoEl} autoPlay muted playsInline className="studio-local-video" />
-            <div className="studio-toolbar">
-              <button type="button" className="icon-btn" onClick={actions.toggleMic}>
-                {micEnabled ? <Mic size={16} /> : <MicOff size={16} />} {micEnabled ? 'Mute mic' : 'Unmute mic'}
-              </button>
-              <button type="button" className="icon-btn" onClick={actions.toggleCamera}>
-                {cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />} {cameraEnabled ? 'Disable camera' : 'Enable camera'}
-              </button>
-              <button type="button" className="icon-btn icon-btn--danger" onClick={actions.leave}>
-                <LogOut size={16} /> Leave room
-              </button>
+        <div className="panel">
+          <div className="meeting-grid">
+            <div className="meeting-tile meeting-tile--self">
+              <video ref={setLocalVideoEl} autoPlay muted playsInline />
+              <span className="meeting-tile-name">You</span>
             </div>
-            <p className={`status${callIsError ? ' error' : ''}`}>{callStatus}</p>
+            {tiles.map((tile) => (
+              <div key={tile.participantId} className="meeting-tile">
+                <MediaStreamVideo stream={tile.stream} unmute />
+                <span className="meeting-tile-name">{tile.displayName}</span>
+              </div>
+            ))}
           </div>
-
-          <div className="panel">
-            <label>Room feed (everyone else in the room — never your own camera/mic)</label>
-            {monitorReconnecting && monitorTiles.length === 0 ? (
-              <BirdLoader loading compact label="Updating room feed…" />
-            ) : (
-              monitorTiles.length > 0 && (
-                <div className="monitor-video-grid">
-                  {monitorTiles.map((tile) => (
-                    <div key={tile.participantId} className="monitor-video-tile">
-                      <MediaStreamVideo stream={tile.stream} muted />
-                      <span className="monitor-video-tile-name">{tile.displayName}</span>
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
-            <audio ref={setMonitorAudioEl} autoPlay />
-            <p className="status">{monitorStatus}</p>
+          <div className="studio-toolbar">
+            <button type="button" className="icon-btn" onClick={actions.toggleMic}>
+              {micEnabled ? <Mic size={16} /> : <MicOff size={16} />} {micEnabled ? 'Mute mic' : 'Unmute mic'}
+            </button>
+            <button type="button" className="icon-btn" onClick={actions.toggleCamera}>
+              {cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />} {cameraEnabled ? 'Disable camera' : 'Enable camera'}
+            </button>
+            <button type="button" className="icon-btn icon-btn--danger" onClick={actions.leave}>
+              <LogOut size={16} /> Leave room
+            </button>
           </div>
-        </>
+          <p className={`status${callIsError ? ' error' : ''}`}>{callStatus}</p>
+        </div>
       )}
     </div>
   );

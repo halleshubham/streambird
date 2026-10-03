@@ -87,11 +87,18 @@ const SCREEN_SHARE_ID = 'screen-share';
 /**
  * All of the imperative WebRTC/Web Audio/canvas-compositing logic from the
  * original web/host.js, ported behind a hook -- the underlying protocol
- * logic is unchanged (same event-driven design, same mix-minus room
- * monitor, same fixes for the bugs found tonight), only the UI layer moved
- * to React. Heavy mutable state (peer connections, audio graph nodes, the
- * canvas draw loop) stays in refs exactly like the vanilla module-level
- * variables it replaces; only what the UI needs to render is React state.
+ * logic is unchanged (same event-driven design, same fixes for the bugs
+ * found tonight), only the UI layer moved to React. Heavy mutable state
+ * (peer connections, audio graph nodes, the canvas draw loop) stays in
+ * refs exactly like the vanilla module-level variables it replaces; only
+ * what the UI needs to render is React state.
+ *
+ * Each guest's RTCPeerConnection (see handleGuestOffer) is bidirectional:
+ * it both sends the host's own camera/mic to that guest and receives the
+ * guest's, carrying the full-mesh "meeting room" on the exact same
+ * connection the canvas compositor already uses to receive that guest's
+ * video. Guest-to-guest connections don't touch this file at all -- see
+ * useGuestStudio, which negotiates those directly between guests.
  */
 export function useHostStudio(streamId: string | undefined) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -125,13 +132,9 @@ export function useHostStudio(streamId: string | undefined) {
   const socketRef = useRef<Socket | null>(null);
   const participantsRef = useRef<Map<string, Participant>>(new Map());
   const pendingDisplayNamesRef = useRef<Map<string, string>>(new Map());
-  const monitorConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const monitorFeedGenerationRef = useRef<Map<string, number>>(new Map());
-  const monitorRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const audioSourceNodesRef = useRef<Map<string, MediaStreamAudioSourceNode>>(new Map());
-  const guestMixMinusDestinationsRef = useRef<Map<string, MediaStreamAudioDestinationNode>>(new Map());
   const layoutModeRef = useRef<LayoutMode>('grid');
   const drawingRef = useRef(false);
   const brandingRef = useRef<Branding & { logoImg: HTMLImageElement | null }>({
@@ -177,17 +180,13 @@ export function useHostStudio(streamId: string | undefined) {
     setParticipantsView(view);
   }
 
-  // ---- Audio mixing (mix-minus) --------------------------------------
+  // ---- Audio mixing ----------------------------------------------------
   //
-  // Two different outputs draw on the same set of participant mic tracks:
-  //  - audioDestinationRef: the full mix of everyone, incl. the host -- the
-  //    audio half of the outbound WHIP publish.
-  //  - one MediaStreamAudioDestinationNode per guest in
-  //    guestMixMinusDestinationsRef, each fed by every source *except* that
-  //    guest's own -- their personal room monitor. A single AudioNode can
-  //    fan out to any number of destinations, so each participant's mic is
-  //    captured into exactly one MediaStreamAudioSourceNode and then
-  //    connected to the full mix plus every *other* guest's mix-minus node.
+  // One full mix of everyone, incl. the host -- the audio half of the
+  // outbound WHIP publish. (There used to also be a per-guest mix-minus
+  // destination here, for the old host-relayed room monitor; full-mesh
+  // guest-to-guest connections replaced that -- see useGuestStudio -- so
+  // each participant's mic now only ever needs to feed this one mix.)
 
   function ensureAudioMix() {
     if (!audioContextRef.current) {
@@ -205,150 +204,37 @@ export function useHostStudio(streamId: string | undefined) {
     audioSourceNodesRef.current.set(key, source);
 
     source.connect(audioDestinationRef.current!);
-    for (const [guestId, dest] of guestMixMinusDestinationsRef.current) {
-      if (guestId !== key) source.connect(dest);
-    }
 
     // Also route to the host's own speakers so the producer can actually
     // hear everyone live while producing -- audioDestinationRef only ever
-    // feeds the outbound WHIP broadcast and other guests' monitor feeds,
-    // never the host's local output device, so without this the host had
-    // no way to literally hear a guest (or a shared screen's audio) at all.
-    // Skip the host's own mic ('local') to avoid feeding it straight back
-    // into the host's own speakers (echo/feedback).
+    // feeds the outbound WHIP broadcast, never the host's local output
+    // device, so without this the host had no way to literally hear a
+    // guest (or a shared screen's audio) at all. Skip the host's own mic
+    // ('local') to avoid feeding it straight back into the host's own
+    // speakers (echo/feedback).
     if (key !== 'local') {
       source.connect(audioContextRef.current!.destination);
     }
   }
 
-  /** Every guest gets everyone else's already-connected sources, never their own. */
-  function ensureGuestMixMinus(guestSocketId: string): MediaStreamAudioDestinationNode {
-    ensureAudioMix();
-    const existing = guestMixMinusDestinationsRef.current.get(guestSocketId);
-    if (existing) return existing;
-
-    const dest = audioContextRef.current!.createMediaStreamDestination();
-    guestMixMinusDestinationsRef.current.set(guestSocketId, dest);
-    for (const [key, source] of audioSourceNodesRef.current) {
-      if (key !== guestSocketId) source.connect(dest);
-    }
-    return dest;
-  }
-
   function removeParticipantAudio(key: string) {
     audioSourceNodesRef.current.get(key)?.disconnect();
     audioSourceNodesRef.current.delete(key);
-    guestMixMinusDestinationsRef.current.delete(key);
   }
 
-  // ---- Room monitor ----------------------------------------------------
-  //
-  // Each guest gets a personal mix-minus audio feed (everyone else's mic,
-  // never their own) plus every other participant's video, on its own
-  // dedicated connection. Video has no equivalent "mix" -- the set of
-  // tracks a guest needs changes every time someone joins, leaves, or
-  // starts their camera -- so refreshAllMonitorFeeds() fully tears down and
-  // recreates every guest's monitor connection from scratch whenever the
-  // room's video roster changes, rather than renegotiating in place. A
-  // brief reconnect blip per guest each time, but the same fresh
-  // offer/answer path already proven reliable, not a second, riskier one.
-  // Each video transceiver's mid is sent alongside the offer as the
-  // correlation key so the guest's page knows whose video is whose.
-
-  const startMonitorFeed = useCallback(async (socketId: string) => {
-    const generation = (monitorFeedGenerationRef.current.get(socketId) ?? 0) + 1;
-    monitorFeedGenerationRef.current.set(socketId, generation);
-
-    try {
-      stopMonitorFeed(socketId);
-      const dest = ensureGuestMixMinus(socketId);
-      const audioTrack = dest.stream.getAudioTracks()[0];
-      if (!audioTrack) throw new Error('missing mix-minus audio track');
-
-      const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
-      monitorConnectionsRef.current.set(socketId, pc);
-
-      // addTransceiver(track, init) with no `streams` in init gives the
-      // track an anonymous msid -- the connection negotiates fine but the
-      // receiver's ontrack then fires with an *empty* event.streams.
-      // Passing the stream explicitly (matching VDO.Ninja's own usage) is
-      // the fix, confirmed live.
-      pc.addTransceiver(audioTrack, { direction: 'sendonly', streams: [dest.stream] });
-
-      const videoParticipants: { transceiver: RTCRtpTransceiver; participantId: string; displayName: string }[] = [];
-      for (const [participantId, p] of participantsRef.current) {
-        if (participantId === socketId) continue; // never send a guest their own video back
-        if (!p.videoTrack || p.videoTrack.readyState !== 'live') continue;
-        const transceiver = pc.addTransceiver(p.videoTrack, {
-          direction: 'sendonly',
-          streams: [new MediaStream([p.videoTrack])],
-        });
-        videoParticipants.push({ transceiver, participantId, displayName: p.displayName });
-      }
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.emit('signal', { to: socketId, type: 'monitor-ice-candidate', payload: event.candidate });
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      if (monitorFeedGenerationRef.current.get(socketId) !== generation) {
-        // A newer refresh already replaced us while we were negotiating.
-        pc.close();
-        return;
-      }
-
-      const participantsByMid: Record<string, { participantId: string; displayName: string }> = {};
-      for (const { transceiver, participantId, displayName } of videoParticipants) {
-        if (transceiver.mid) participantsByMid[transceiver.mid] = { participantId, displayName };
-      }
-
-      socketRef.current?.emit('signal', {
-        to: socketId,
-        type: 'monitor-offer',
-        payload: { sdp: offer, participantsByMid },
-      });
-    } catch (err) {
-      console.warn('Failed to start the room monitor feed for a guest', err);
-      if (monitorFeedGenerationRef.current.get(socketId) === generation) {
-        setStatus({ text: `Room monitor failed for a guest: ${(err as Error).message}`, isError: true });
-        stopMonitorFeed(socketId);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function stopMonitorFeed(socketId: string) {
-    monitorConnectionsRef.current.get(socketId)?.close();
-    monitorConnectionsRef.current.delete(socketId);
+  /** Adds the host's own local camera/mic tracks to an already-negotiated
+   * per-guest connection (see handleGuestOffer) so that guest's page
+   * starts receiving the host's video/audio too, not just sending its own.
+   * A no-op per track if the host's camera hasn't started yet -- called
+   * again, later, from startCamera for every guest already connected at
+   * that point. */
+  function addHostTracksTo(pc: RTCPeerConnection) {
+    const local = participantsRef.current.get('local');
+    if (!local) return;
+    const stream = new MediaStream([local.videoTrack, local.audioTrack].filter((t): t is MediaStreamTrack => !!t));
+    if (local.videoTrack) pc.addTrack(local.videoTrack, stream);
+    if (local.audioTrack) pc.addTrack(local.audioTrack, stream);
   }
-
-  /**
-   * Debounced: a guest joining, starting their camera, and their video
-   * track arriving can all trigger this within milliseconds of each other.
-   * Running it immediately every time meant each new round reset
-   * connections that hadn't even finished negotiating the *previous* round
-   * yet -- confirmed live (2026-10-01) via "Called in wrong state: stable"
-   * errors, where a guest's answer for a just-superseded offer landed on
-   * the brand-new pc that replaced it instead. The per-socketId generation
-   * guard in startMonitorFeed stops a stale round from ever being *sent*,
-   * but can't stop an already-sent offer's answer from arriving after the
-   * round that sent it has already been superseded -- only giving each
-   * round room to actually finish fixes that.
-   */
-  const refreshAllMonitorFeeds = useCallback(() => {
-    if (monitorRefreshTimerRef.current) clearTimeout(monitorRefreshTimerRef.current);
-    monitorRefreshTimerRef.current = setTimeout(() => {
-      monitorRefreshTimerRef.current = null;
-      for (const id of participantsRef.current.keys()) {
-        if (id === 'local') continue;
-        void startMonitorFeed(id);
-      }
-    }, 400);
-  }, [startMonitorFeed]);
 
   // ---- Canvas compositing ----------------------------------------------
 
@@ -606,10 +492,6 @@ export function useHostStudio(streamId: string | undefined) {
           p.videoTrack = event.track;
           event.track.enabled = p.videoEnabled;
         }
-        // A guest's video can arrive well after their own monitor feed was
-        // first established -- refresh everyone's so it actually reaches
-        // the rest of the room.
-        refreshAllMonitorFeeds();
       } else if (event.track.kind === 'audio') {
         connectAudioTrack(fromSocketId, event.track);
         if (p) {
@@ -623,6 +505,22 @@ export function useHostStudio(streamId: string | undefined) {
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socketRef.current?.emit('signal', { to: fromSocketId, type: 'ice-candidate', payload: event.candidate });
+      }
+    };
+
+    // Renegotiation: fires only if the host's own camera starts (see
+    // startCamera's addHostTracksTo loop) after this guest already
+    // connected -- addTrack on an already-stable connection queues this
+    // event, which we answer with a fresh offer on the SAME connection.
+    // The only place in this file a connection is renegotiated rather than
+    // negotiated once via a single offer/answer round.
+    pc.onnegotiationneeded = async () => {
+      try {
+        const renegotiationOffer = await pc.createOffer();
+        await pc.setLocalDescription(renegotiationOffer);
+        socketRef.current?.emit('signal', { to: fromSocketId, type: 'offer', payload: renegotiationOffer });
+      } catch (err) {
+        console.warn('Renegotiation failed for guest', fromSocketId, err);
       }
     };
 
@@ -649,13 +547,16 @@ export function useHostStudio(streamId: string | undefined) {
     pc.onconnectionstatechange = reportRtcState;
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    // Added here, before the answer -- if the host's camera is already
+    // running, this reuses the recvonly transceivers WebRTC auto-created
+    // from the guest's offer (flipping them to sendrecv) so the guest
+    // starts receiving the host's video/audio in this SAME initial
+    // negotiation round, instead of a separate renegotiation right after.
+    addHostTracksTo(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     socketRef.current?.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
-
-    refreshAllMonitorFeeds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshAllMonitorFeeds]);
+  }, []);
 
   function connectSignaling(streamRow: Stream, hostToken: string) {
     const socket = io('/studio', {
@@ -681,7 +582,7 @@ export function useHostStudio(streamId: string | undefined) {
     socket.on('peer-joined', ({ socketId, displayName }: { socketId: string; displayName: string }) => {
       setStatus({ text: `${displayName} joined — requesting their video…`, isError: false });
       pendingDisplayNamesRef.current.set(socketId, displayName || 'Guest');
-      socket.emit('signal', { to: socketId, type: 'request-offer', payload: {} });
+      socket.emit('signal', { to: socketId, type: 'request-offer', payload: { displayName: 'Host' } });
     });
 
     socket.on('peer-left', ({ socketId }: { socketId: string }) => {
@@ -692,14 +593,24 @@ export function useHostStudio(streamId: string | undefined) {
         renderParticipantList();
       }
       pendingDisplayNamesRef.current.delete(socketId);
-      stopMonitorFeed(socketId);
       removeParticipantAudio(socketId);
-      refreshAllMonitorFeeds();
     });
 
     socket.on('signal', async (msg: { from: string; type: string; payload: unknown }) => {
       if (msg.type === 'offer') {
         await handleGuestOffer(msg.from, msg.payload as RTCSessionDescriptionInit);
+      } else if (msg.type === 'answer') {
+        // Only ever a renegotiation answer -- see handleGuestOffer's
+        // onnegotiationneeded, the one case where this file sends an
+        // offer to (rather than receives one from) a guest.
+        const p = participantsRef.current.get(msg.from);
+        if (p?.pc) {
+          try {
+            await p.pc.setRemoteDescription(new RTCSessionDescription(msg.payload as RTCSessionDescriptionInit));
+          } catch (err) {
+            console.warn('Failed to apply a renegotiation answer from a guest', err);
+          }
+        }
       } else if (msg.type === 'ice-candidate') {
         const p = participantsRef.current.get(msg.from);
         if (p?.pc) {
@@ -707,24 +618,6 @@ export function useHostStudio(streamId: string | undefined) {
             await p.pc.addIceCandidate(new RTCIceCandidate(msg.payload as RTCIceCandidateInit));
           } catch (err) {
             console.warn('Failed to add ICE candidate from guest', err);
-          }
-        }
-      } else if (msg.type === 'monitor-answer') {
-        const monitorPc = monitorConnectionsRef.current.get(msg.from);
-        if (monitorPc) {
-          try {
-            await monitorPc.setRemoteDescription(new RTCSessionDescription(msg.payload as RTCSessionDescriptionInit));
-          } catch (err) {
-            console.warn('Failed to apply a room monitor answer (likely a superseded refresh)', err);
-          }
-        }
-      } else if (msg.type === 'monitor-ice-candidate') {
-        const monitorPc = monitorConnectionsRef.current.get(msg.from);
-        if (monitorPc) {
-          try {
-            await monitorPc.addIceCandidate(new RTCIceCandidate(msg.payload as RTCIceCandidateInit));
-          } catch (err) {
-            console.warn("Failed to add ICE candidate for a guest's room monitor", err);
           }
         }
       }
@@ -852,13 +745,21 @@ export function useHostStudio(streamId: string | undefined) {
       connectAudioTrack('local', audioTrack);
       renderParticipantList();
       setCameraStarted(true);
-      refreshAllMonitorFeeds();
+
+      // A guest may already be connected from before the host's camera
+      // started (nothing in the UI requires camera-first) -- addHostTracksTo
+      // on an already-stable connection queues a renegotiation (see
+      // handleGuestOffer's onnegotiationneeded) so they still end up
+      // receiving the host's video/audio, just one round-trip later.
+      for (const p of participantsRef.current.values()) {
+        if (p.pc) addHostTracksTo(p.pc);
+      }
     } catch (err) {
       setStatus({ text: `Could not start camera: ${(err as Error).message}`, isError: true });
     } finally {
       setCameraStarting(false);
     }
-  }, [refreshAllMonitorFeeds]);
+  }, []);
 
   // setLayout is the shared primitive -- it sets the layout directly (used
   // by both the toggle button and scene-switching) and persists it to the
@@ -884,9 +785,13 @@ export function useHostStudio(streamId: string | undefined) {
   //
   // Added to participantsRef.current under the synthetic SCREEN_SHARE_ID
   // key, following the exact same shape as every real participant entry --
-  // that's what lets it ride the existing grid/spotlight draw loop and the
-  // generic per-guest room-monitor relay in startMonitorFeed with zero
-  // extra plumbing.
+  // that's what lets it ride the existing grid/spotlight draw loop (and
+  // the broadcast audio mix) with zero extra plumbing. It's composited
+  // into the canvas the host publishes, same as any guest, but -- unlike
+  // a guest's camera -- never reaches another participant's own meeting
+  // grid (see useGuestStudio): that's a direct mesh between real
+  // participants' RTCPeerConnections, with no path for the host to also
+  // fan a synthetic, non-participant track into it.
 
   const stopScreenShare = useCallback(() => {
     const p = participantsRef.current.get(SCREEN_SHARE_ID);
@@ -897,8 +802,7 @@ export function useHostStudio(streamId: string | undefined) {
     removeParticipantAudio(SCREEN_SHARE_ID);
     renderParticipantList();
     setScreenSharing(false);
-    refreshAllMonitorFeeds();
-  }, [refreshAllMonitorFeeds]);
+  }, []);
 
   const startScreenShare = useCallback(async () => {
     try {
@@ -942,11 +846,10 @@ export function useHostStudio(streamId: string | undefined) {
 
       renderParticipantList();
       setScreenSharing(true);
-      refreshAllMonitorFeeds();
     } catch (err) {
       setStatus({ text: `Could not start screen share: ${(err as Error).message}`, isError: true });
     }
-  }, [refreshAllMonitorFeeds, stopScreenShare]);
+  }, [stopScreenShare]);
 
   const createInviteLink = useCallback(async (password?: string) => {
     if (!stream?.studioSessionId) return;
@@ -1021,10 +924,8 @@ export function useHostStudio(streamId: string | undefined) {
     p.pc?.close();
     participantsRef.current.delete(id);
     renderParticipantList();
-    stopMonitorFeed(id);
     removeParticipantAudio(id);
-    refreshAllMonitorFeeds();
-  }, [refreshAllMonitorFeeds]);
+  }, []);
 
   function setLogoFile(file: File | null) {
     if (!file) return;
@@ -1210,11 +1111,6 @@ export function useHostStudio(streamId: string | undefined) {
     endingStreamRef.current = true;
     setStatus({ text: 'Ending stream…', isError: false });
 
-    if (monitorRefreshTimerRef.current) {
-      clearTimeout(monitorRefreshTimerRef.current);
-      monitorRefreshTimerRef.current = null;
-    }
-
     if (keyFrameIntervalRef.current) {
       clearInterval(keyFrameIntervalRef.current);
       keyFrameIntervalRef.current = null;
@@ -1246,8 +1142,6 @@ export function useHostStudio(streamId: string | undefined) {
     participantsRef.current.get(SCREEN_SHARE_ID)?.videoTrack?.stop();
     participantsRef.current.get(SCREEN_SHARE_ID)?.audioTrack?.stop();
     for (const p of participantsRef.current.values()) p.pc?.close();
-    for (const monitorPc of monitorConnectionsRef.current.values()) monitorPc.close();
-    monitorConnectionsRef.current.clear();
     socketRef.current?.disconnect();
 
     if (ended) {

@@ -33,9 +33,11 @@ const HOST_DISCONNECT_GRACE_MS = 60_000;
  * through here as opaque JSON, but no media ever touches this server.
  * That's deliberate: it's what keeps the client-side-compositing default
  * near-zero marginal server cost (see the implementation plan's cost
- * model). This is a direct host<->guest mesh for the MVP, not a real SFU
- * — fine up to a handful of guests, and swappable later without touching
- * the compositor or this relay's message shape.
+ * model). Role-agnostic by design: `handleSignal` only checks sender and
+ * target share a session, so it already supports a full mesh between
+ * every participant (host and every guest, directly), not just a
+ * host<->guest star — fine up to a handful of guests, and swappable for a
+ * real SFU later without touching this relay's message shape.
  */
 @WebSocketGateway({ namespace: '/studio', cors: { origin: '*' } })
 export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -210,14 +212,16 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
 
   /**
    * Generic SDP/ICE relay. Payload carries the target socket id directly
-   * (learned from a 'peer-joined' event) — this server never inspects or
-   * modifies the SDP/candidate, it only checks sender and target are in
-   * the same session room before forwarding.
+   * (learned from a 'peer-joined' event, or from a 'request-offer' this
+   * socket itself sent/received) — this server never inspects or modifies
+   * the payload, it only checks sender and target are in the same session
+   * room before forwarding.
    */
   @SubscribeMessage('signal')
   handleSignal(
     @ConnectedSocket() client: Socket,
-    @MessageBody() body: { to: string; type: 'offer' | 'answer' | 'ice-candidate'; payload: unknown },
+    @MessageBody()
+    body: { to: string; type: 'offer' | 'answer' | 'ice-candidate' | 'request-offer' | 'kicked'; payload: unknown },
   ) {
     const senderState = this.socketState.get(client.id);
     // this.server is the '/studio' Namespace (NestJS's IoAdapter binds a

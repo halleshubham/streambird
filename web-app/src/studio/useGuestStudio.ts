@@ -14,17 +14,22 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:193
 
 export type GuestMode = 'checking-invite' | 'invite-invalid' | 'ready-to-join' | 'in-call';
 
-export interface MonitorVideoTile {
+export interface PeerTile {
   participantId: string;
   displayName: string;
   stream: MediaStream;
 }
 
 /**
- * Ported from web/guest.js -- same protocol logic (upload connection to the
- * host, separate mix-minus room-monitor connection, the addTransceiver
- * `streams` fix, the muted-then-unmute autoplay workaround), moved behind a
- * hook so the page can render it with React instead of direct DOM calls.
+ * Full mesh: this guest opens one bidirectional RTCPeerConnection per
+ * *other* participant (host and every other guest alike) -- see
+ * StudioSignalingGateway's own doc comment for why the signaling relay
+ * already supports this topology unchanged. Direction convention, kept
+ * consistent with useHostStudio's existing 'peer-joined' handler so a
+ * newcomer and an already-present participant never both try to offer
+ * the same pair at once: whoever is already in the room sends
+ * 'request-offer' to the newcomer; the newcomer is always the one who
+ * actually creates the offer, in response, for each requester.
  */
 export function useGuestStudio(token: string | undefined) {
   const [mode, setMode] = useState<GuestMode>(token ? 'checking-invite' : 'invite-invalid');
@@ -32,14 +37,7 @@ export function useGuestStudio(token: string | undefined) {
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [callStatus, setCallStatus] = useState('Connecting…');
   const [callIsError, setCallIsError] = useState(false);
-  const [monitorStatus, setMonitorStatus] = useState('Waiting to connect…');
-  const [monitorTiles, setMonitorTiles] = useState<MonitorVideoTile[]>([]);
-  // True for the brief window between a monitor-offer arriving (the host
-  // fully tears down and recreates this connection on every roster change
-  // -- see useHostStudio's refreshAllMonitorFeeds) and it reconnecting, so
-  // the UI can show "updating" instead of a silent blank grid every time
-  // some OTHER participant joins or leaves.
-  const [monitorReconnecting, setMonitorReconnecting] = useState(false);
+  const [tiles, setTiles] = useState<PeerTile[]>([]);
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -53,213 +51,135 @@ export function useGuestStudio(token: string | undefined) {
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
-  const monitorAudioElRef = useRef<HTMLAudioElement | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
 
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const monitorPcRef = useRef<RTCPeerConnection | null>(null);
-  const hostSocketIdRef = useRef<string | null>(null);
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const peerDisplayNamesRef = useRef<Map<string, string>>(new Map());
+  const tilesRef = useRef<Map<string, PeerTile>>(new Map());
+  const myDisplayNameRef = useRef('Guest');
   const socketRef = useRef<Socket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const leavingRef = useRef(false);
-  const monitorTilesRef = useRef<Map<string, MonitorVideoTile>>(new Map());
 
   function setLocalVideoEl(el: HTMLVideoElement | null) {
     localVideoElRef.current = el;
     if (el && localStreamRef.current) el.srcObject = localStreamRef.current;
   }
 
-  function setMonitorAudioEl(el: HTMLAudioElement | null) {
-    monitorAudioElRef.current = el;
+  function upsertTile(participantId: string, stream: MediaStream) {
+    const displayName = peerDisplayNamesRef.current.get(participantId) ?? 'Participant';
+    tilesRef.current.set(participantId, { participantId, displayName, stream });
+    setTiles([...tilesRef.current.values()]);
   }
 
-  function setupPeerConnection(localStream: MediaStream): RTCPeerConnection {
-    const conn = new RTCPeerConnection({ iceServers: iceServersRef.current });
+  function removeTile(participantId: string) {
+    tilesRef.current.delete(participantId);
+    setTiles([...tilesRef.current.values()]);
+  }
+
+  function closePeer(peerId: string) {
+    peerConnectionsRef.current.get(peerId)?.close();
+    peerConnectionsRef.current.delete(peerId);
+    removeTile(peerId);
+  }
+
+  function createPeerConnection(peerId: string, localStream: MediaStream): RTCPeerConnection {
+    peerConnectionsRef.current.get(peerId)?.close();
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
+    peerConnectionsRef.current.set(peerId, pc);
 
     for (const track of localStream.getTracks()) {
-      conn.addTrack(track, localStream);
+      pc.addTrack(track, localStream);
     }
 
-    conn.onicecandidate = (event) => {
-      if (event.candidate && hostSocketIdRef.current) {
-        socketRef.current?.emit('signal', {
-          to: hostSocketIdRef.current,
-          type: 'ice-candidate',
-          payload: event.candidate,
-        });
+    pc.ontrack = (event) => {
+      // Confirmed live (room-monitor's own ontrack carried the same note):
+      // event.streams can be empty if the sender didn't pass an explicit
+      // `streams` array to addTrack/addTransceiver -- never trust
+      // event.streams[0] to be populated, fall back to the bare track.
+      const incomingStream = event.streams?.[0] ?? new MediaStream([event.track]);
+      upsertTile(peerId, incomingStream);
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current?.emit('signal', { to: peerId, type: 'ice-candidate', payload: event.candidate });
       }
     };
 
     // Reported to the server (see StudioSignalingGateway's 'rtc-state'
-    // handler) so a guest whose publish connection fails to ever carry
-    // media -- the exact gap TURN (see iceServersRef) was added to close
-    // -- actually shows up in production logs as an ongoing health
-    // signal, instead of only a UI status string nobody necessarily saw
-    // at the time.
-    conn.oniceconnectionstatechange = () => {
+    // handler) so a connection that fails to ever carry media actually
+    // shows up in production logs as an ongoing health signal, instead of
+    // only a UI status string nobody necessarily saw at the time.
+    const reportRtcState = () => {
       socketRef.current?.emit('rtc-state', {
-        about: 'host',
-        iceConnectionState: conn.iceConnectionState,
-        connectionState: conn.connectionState,
+        about: peerId,
+        iceConnectionState: pc.iceConnectionState,
+        connectionState: pc.connectionState,
       });
     };
-    conn.onconnectionstatechange = () => {
-      socketRef.current?.emit('rtc-state', {
-        about: 'host',
-        iceConnectionState: conn.iceConnectionState,
-        connectionState: conn.connectionState,
-      });
+    pc.oniceconnectionstatechange = reportRtcState;
+    pc.onconnectionstatechange = () => {
+      reportRtcState();
       // pc.close() (deliberate leave, or a kick) fires this asynchronously
-      // -- without this guard it overwrites the "removed by host"/"you
-      // left" message with a generic "Connection: closed" moments later.
+      // -- without this guard it could overwrite the "removed by host"/
+      // "you left" message with a generic status moments later.
       if (leavingRef.current) return;
-      setCallStatus(`Connection: ${conn.connectionState}`);
+      if (pc.connectionState === 'connected') {
+        setCallStatus('Connected — you are live in the studio.');
+        setCallIsError(false);
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        closePeer(peerId);
+      }
     };
 
-    return conn;
+    return pc;
   }
 
-  const handleRequestOffer = useCallback(async (fromSocketId: string, localStream: MediaStream) => {
-    hostSocketIdRef.current = fromSocketId;
-    const pc = setupPeerConnection(localStream);
-    pcRef.current = pc;
+  const handleRequestOffer = useCallback(
+    async (fromSocketId: string, fromDisplayName: string | undefined, localStream: MediaStream) => {
+      if (fromDisplayName) peerDisplayNamesRef.current.set(fromSocketId, fromDisplayName);
+      const pc = createPeerConnection(fromSocketId, localStream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socketRef.current?.emit('signal', { to: fromSocketId, type: 'offer', payload: offer });
+    },
+    [],
+  );
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socketRef.current?.emit('signal', { to: fromSocketId, type: 'offer', payload: offer });
-  }, []);
+  const handlePeerOffer = useCallback(
+    async (fromSocketId: string, offer: RTCSessionDescriptionInit, localStream: MediaStream) => {
+      const pc = createPeerConnection(fromSocketId, localStream);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socketRef.current?.emit('signal', { to: fromSocketId, type: 'answer', payload: answer });
+    },
+    [],
+  );
 
-  async function handleAnswer(payload: RTCSessionDescriptionInit) {
-    if (!pcRef.current) return;
-    await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload));
-    setCallStatus('Connected — you are live in the studio.');
-    setCallIsError(false);
+  async function handleAnswer(fromSocketId: string, payload: RTCSessionDescriptionInit) {
+    const pc = peerConnectionsRef.current.get(fromSocketId);
+    if (!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(payload));
   }
 
-  async function handleIceCandidate(payload: RTCIceCandidateInit) {
-    if (!pcRef.current) return;
+  async function handleIceCandidate(fromSocketId: string, payload: RTCIceCandidateInit) {
+    const pc = peerConnectionsRef.current.get(fromSocketId);
+    if (!pc) return;
     try {
-      await pcRef.current.addIceCandidate(new RTCIceCandidate(payload));
+      await pc.addIceCandidate(new RTCIceCandidate(payload));
     } catch (err) {
       console.warn('Failed to add ICE candidate', err);
     }
   }
 
-  function clearVideoTiles() {
-    monitorTilesRef.current.clear();
-    setMonitorTiles([]);
-  }
-
-  function upsertVideoTile(participantId: string, displayName: string, stream: MediaStream) {
-    monitorTilesRef.current.set(participantId, { participantId, displayName, stream });
-    setMonitorTiles([...monitorTilesRef.current.values()]);
-  }
-
-  // ---- Room monitor: a second, dedicated peer connection carrying this
-  // guest's personal mix-minus audio feed (everyone else's mic, never their
-  // own) plus every other participant's video, back from the host. See
-  // useHostStudio's refreshAllMonitorFeeds for why the host fully recreates
-  // this connection (not an in-place renegotiation) every time the room's
-  // video roster changes -- the tile grid here is wiped and rebuilt from
-  // scratch on every offer for the same reason, not tracked incrementally.
-  const handleMonitorOffer = useCallback(async (
-    fromSocketId: string,
-    payload: { sdp: RTCSessionDescriptionInit; participantsByMid?: Record<string, { participantId: string; displayName: string }> },
-  ) => {
-    const offer = payload.sdp;
-    const participantsByMid = payload.participantsByMid ?? {};
-
-    setMonitorStatus('Room monitor offer received — connecting…');
-    setMonitorReconnecting(true);
-    clearVideoTiles();
-
-    try {
-      monitorPcRef.current?.close();
-      const monitorPc = new RTCPeerConnection({ iceServers: iceServersRef.current });
-      monitorPcRef.current = monitorPc;
-
-      monitorPc.ontrack = (event) => {
-        // Confirmed live: event.streams can be empty if the sender didn't
-        // pass an explicit `streams` array to addTransceiver -- never trust
-        // event.streams[0] to be populated, fall back to the bare track
-        // (matches VDO.Ninja's own ontrack handler).
-        const incomingStream = event.streams?.[0] ?? new MediaStream([event.track]);
-
-        if (event.track.kind === 'video') {
-          const mid = event.transceiver?.mid;
-          const info = mid ? participantsByMid[mid] : null;
-          upsertVideoTile(info?.participantId ?? event.track.id, info?.displayName ?? 'Participant', incomingStream);
-          return;
-        }
-
-        const audioEl = monitorAudioElRef.current;
-        if (audioEl && audioEl.srcObject !== incomingStream) {
-          audioEl.srcObject = incomingStream;
-          // Starting muted and unmuting right after is the standard
-          // workaround for unmuted-autoplay blocking: browsers always allow
-          // muted autoplay, and (unlike *starting* unmuted playback) simply
-          // flipping .muted off on already-rolling media generally isn't
-          // re-blocked.
-          audioEl.muted = true;
-          audioEl
-            .play()
-            .then(() => {
-              audioEl.muted = false;
-              setMonitorStatus('Room monitor: connected');
-            })
-            .catch(() => {
-              const resume = () => {
-                audioEl.muted = false;
-                audioEl.play().catch(() => {});
-                document.removeEventListener('click', resume);
-              };
-              document.addEventListener('click', resume, { once: true });
-              setMonitorStatus('Tap anywhere to enable the room monitor.');
-            });
-        }
-      };
-      monitorPc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socketRef.current?.emit('signal', { to: fromSocketId, type: 'monitor-ice-candidate', payload: event.candidate });
-        }
-      };
-      monitorPc.onconnectionstatechange = () => {
-        // 'connected' is reported once ontrack's own play()/mute-unmute
-        // settles, so as not to clobber a still-pending tap-to-enable
-        // prompt with a falsely-reassuring "connected".
-        if (monitorPc.connectionState === 'connected') {
-          setMonitorReconnecting(false);
-          return;
-        }
-        setMonitorStatus(`Room monitor: ${monitorPc.connectionState}`);
-      };
-
-      await monitorPc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await monitorPc.createAnswer();
-      await monitorPc.setLocalDescription(answer);
-      socketRef.current?.emit('signal', { to: fromSocketId, type: 'monitor-answer', payload: answer });
-    } catch (err) {
-      setMonitorStatus(`Room monitor failed to connect: ${(err as Error).message}`);
-      setMonitorReconnecting(false);
-      console.error('Room monitor negotiation failed', err);
-    }
-  }, []);
-
-  async function handleMonitorIceCandidate(payload: RTCIceCandidateInit) {
-    if (!monitorPcRef.current) return;
-    try {
-      await monitorPcRef.current.addIceCandidate(new RTCIceCandidate(payload));
-    } catch (err) {
-      console.warn('Failed to add ICE candidate for the room monitor', err);
-    }
-  }
-
   function stopLocalMedia() {
     leavingRef.current = true;
-    pcRef.current?.close();
-    pcRef.current = null;
-    monitorPcRef.current?.close();
-    monitorPcRef.current = null;
+    for (const pc of peerConnectionsRef.current.values()) pc.close();
+    peerConnectionsRef.current.clear();
+    tilesRef.current.clear();
+    setTiles([]);
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     // Null it out (not just stopped) -- otherwise startPreview()'s "already
     // have a stream" guard would see this now-dead MediaStream object and
@@ -267,9 +187,6 @@ export function useGuestStudio(token: string | undefined) {
     localStreamRef.current = null;
     setPreviewing(false);
     socketRef.current?.disconnect();
-    if (monitorAudioElRef.current) monitorAudioElRef.current.srcObject = null;
-    clearVideoTiles();
-    setMonitorReconnecting(false);
   }
 
   function handleKicked() {
@@ -302,6 +219,7 @@ export function useGuestStudio(token: string | undefined) {
     if (!token) return;
     setJoining(true);
     setJoinError(null);
+    myDisplayNameRef.current = displayName || 'Guest';
 
     try {
       await resolveInvite(token);
@@ -336,22 +254,31 @@ export function useGuestStudio(token: string | undefined) {
     const socket = io('/studio', { auth: { role: 'guest', token, displayName, password } });
     socketRef.current = socket;
 
-    socket.on('joined', () => setCallStatus('Joined — waiting for the host to connect…'));
+    socket.on('joined', () => setCallStatus('Joined — waiting for others to connect…'));
+
+    socket.on('peer-joined', ({ socketId, displayName: peerName }: { socketId: string; displayName: string }) => {
+      peerDisplayNamesRef.current.set(socketId, peerName || 'Guest');
+      socket.emit('signal', {
+        to: socketId,
+        type: 'request-offer',
+        payload: { displayName: myDisplayNameRef.current },
+      });
+    });
+
+    socket.on('peer-left', ({ socketId }: { socketId: string }) => {
+      closePeer(socketId);
+    });
 
     socket.on('signal', async (msg: { from: string; type: string; payload: unknown }) => {
       if (msg.type === 'request-offer') {
-        await handleRequestOffer(msg.from, localStream);
+        const payload = msg.payload as { displayName?: string } | undefined;
+        await handleRequestOffer(msg.from, payload?.displayName, localStream);
+      } else if (msg.type === 'offer') {
+        await handlePeerOffer(msg.from, msg.payload as RTCSessionDescriptionInit, localStream);
       } else if (msg.type === 'answer') {
-        await handleAnswer(msg.payload as RTCSessionDescriptionInit);
+        await handleAnswer(msg.from, msg.payload as RTCSessionDescriptionInit);
       } else if (msg.type === 'ice-candidate') {
-        await handleIceCandidate(msg.payload as RTCIceCandidateInit);
-      } else if (msg.type === 'monitor-offer') {
-        await handleMonitorOffer(
-          msg.from,
-          msg.payload as { sdp: RTCSessionDescriptionInit; participantsByMid?: Record<string, { participantId: string; displayName: string }> },
-        );
-      } else if (msg.type === 'monitor-ice-candidate') {
-        await handleMonitorIceCandidate(msg.payload as RTCIceCandidateInit);
+        await handleIceCandidate(msg.from, msg.payload as RTCIceCandidateInit);
       } else if (msg.type === 'kicked') {
         handleKicked();
       }
@@ -368,7 +295,7 @@ export function useGuestStudio(token: string | undefined) {
 
     setJoining(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, handleRequestOffer, handleMonitorOffer]);
+  }, [token, handleRequestOffer, handlePeerOffer]);
 
   function toggleMic() {
     if (!localStreamRef.current) return;
@@ -441,13 +368,11 @@ export function useGuestStudio(token: string | undefined) {
     previewError,
     callStatus,
     callIsError,
-    monitorStatus,
-    monitorTiles,
-    monitorReconnecting,
+    tiles,
     micEnabled,
     cameraEnabled,
     joining,
-    refs: { setLocalVideoEl, setMonitorAudioEl },
+    refs: { setLocalVideoEl },
     actions: { join, toggleMic, toggleCamera, leave, startPreview },
   };
 }

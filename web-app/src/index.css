@@ -1031,14 +1031,14 @@ a.icon-btn--danger {
   color: #fff;
 }
 
-.monitor-video-grid {
+.meeting-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
-.monitor-video-tile {
+.meeting-tile {
   position: relative;
   aspect-ratio: 16 / 9;
   background: #000;
@@ -1046,13 +1046,18 @@ a.icon-btn--danger {
   overflow: hidden;
 }
 
-.monitor-video-tile video {
+.meeting-tile--self {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.meeting-tile video {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.monitor-video-tile-name {
+.meeting-tile-name {
   position: absolute;
   left: 6px;
   bottom: 6px;
