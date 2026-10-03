@@ -4,6 +4,7 @@ import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { StreamsService } from './streams.service';
+import { GlitchRecoveryService } from './glitch-recovery.service';
 import { StreamsController } from './streams.controller';
 import { ProvidersModule } from '../providers/providers.module';
 import { RelayModule } from '../relay/relay.module';
@@ -21,8 +22,8 @@ import { StudioModule } from '../studio/studio.module';
     // StudioSignalingGateway's doc comment on that).
     forwardRef(() => StudioModule),
   ],
-  providers: [StreamsService],
+  providers: [StreamsService, GlitchRecoveryService],
   controllers: [StreamsController],
-  exports: [StreamsService],
+  exports: [StreamsService, GlitchRecoveryService],
 })
 export class StreamsModule {}

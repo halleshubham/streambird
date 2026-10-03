@@ -2,11 +2,12 @@ import { of, throwError } from 'rxjs';
 import { MediaMtxService } from './mediamtx.service';
 
 describe('MediaMtxService', () => {
-  function buildService(httpImpl: Partial<Record<'post' | 'patch' | 'delete', jest.Mock>>) {
+  function buildService(httpImpl: Partial<Record<'post' | 'patch' | 'delete' | 'get', jest.Mock>>) {
     const http = {
       post: httpImpl.post ?? jest.fn().mockReturnValue(of({})),
       patch: httpImpl.patch ?? jest.fn().mockReturnValue(of({})),
       delete: httpImpl.delete ?? jest.fn().mockReturnValue(of({})),
+      get: httpImpl.get ?? jest.fn().mockReturnValue(of({ data: { items: [] } })),
     } as any;
     const config = {
       get: jest.fn((key: string) => {
@@ -14,6 +15,7 @@ describe('MediaMtxService', () => {
         if (key === 'mediamtx.apiUser') return 'user';
         if (key === 'mediamtx.apiPassword') return 'pass';
         if (key === 'mediamtx.whipBaseUrl') return 'https://whip.example.com';
+        if (key === 'publicBaseUrl') return 'https://app.example.com';
         return undefined;
       }),
     } as any;
@@ -128,5 +130,52 @@ describe('MediaMtxService', () => {
 
     const [, body] = patch.mock.calls[0];
     expect(body.runOnReady).toBe('');
+  });
+
+  it('starts a slate path whose runOnInit loops the app-hosted image to every destination', async () => {
+    const post = jest.fn().mockReturnValue(of({}));
+    const service = buildService({ post });
+
+    const ok = await service.startSlate('stream-1', ['rtmp://live.twitch.tv/app/k1', 'rtmps://b.example.com/live/k2']);
+
+    expect(ok).toBe(true);
+    const [url, body] = post.mock.calls[0];
+    expect(url).toBe('https://mtx-api.example.com/v3/config/paths/add/stream-1-slate');
+    expect(body.runOnInitRestart).toBe(true);
+    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://app.example.com/glitch-slate.png'");
+    expect(body.runOnInit).toContain('anullsrc');
+    expect(body.runOnInit).toContain("-f tee '[f=flv]rtmp://live.twitch.tv/app/k1|[f=flv]rtmps://b.example.com/live/k2'");
+  });
+
+  it('treats an already-running slate (400) as success and a missing one on stop (404) as fine', async () => {
+    const post = jest.fn().mockReturnValue(throwError(() => ({ response: { status: 400 }, message: 'exists' })));
+    const del = jest.fn().mockReturnValue(throwError(() => ({ response: { status: 404 }, message: 'nope' })));
+    const service = buildService({ post, delete: del });
+
+    expect(await service.startSlate('stream-1', ['rtmp://a/b'])).toBe(true);
+    await expect(service.stopSlate('stream-1')).resolves.toBeUndefined();
+  });
+
+  it('removeForward also stops the slate', async () => {
+    const del = jest.fn().mockReturnValue(of({}));
+    const service = buildService({ delete: del });
+
+    await service.removeForward('stream-1');
+
+    expect(del.mock.calls.map((c) => c[0])).toEqual([
+      'https://mtx-api.example.com/v3/config/paths/delete/stream-1-slate',
+      'https://mtx-api.example.com/v3/config/paths/delete/stream-1',
+    ]);
+  });
+
+  it('lists paths with their ready flag, and returns null when MediaMTX is unreachable', async () => {
+    const get = jest
+      .fn()
+      .mockReturnValueOnce(of({ data: { items: [{ name: 'a', ready: true }, { name: 'b', ready: false }] } }))
+      .mockReturnValueOnce(throwError(() => new Error('down')));
+    const service = buildService({ get });
+
+    expect([...(await service.listPaths())!]).toEqual([['a', true], ['b', false]]);
+    expect(await service.listPaths()).toBeNull();
   });
 });

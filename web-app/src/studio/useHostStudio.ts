@@ -87,6 +87,60 @@ export interface Scene {
 const SCREEN_SHARE_ID = 'screen-share';
 
 /**
+ * Timer source that keeps ticking while the tab is hidden. requestAnimationFrame
+ * stops entirely in a background tab and main-thread timers are throttled to
+ * ~1/s, which would freeze the composited canvas (and therefore the whole
+ * broadcast) the moment a single-screen host switches tab or minimizes the
+ * window. Worker timers aren't throttled that way. Returns null where
+ * workers aren't available -- callers fall back to rAF / setInterval.
+ */
+function createTickWorker(): Worker | null {
+  try {
+    const src =
+      "let d=null,k=null;onmessage=e=>{if(e.data==='start'){d=setInterval(()=>postMessage('draw'),33);k=setInterval(()=>postMessage('key'),2000)}else if(e.data==='stop'){clearInterval(d);clearInterval(k)}}";
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    const worker = new Worker(url);
+    URL.revokeObjectURL(url);
+    return worker;
+  } catch {
+    return null;
+  }
+}
+
+// Per-stream, per-browser studio state that survives a reload: layout,
+// branding (incl. the logo, as a data URL), scenes, resolution -- plus
+// whether this browser already took the stream live, which is what lets a
+// reloaded page re-publish on its own instead of waiting for a first-ever
+// "Go live". Deliberately localStorage, not the backend: it's host-side
+// presentation state, and a guest/another device never needs it.
+interface PersistedStudioState {
+  layoutMode: LayoutMode;
+  resolution: StreamResolution;
+  branding: Branding;
+  scenes: Scene[];
+  logoDataUrl: string | null;
+  wentLive: boolean;
+}
+const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
+
+function loadPersisted(streamId: string): Partial<PersistedStudioState> {
+  try {
+    const raw = localStorage.getItem(persistKey(streamId));
+    return raw ? (JSON.parse(raw) as Partial<PersistedStudioState>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePersisted(streamId: string, patch: Partial<PersistedStudioState>) {
+  try {
+    localStorage.setItem(persistKey(streamId), JSON.stringify({ ...loadPersisted(streamId), ...patch }));
+  } catch {
+    // Storage full/blocked (private mode) -- persistence is best-effort.
+  }
+}
+
+/**
  * All of the imperative WebRTC/Web Audio/canvas-compositing logic from the
  * original web/host.js, ported behind a hook -- the underlying protocol
  * logic is unchanged (same event-driven design, same fixes for the bugs
@@ -128,6 +182,8 @@ export function useHostStudio(streamId: string | undefined) {
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [resumeAttempted, setResumeAttempted] = useState(false);
 
   const hostTokenRef = useRef<string | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
@@ -152,6 +208,10 @@ export function useHostStudio(streamId: string | undefined) {
   const keyFrameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endingStreamRef = useRef(false);
   const pinnedIdRef = useRef<string | null>(null);
+  const tickWorkerRef = useRef<Worker | null>(null);
+  const drawGenRef = useRef(0);
+  const forceKeyFrameRef = useRef<(() => void) | null>(null);
+  const autoResumeTriedRef = useRef(false);
   // Crossfade-on-change: a snapshot of the canvas taken the instant a layout
   // (or scene, which calls setLayout internally) change is requested, faded
   // out over the newly-drawn frame for TRANSITION_MS so switches are a
@@ -433,10 +493,7 @@ export function useHostStudio(streamId: string | undefined) {
 
     function frame(now: number) {
       const canvas = canvasRef.current;
-      if (!canvas) {
-        requestAnimationFrame(frame);
-        return;
-      }
+      if (!canvas) return;
       // Lazily (re-)acquired here rather than in a one-time mount effect:
       // startDrawLoop() is kicked off from the stream-loading effect, which
       // runs while the page is still showing "Loading…" -- the <canvas>
@@ -448,10 +505,7 @@ export function useHostStudio(streamId: string | undefined) {
         ctxRef.current = canvas.getContext('2d');
       }
       const ctx = ctxRef.current;
-      if (!ctx) {
-        requestAnimationFrame(frame);
-        return;
-      }
+      if (!ctx) return;
       const w = canvas.width;
       const h = canvas.height;
 
@@ -491,9 +545,32 @@ export function useHostStudio(streamId: string | undefined) {
         }
       }
 
-      requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
+
+    // Visible tab: rAF (vsync-aligned). Hidden tab: rAF is paused by the
+    // browser, so the worker's ticks drive the same frame() instead.
+    const gen = ++drawGenRef.current;
+    // Not keyed on document.hidden alone: a covered/minimized window can be
+    // throttled before (or without) the page reporting itself hidden, so
+    // the worker also steps in whenever rAF simply hasn't fired recently.
+    let lastRafAt = performance.now();
+    const raf = (t: number) => {
+      if (gen !== drawGenRef.current) return;
+      lastRafAt = performance.now();
+      frame(t);
+      requestAnimationFrame(raf);
+    };
+    requestAnimationFrame(raf);
+
+    const worker = createTickWorker();
+    tickWorkerRef.current = worker;
+    if (worker) {
+      worker.onmessage = (e: MessageEvent<string>) => {
+        if (e.data === 'draw' && (document.hidden || performance.now() - lastRafAt > 100)) frame(performance.now());
+        else if (e.data === 'key') forceKeyFrameRef.current?.();
+      };
+      worker.postMessage('start');
+    }
   }
 
   // ---- Guest signaling ---------------------------------------------------
@@ -619,6 +696,13 @@ export function useHostStudio(streamId: string | undefined) {
 
     socket.on('peer-joined', ({ socketId, displayName }: { socketId: string; displayName: string }) => {
       setStatus({ text: `${displayName} joined — requesting their video…`, isError: false });
+      // The server replays every already-connected guest to a (re)connecting
+      // host. A guest we still hold a healthy connection to (just a
+      // signaling blip) must be left alone; a dead or missing one (host
+      // reloaded) gets a fresh offer.
+      const existing = participantsRef.current.get(socketId);
+      if (existing?.pc && !['failed', 'closed', 'disconnected'].includes(existing.pc.connectionState)) return;
+      existing?.pc?.close();
       pendingDisplayNamesRef.current.set(socketId, displayName || 'Guest');
       socket.emit('signal', { to: socketId, type: 'request-offer', payload: { displayName: 'Host' } });
     });
@@ -695,6 +779,27 @@ export function useHostStudio(streamId: string | undefined) {
         const { token: hostToken } = await mintHostToken(streamRow.studioSessionId);
         if (cancelled) return;
 
+        const saved = loadPersisted(streamRow.id);
+        if (saved.layoutMode) {
+          layoutModeRef.current = saved.layoutMode;
+          setLayoutMode(saved.layoutMode);
+        }
+        if (saved.resolution && saved.resolution in RESOLUTIONS) setResolution(saved.resolution);
+        if (saved.branding) {
+          Object.assign(brandingRef.current, saved.branding);
+          setBranding({ ...saved.branding });
+          if (saved.branding.newsText) tickerAppearedAtRef.current = performance.now();
+        }
+        if (saved.scenes) setScenes(saved.scenes);
+        if (saved.logoDataUrl) {
+          const img = new Image();
+          img.onload = () => {
+            brandingRef.current.logoImg = img;
+            logoAppearedAtRef.current = performance.now();
+          };
+          img.src = saved.logoDataUrl;
+        }
+
         hostTokenRef.current = hostToken;
         setStream(streamRow);
         setLoading(false);
@@ -724,6 +829,12 @@ export function useHostStudio(streamId: string | undefined) {
       cancelled = true;
       socketRef.current?.disconnect();
       socketRef.current = null;
+      // Stop this mount's draw loop + worker (a re-mount, e.g. React
+      // StrictMode's, starts its own fresh pair).
+      drawGenRef.current++;
+      drawingRef.current = false;
+      tickWorkerRef.current?.terminate();
+      tickWorkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamId]);
@@ -752,6 +863,11 @@ export function useHostStudio(streamId: string | undefined) {
       clearInterval(interval);
     };
   }, [streamId]);
+
+  useEffect(() => {
+    if (!stream) return;
+    savePersisted(stream.id, { layoutMode, resolution, branding, scenes });
+  }, [stream, layoutMode, resolution, branding, scenes]);
 
   // ---- 2. Actions exposed to the page ----------------------------------
 
@@ -974,6 +1090,13 @@ export function useHostStudio(streamId: string | undefined) {
       URL.revokeObjectURL(img.src);
     };
     img.src = URL.createObjectURL(file);
+
+    // Also keep it (as a data URL) so a reload doesn't lose the logo.
+    if (stream && file.size <= 1_000_000) {
+      const reader = new FileReader();
+      reader.onload = () => savePersisted(stream.id, { logoDataUrl: String(reader.result) });
+      reader.readAsDataURL(file);
+    }
   }
 
   function setLogoSize(size: number) {
@@ -1135,7 +1258,9 @@ export function useHostStudio(streamId: string | undefined) {
       // arrives, silently dropping every destination for that attempt
       // (confirmed live 2026-10-01 -- see MediaMtxService.buildRunOnReady).
       forceKeyFrame();
-      keyFrameIntervalRef.current = setInterval(forceKeyFrame, 2000);
+      forceKeyFrameRef.current = forceKeyFrame;
+      if (!tickWorkerRef.current) keyFrameIntervalRef.current = setInterval(forceKeyFrame, 2000);
+      savePersisted(stream.id, { wentLive: true });
 
       setIsLive(true);
       setStatus({ text: 'LIVE — publishing.', isError: false });
@@ -1149,6 +1274,7 @@ export function useHostStudio(streamId: string | undefined) {
     endingStreamRef.current = true;
     setStatus({ text: 'Ending stream…', isError: false });
 
+    forceKeyFrameRef.current = null;
     if (keyFrameIntervalRef.current) {
       clearInterval(keyFrameIntervalRef.current);
       keyFrameIntervalRef.current = null;
@@ -1168,6 +1294,7 @@ export function useHostStudio(streamId: string | undefined) {
       const res = await fetch(`/api/streams/${stream.id}/end`, { method: 'POST', credentials: 'include' });
       if (!res.ok) throw new Error(`Failed to end stream (${res.status})`);
       ended = true;
+      savePersisted(stream.id, { wentLive: false });
       setStatus({ text: 'Stream ended. Returning to your dashboard…', isError: false });
     } catch (err) {
       setStatus({ text: (err as Error).message, isError: true });
@@ -1189,6 +1316,67 @@ export function useHostStudio(streamId: string | undefined) {
     }
     return ended;
   }, [stream]);
+
+  /**
+   * Brings a reloaded/crashed host page back on air: camera first (so
+   * there's something to composite), the audio context resumed (browsers
+   * start it suspended until a user gesture -- silent publish otherwise),
+   * then re-publish to the same WHIP URL. The backend is already showing
+   * the "technical difficulties" slate and keeps the stream LIVE for up
+   * to 5 minutes (see GlitchRecoveryService); the first frames this
+   * publishes replace it. Safe to call repeatedly -- each step is skipped
+   * if it's already done.
+   */
+  const resumeLive = useCallback(async () => {
+    if (!participantsRef.current.has('local')) await startCamera();
+    if (!participantsRef.current.has('local')) return; // camera denied/failed -- the banner stays for a manual retry
+
+    const ctx = audioContextRef.current;
+    if (ctx && ctx.state !== 'running') await ctx.resume().catch(() => {});
+    setAudioBlocked(ctx ? ctx.state !== 'running' : false);
+
+    if (!whipPcRef.current || whipPcRef.current.connectionState === 'failed' || whipPcRef.current.connectionState === 'closed') {
+      await goLive();
+    }
+  }, [startCamera, goLive]);
+
+  // Track the audio context's state so the page can offer a one-click fix
+  // if the browser kept it suspended (autoplay policy).
+  useEffect(() => {
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+    const onChange = () => setAudioBlocked(ctx.state !== 'running');
+    ctx.addEventListener('statechange', onChange);
+    return () => ctx.removeEventListener('statechange', onChange);
+  }, [cameraStarted]);
+
+  // A host reloading mid-show: this browser already took this stream live
+  // before (persisted flag) and the backend still has it LIVE, so don't
+  // wait for a manual "Go live" -- re-publish straight away. A first visit
+  // to a freshly created stream (also status LIVE server-side) never has
+  // the flag, so it still waits for the host to press the button.
+  useEffect(() => {
+    if (!stream || stream.status !== 'live' || !stream.whipUrl || loading) return;
+    if (autoResumeTriedRef.current) return;
+    if (!loadPersisted(stream.id).wentLive) return;
+    autoResumeTriedRef.current = true;
+    setResumeAttempted(true);
+    setStatus({ text: 'Stream is still live — restoring your studio…', isError: false });
+    void resumeLive();
+  }, [stream, loading, resumeLive]);
+
+  // "Leave this page? You're live" -- a reload/close mid-show drops the
+  // broadcast to the slate until the host is back. Not while ending: End
+  // stream deliberately redirects away.
+  useEffect(() => {
+    if (!isLive || ending) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isLive, ending]);
 
   return {
     canvasRef,
@@ -1212,7 +1400,10 @@ export function useHostStudio(streamId: string | undefined) {
     destinations,
     connectionById,
     pinnedId,
+    audioBlocked,
+    resumeAttempted,
     actions: {
+      resumeLive,
       startCamera,
       createInviteLink,
       toggleLayout,

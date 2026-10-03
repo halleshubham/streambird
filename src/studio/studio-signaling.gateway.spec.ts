@@ -10,6 +10,7 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
     findByIdWithLiveStream: jest.Mock;
   };
   let streamsService: { end: jest.Mock };
+  let glitchRecovery: { isWatching: jest.Mock };
 
   function fakeSocket(id: string) {
     return {
@@ -34,7 +35,8 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
       })),
     };
     streamsService = { end: jest.fn(async () => undefined) };
-    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any);
+    glitchRecovery = { isWatching: jest.fn(() => false) };
+    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any);
   });
 
   afterEach(() => {
@@ -86,6 +88,43 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
     expect(streamsService.end).not.toHaveBeenCalled();
   });
 
+  it('leaves the end to GlitchRecoveryService when the stream has been publishing', async () => {
+    glitchRecovery.isWatching.mockReturnValue(true);
+    const socket = fakeSocket('socket_1');
+    await gateway.handleConnection(socket as any);
+    await gateway.handleDisconnect(socket as any);
+
+    jest.advanceTimersByTime(60_000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(glitchRecovery.isWatching).toHaveBeenCalledWith('live_stream_1');
+    expect(streamsService.end).not.toHaveBeenCalled();
+  });
+
+  it('replays already-connected guests to a returning host as peer-joined events', async () => {
+    const guestSocket = {
+      id: 'guest_socket',
+      handshake: { auth: { role: 'guest', token: 'invite_token', displayName: 'Asha' } },
+      join: jest.fn(async () => undefined),
+      emit: jest.fn(),
+      to: jest.fn(() => ({ emit: jest.fn() })),
+      disconnect: jest.fn(),
+    };
+    (sessionsService as any).joinAsGuest = jest.fn(async () => ({ id: 'participant_g', studioSessionId: 'session_1' }));
+    await gateway.handleConnection(guestSocket as any);
+
+    const hostSocket = fakeSocket('host_socket');
+    await gateway.handleConnection(hostSocket as any);
+
+    expect(hostSocket.emit).toHaveBeenCalledWith('peer-joined', {
+      socketId: 'guest_socket',
+      participantId: 'participant_g',
+      role: 'guest',
+      displayName: 'Asha',
+    });
+  });
+
   it('never schedules an end for a guest disconnecting', async () => {
     const socket = {
       id: 'socket_1',
@@ -100,7 +139,8 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
       // @ts-expect-error -- joinAsGuest isn't part of this spec's mocked shape elsewhere
       joinAsGuest: jest.fn(async () => ({ id: 'participant_2', studioSessionId: 'session_1' })),
     };
-    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any);
+    glitchRecovery = { isWatching: jest.fn(() => false) };
+    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any);
 
     await gateway.handleConnection(socket as any);
     await gateway.handleDisconnect(socket as any);
@@ -136,7 +176,7 @@ describe('StudioSignalingGateway -- rtc-state diagnostics', () => {
       recordParticipantLeft: jest.fn(async () => undefined),
       findByIdWithLiveStream: jest.fn(),
     };
-    gateway = new StudioSignalingGateway(sessionsService as any, {} as any);
+    gateway = new StudioSignalingGateway(sessionsService as any, {} as any, { isWatching: () => false } as any);
     loggerWarnSpy = jest.spyOn((gateway as any).logger, 'warn').mockImplementation(() => undefined);
     loggerLogSpy = jest.spyOn((gateway as any).logger, 'log').mockImplementation(() => undefined);
   });
