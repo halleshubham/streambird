@@ -33,6 +33,8 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v23.0';
 export class FacebookProvider implements StreamProvider {
   readonly identifier = Platform.FACEBOOK;
   readonly canPrescheduleBroadcast = true;
+  /** Meta's Live Video API: broadcasts can be scheduled "up to seven days from their creation date". */
+  readonly maxPrescheduleLeadMs = 7 * 24 * 60 * 60_000;
 
   constructor(private readonly encryption: EncryptionService) {}
 
@@ -74,7 +76,12 @@ export class FacebookProvider implements StreamProvider {
 
     if (!res.ok || body.error) {
       const err = body.error;
-      const reconnectHint = err?.code === 190 ? ' -- reconnect this Facebook Page to fix this.' : '';
+      const reconnectHint =
+        err?.code === 190
+          ? ' -- reconnect this Facebook Page to fix this.'
+          : err?.code === 3
+            ? ' -- Meta says this app lacks the capability for this call (scheduled live videos can be restricted separately from going live now).'
+            : '';
       // Graph API's own `message` is often generic ("Permissions error") --
       // `type`/`code`/`error_subcode` and the user-facing fields pin down
       // WHICH permission/App Review gap it actually is, and `fbtrace_id` is
@@ -113,7 +120,7 @@ export class FacebookProvider implements StreamProvider {
    * arrives" -- not a literal instant transition -- the same
    * enableAutoStart-style semantics YouTubeProvider relies on. A
    * pre-created broadcast for a scheduled stream is instead created as a
-   * scheduled live video with a planned start time, which shows up in the
+   * scheduled live video with a start time (up to 7 days ahead), which shows up in the
    * Page's Live Producer: hidden from the public (SCHEDULED_UNPUBLISHED)
    * unless the host chose public visibility, in which case Facebook also
    * posts the upcoming-live promo to the Page (SCHEDULED_LIVE) -- mirroring
@@ -123,7 +130,8 @@ export class FacebookProvider implements StreamProvider {
     if (meta.precreate && meta.scheduledAt) {
       return {
         status: meta.visibility === 'public' ? 'SCHEDULED_LIVE' : 'SCHEDULED_UNPUBLISHED',
-        planned_start_time: String(Math.floor(meta.scheduledAt.getTime() / 1000)),
+        // Meta's scheduling guide: `event_params` is the start time as a UNIX timestamp.
+        event_params: String(Math.floor(meta.scheduledAt.getTime() / 1000)),
       };
     }
     return { status: 'LIVE_NOW' };
@@ -133,12 +141,22 @@ export class FacebookProvider implements StreamProvider {
     const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
     await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, {
       method: 'POST',
-      body: {
-        title: meta.title,
-        description: meta.description ?? '',
-        ...(meta.scheduledAt ? { planned_start_time: String(Math.floor(meta.scheduledAt.getTime() / 1000)) } : {}),
-      },
+      body: { title: meta.title, description: meta.description ?? '' },
     });
+
+    // Changing the start time of an existing scheduled live isn't documented
+    // by Meta, so it is a separate best-effort call: the title/description
+    // above must not be lost if Facebook rejects it.
+    if (meta.scheduledAt) {
+      try {
+        await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, {
+          method: 'POST',
+          body: { event_params: String(Math.floor(meta.scheduledAt.getTime() / 1000)) },
+        });
+      } catch (err) {
+        throw new Error(`title and description were updated, but Facebook did not accept the new start time (${(err as Error).message})`);
+      }
+    }
   }
 
   /**
