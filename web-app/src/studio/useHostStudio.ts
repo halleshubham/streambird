@@ -58,6 +58,8 @@ export interface ParticipantView {
   id: string;
   displayName: string;
   audioEnabled: boolean;
+  /** False for e.g. a screen share captured without system audio -- nothing to mute. */
+  hasAudio: boolean;
   videoEnabled: boolean;
   isLocal: boolean;
   isScreenShare: boolean;
@@ -171,6 +173,7 @@ export function useHostStudio(streamId: string | undefined) {
       id: p.id,
       displayName: p.displayName,
       audioEnabled: p.audioEnabled,
+      hasAudio: p.audioTrack != null,
       videoEnabled: p.videoEnabled,
       isLocal: p.id === 'local',
       isScreenShare: p.id === SCREEN_SHARE_ID,
