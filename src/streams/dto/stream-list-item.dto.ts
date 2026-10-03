@@ -20,6 +20,8 @@ export class StreamListItemDto {
   @Expose() scheduledAt!: Date | null;
   @Expose() startedAt!: Date | null;
   @Expose() endedAt!: Date | null;
+  @Expose() cancelledAt!: Date | null;
+  @Expose() isScheduledEvent!: boolean;
   @Expose() createdAt!: Date;
 
   @Expose()

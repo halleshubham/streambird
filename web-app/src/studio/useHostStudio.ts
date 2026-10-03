@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { getStream, getStreamStatus } from '../api/streams';
+import { getStream, getStreamStatus, startStream } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
@@ -184,6 +184,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [resumeAttempted, setResumeAttempted] = useState(false);
+  const [startingScheduled, setStartingScheduled] = useState(false);
 
   const hostTokenRef = useRef<string | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
@@ -1318,6 +1319,25 @@ export function useHostStudio(streamId: string | undefined) {
   }, [stream]);
 
   /**
+   * A scheduled stream has no platform broadcasts or publish URL until it's
+   * started. Starting it provisions them and flips it LIVE; the host then
+   * goes live (publishes) as usual.
+   */
+  const startScheduledStream = useCallback(async () => {
+    if (!stream || startingScheduled) return;
+    setStartingScheduled(true);
+    try {
+      const started = await startStream(stream.id);
+      setStream((prev) => (prev ? { ...prev, ...started } : started));
+      setStatus({ text: 'Stream started — press Go live when you are ready.', isError: false });
+    } catch (err) {
+      setStatus({ text: err instanceof ApiError ? err.message : 'Failed to start the stream.', isError: true });
+    } finally {
+      setStartingScheduled(false);
+    }
+  }, [stream, startingScheduled]);
+
+  /**
    * Brings a reloaded/crashed host page back on air: camera first (so
    * there's something to composite), the audio context resumed (browsers
    * start it suspended until a user gesture -- silent publish otherwise),
@@ -1402,7 +1422,9 @@ export function useHostStudio(streamId: string | undefined) {
     pinnedId,
     audioBlocked,
     resumeAttempted,
+    startingScheduled,
     actions: {
+      startScheduledStream,
       resumeLive,
       startCamera,
       createInviteLink,

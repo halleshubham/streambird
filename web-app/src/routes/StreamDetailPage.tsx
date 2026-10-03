@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { Clapperboard, ExternalLink, RotateCw } from 'lucide-react';
 import { getStream, getStreamStatus, retryDestination } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
+import { ScheduledStreamPanel } from '../components/ScheduledStreamPanel';
 import { ApiError } from '../api/client';
 import type { PlatformConnection, Stream, StreamStatusResponse } from '../types/api';
 
@@ -24,6 +25,8 @@ const STATUS_POLL_MS = 10_000;
 
 export function StreamDetailPage() {
   const { streamId } = useParams<{ streamId: string }>();
+  const location = useLocation();
+  const justScheduled = (location.state as { justScheduled?: boolean; emailFailures?: string[] } | null) ?? null;
   const [stream, setStream] = useState<Stream | null>(null);
   const [status, setStatus] = useState<StreamStatusResponse | null>(null);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -79,11 +82,35 @@ export function StreamDetailPage() {
     stream.destinations.map((d) => ({ ...d, platformStatus: null as string | null }));
   const canOpenStudio = stream.status === 'live' || stream.status === 'scheduled';
 
+  // A deliberately scheduled stream that hasn't started: the schedule panel
+  // (time, guests, invitation, start/cancel) replaces the live-stream view.
+  if (stream.isScheduledEvent && stream.status === 'scheduled') {
+    const failures = justScheduled?.emailFailures ?? [];
+    return (
+      <div className="stream-detail-page">
+        <div className="section-header">
+          <h1>{stream.title}</h1>
+          <span><span className="status-dot status-scheduled" /> Scheduled</span>
+        </div>
+        <ScheduledStreamPanel
+          streamId={stream.id}
+          initialNotice={
+            justScheduled?.justScheduled
+              ? failures.length > 0
+                ? { text: `Stream scheduled, but we couldn't email: ${failures.join(', ')}. Use "Resend" to try again.`, isError: true }
+                : { text: 'Stream scheduled. Invitations were emailed to your guests.', isError: false }
+              : null
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="stream-detail-page">
       <div className="section-header">
         <h1>{stream.title}</h1>
-        <span className={`status-dot status-${stream.status}`} /> {STATUS_LABELS[stream.status]}
+        <span className={`status-dot status-${stream.status}`} /> {stream.cancelledAt ? 'Cancelled' : STATUS_LABELS[stream.status]}
       </div>
 
       {stream.visibility && (

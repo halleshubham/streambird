@@ -1,3 +1,5 @@
+import { StreamInviteData } from './stream-invite.template';
+
 export const EMAIL_SERVICE = Symbol('EMAIL_SERVICE');
 
 export interface EmailService {
@@ -8,4 +10,7 @@ export interface EmailService {
    * invitee just logs in normally (magic-code or Google) with the
    * invited email and lands straight in their new company. */
   sendTeamInvite(to: string, companyName: string): Promise<void>;
+  /** Guest invite / schedule-change / cancellation for a scheduled stream
+   * (HTML + plaintext + .ics calendar attachment -- see stream-invite.template). */
+  sendStreamInvite(to: string, data: StreamInviteData): Promise<void>;
 }

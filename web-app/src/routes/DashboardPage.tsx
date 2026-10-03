@@ -14,14 +14,16 @@ export function DashboardPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [connections, setConnections] = useState<PlatformConnection[] | null>(null);
   const [streams, setStreams] = useState<StreamListItemType[] | null>(null);
+  const [upcoming, setUpcoming] = useState<StreamListItemType[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getMyAccount(), listConnections(), listStreams(10, 0)])
-      .then(([acc, conns, streamsRes]) => {
+    Promise.all([getMyAccount(), listConnections(), listStreams(10, 0), listStreams(10, 0, 'upcoming')])
+      .then(([acc, conns, streamsRes, upcomingRes]) => {
         setAccount(acc);
         setConnections(conns);
-        setStreams(streamsRes.items);
+        setStreams(streamsRes.items.filter((s) => !(s.isScheduledEvent && s.status === 'scheduled')));
+        setUpcoming(upcomingRes.items);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load dashboard.'));
   }, []);
@@ -72,6 +74,20 @@ export function DashboardPage() {
           </p>
         )}
       </section>
+
+      {upcoming.length > 0 && (
+        <section>
+          <div className="section-header">
+            <h2>Upcoming</h2>
+            <Link to="/streams/new">Schedule another</Link>
+          </div>
+          <div className="stream-list">
+            {upcoming.map((s) => (
+              <StreamListItem key={s.id} stream={s} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2>Recent streams</h2>

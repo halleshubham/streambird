@@ -90,6 +90,17 @@ If the host closes the tab, crashes or loses connection **without pressing End s
 
 The slate image is fetched by MediaMTX's ffmpeg over HTTP(S) from `PUBLIC_BASE_URL` (override with `GLITCH_SLATE_URL`).
 
+## Scheduled streams and guest invites
+
+A stream can be planned ahead of time ("Schedule for later" on the create page): date/time (stored as an instant, rendered in the host's timezone), expected duration, description, a note for guests, destinations, and guests by email.
+
+- Scheduling creates **nothing on any platform and bills nothing**. The stream stays `SCHEDULED` (with `is_scheduled_event`) until the host presses **Start stream** (`POST /streams/:id/start`), which creates the broadcasts and goes `LIVE` exactly like "Go live now". If every destination fails, it goes back to `SCHEDULED` so the host can retry.
+- Each invited email gets a **personal join link** and an HTML email with an `.ics` calendar attachment (`src/email/stream-invite.template.ts`; sent via Resend in production, logged by the fake email service elsewhere). Updating the time/title/details emails guests again; cancelling emails a cancellation and revokes every link.
+- **Copy invitation** copies the same plaintext (generated server-side from the same template) with the general join link. A join password, if set, is never emailed or copied.
+- Guests can open their link before the host starts - they wait in the studio and are connected when the host comes online.
+
+API: `POST /streams/schedule`, `GET|PATCH /streams/:id/schedule`, `POST /streams/:id/schedule/guests`, `DELETE .../guests/:inviteId`, `POST .../guests/:inviteId/resend`, `POST /streams/:id/schedule/cancel`, `GET /streams?view=upcoming`. Migration: `0010_scheduled_streams.sql` (applied automatically on container start).
+
 ## Testing
 
 ```bash
