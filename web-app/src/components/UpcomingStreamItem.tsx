@@ -41,8 +41,14 @@ export function UpcomingStreamItem({
       </div>
     </Link>
     {overdue && onDelete && (
-      <button type="button" className="icon-btn icon-btn--small icon-btn--danger upcoming-delete" onClick={() => onDelete(stream)}>
-        <Trash2 size={14} /> Delete
+      <button
+        type="button"
+        className="icon-btn icon-btn--small icon-btn--danger upcoming-delete"
+        onClick={() => onDelete(stream)}
+        title="Delete this overdue stream (guests are not emailed)"
+        aria-label={`Delete ${stream.title}`}
+      >
+        <Trash2 size={16} />
       </button>
     )}
     </div>
