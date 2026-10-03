@@ -168,6 +168,49 @@ describe('FacebookProvider', () => {
     expect(count).toBe(0);
   });
 
+  it('falls back to the plain-timestamp form of event_params when Facebook answers the object form with a generic error', async () => {
+    const { provider } = buildProvider();
+    const at = new Date('2026-10-10T13:00:00Z');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 1, type: 'OAuthException', message: 'An unknown error has occurred.' } }, false, 500))
+      .mockResolvedValueOnce(jsonResponse({ id: 'v_sched', secure_stream_url: 'rtmps://h:443/rtmp/k' }));
+
+    const result = await provider.createBroadcast(conn, { title: 'T', scheduledAt: at, precreate: true });
+
+    expect(result.platformBroadcastId).toBe('v_sched');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new URLSearchParams(fetchMock.mock.calls[0][1].body).get('event_params')).toBe(JSON.stringify({ start_time: at.getTime() / 1000 }));
+    expect(new URLSearchParams(fetchMock.mock.calls[1][1].body).get('event_params')).toBe(String(at.getTime() / 1000));
+  });
+
+  it('when both formats fail, reports the last error and mentions the other attempt', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 1, message: 'An unknown error has occurred.' } }, false, 500))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 100, message: 'Invalid parameter' } }, false, 400));
+
+    await expect(provider.createBroadcast(conn, { title: 'T', scheduledAt: new Date(Date.now() + 3_600_000), precreate: true })).rejects.toThrow(
+      /Invalid parameter.*alternative request format was tried first and failed too: .*An unknown error/s,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry when Facebook says the app lacks the capability or the token is bad -- another format cannot fix that', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 3, message: '(#3) Application does not have the capability to make this API call.' } }, false, 400));
+
+    await expect(provider.createBroadcast(conn, { title: 'T', scheduledAt: new Date(Date.now() + 3_600_000), precreate: true })).rejects.toThrow(/capability/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('go-live-now creation is a single LIVE_NOW call and never retried in another shape', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValue(jsonResponse({ error: { code: 1, message: 'An unknown error has occurred.' } }, false, 500));
+
+    await expect(provider.createBroadcast(conn, { title: 'T' })).rejects.toThrow(/unknown error/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('createBroadcast without precreate stays LIVE_NOW even when a scheduledAt is passed (go-live-now path is unchanged)', async () => {
     const { provider } = buildProvider();
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'v', secure_stream_url: 'rtmps://h:443/rtmp/k' }));
@@ -188,7 +231,8 @@ describe('FacebookProvider', () => {
 
     const sent = new URLSearchParams(fetchMock.mock.calls[0][1].body);
     expect(sent.get('status')).toBe('SCHEDULED_UNPUBLISHED');
-    expect(sent.get('event_params')).toBe(String(at.getTime() / 1000));
+    // Meta types event_params as an object -- that form is tried first.
+    expect(sent.get('event_params')).toBe(JSON.stringify({ start_time: at.getTime() / 1000 }));
     expect(sent.get('planned_start_time')).toBeNull();
   });
 
@@ -213,18 +257,19 @@ describe('FacebookProvider', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/video_9');
     expect(first.get('title')).toBe('New');
     expect(first.get('event_params')).toBeNull();
-    expect(second.get('event_params')).toBe(String(at.getTime() / 1000));
+    expect(second.get('event_params')).toBe(JSON.stringify({ start_time: at.getTime() / 1000 }));
   });
 
-  it('updateBroadcast keeps the new title even when Facebook rejects the new start time, and says so', async () => {
+  it('updateBroadcast keeps the new title even when Facebook rejects the new start time in either format, and says so', async () => {
     const { provider } = buildProvider();
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ success: true }))
-      .mockResolvedValueOnce(jsonResponse({ error: { code: 100, message: 'Invalid parameter' } }, false, 400));
+      .mockResolvedValueOnce(jsonResponse({ success: true })) // title/description
+      .mockResolvedValue(jsonResponse({ error: { code: 100, message: 'Invalid parameter' } }, false, 400)); // both time formats
 
     await expect(provider.updateBroadcast(conn, 'v', { title: 'New', scheduledAt: new Date(Date.now() + 3_600_000) })).rejects.toThrow(
       /title and description were updated, but Facebook did not accept the new start time/,
     );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('deleteBroadcast and prepareToGoLive hit the live video itself', async () => {
