@@ -446,7 +446,6 @@ describe('StreamsService', () => {
           if (status instanceof Error) throw status;
           return status;
         });
-        p.prepareToGoLive = jest.fn(async () => undefined);
         return p;
       }
 
@@ -463,14 +462,13 @@ describe('StreamsService', () => {
         return ctx;
       }
 
-      it('reuses a live pre-created broadcast: no new broadcast, same key and watch link, platform told to get ready', async () => {
+      it('reuses a live pre-created broadcast: no new broadcast, same key and watch link', async () => {
         const provider = precreatedProvider('ready');
         const { service, destinationRepo } = await scheduledWithPrecreated(provider);
 
         const stream = await service.start('stream_1', 'acc_1');
 
         expect(provider.createBroadcast).not.toHaveBeenCalled();
-        expect((provider as any).prepareToGoLive).toHaveBeenCalledWith(expect.anything(), 'pre-bc');
         expect(stream.status).toBe(StreamStatus.LIVE);
         const row = [...destinationRepo.rows.values()][0] as any;
         expect(row).toMatchObject({ status: DestinationStatus.LIVE, platformBroadcastId: 'pre-bc', streamKey: 'pre-key', watchUrl: 'https://watch.example/pre-bc' });
@@ -485,7 +483,6 @@ describe('StreamsService', () => {
           await service.start('stream_1', 'acc_1');
 
           expect(provider.createBroadcast).toHaveBeenCalledTimes(1);
-          expect((provider as any).prepareToGoLive).not.toHaveBeenCalled();
           expect(([...destinationRepo.rows.values()][0] as any).platformBroadcastId).toBe('twitch-broadcast-1');
         },
       );

@@ -95,8 +95,6 @@ function build() {
     youtube: makeProvider('youtube', true),
     twitch: makeProvider('twitch', false),
   };
-  // Behaves like Facebook for the lead-time rule when a test sets it.
-  (providers.youtube as any).maxPrescheduleLeadMs = undefined;
   const streamsService = {
     end: jest.fn(async () => undefined),
     resolveProvider: (conn: any) => providers[conn.platform],
@@ -334,23 +332,6 @@ describe('StreamSchedulingService', () => {
       const detail = await service.schedule(ACCOUNT, { ...withPlatforms(), visibility: 'private' });
       expect(detail.invitationText).not.toContain('Watch live');
       expect((email.sendStreamInvite as jest.Mock).mock.calls[0][1].watchLinks).toEqual([]);
-    });
-
-    it('does not even try a platform whose scheduling window the start time is beyond, and says why', async () => {
-      const { service, providers, dests } = build();
-      (providers.youtube as any).maxPrescheduleLeadMs = 7 * 86_400_000;
-
-      const detail = await service.schedule(ACCOUNT, { ...withPlatforms(), scheduledAt: new Date(Date.now() + 10 * 86_400_000).toISOString() });
-
-      expect(providers.youtube.createBroadcast).not.toHaveBeenCalled();
-      expect(detail.platformWarnings).toHaveLength(1);
-      expect(detail.platformWarnings![0]).toContain('up to 7 days ahead');
-      expect([...dests.values()].every((r) => r.status === DestinationStatus.PENDING)).toBe(true);
-
-      // Within the window it goes ahead.
-      const near = await service.schedule(ACCOUNT, { ...withPlatforms(), scheduledAt: new Date(Date.now() + 3 * 86_400_000).toISOString() });
-      expect(providers.youtube.createBroadcast).toHaveBeenCalledTimes(1);
-      expect(near.platformWarnings).toEqual([]);
     });
 
     it('still schedules when the platform refuses, recording a warning and leaving that destination to be created at start', async () => {

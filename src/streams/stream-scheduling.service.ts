@@ -60,7 +60,7 @@ export interface ScheduleDetail {
   guestNotes: string | null;
   studioSessionId: string;
   passwordProtected: boolean;
-  /** Whether the platform broadcasts (YouTube, Facebook) are created now rather than at start. */
+  /** Whether the platform broadcasts (YouTube) are created now rather than at start. */
   precreateOnPlatforms: boolean;
   hasThumbnail: boolean;
   /** Changes whenever the thumbnail is replaced -- for cache-busting the preview. */
@@ -331,8 +331,7 @@ export class StreamSchedulingService {
   /**
    * Stores the stream's thumbnail (replacing any previous one) and pushes it
    * to every broadcast that already exists on a platform. A platform
-   * refusing it (YouTube: unverified channel; Facebook: not accepted on an
-   * existing scheduled live) is a warning -- the image is still saved and
+   * refusing it (YouTube: unverified channel) is a warning -- the image is still saved and
    * is applied to broadcasts created later.
    */
   async setThumbnail(account: Account, streamId: string, file: Buffer | undefined): Promise<ScheduleDetail> {
@@ -450,7 +449,7 @@ export class StreamSchedulingService {
   /**
    * Creates the platform-side broadcast now, scheduled for the stream's
    * start time, for every given destination whose platform can hold one
-   * (YouTube, Facebook). The rest -- Twitch -- are left PENDING and created
+   * (YouTube). The rest -- Twitch, Facebook -- are left PENDING and created
    * when the stream starts. A failure never fails the schedule: it's
    * recorded on that destination and reported back as a warning, and start()
    * simply creates a fresh broadcast for it.
@@ -463,17 +462,6 @@ export class StreamSchedulingService {
         if (!conn || row.platformBroadcastId) return;
         const provider = this.streamsService.resolveProvider(conn);
         if (!provider.canPrescheduleBroadcast) return;
-
-        // Facebook only accepts a scheduled live up to 7 days ahead -- say so
-        // instead of sending a call that is bound to fail.
-        const leadMs = (stream.scheduledAt?.getTime() ?? 0) - Date.now();
-        if (provider.maxPrescheduleLeadMs && leadMs > provider.maxPrescheduleLeadMs) {
-          const days = Math.floor(provider.maxPrescheduleLeadMs / 86_400_000);
-          warnings.push(
-            `${this.describe(row, conn)}: the platform only allows scheduling up to ${days} days ahead, so it will be created when you start the stream (or turn "Create on platforms now" on again within ${days} days of the start time).`,
-          );
-          return;
-        }
 
         try {
           const result = await provider.createBroadcast(conn, this.broadcastMeta(stream));

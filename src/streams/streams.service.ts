@@ -313,7 +313,7 @@ export class StreamsService {
   /**
    * For each destination that already has a platform broadcast (pre-created
    * while scheduling), checks the platform still considers it usable and
-   * tells it to be ready for data. Anything dead, missing or erroring is
+   * Anything dead, missing or erroring is
    * left out so start() creates a fresh broadcast for that destination.
    */
   private async collectReusableBroadcasts(
@@ -334,7 +334,6 @@ export class StreamsService {
             const status = await provider.getBroadcastStatus(conn, row.platformBroadcastId);
             if (!status || DEAD_STATUSES.has(status)) return; // gone/finished on the platform -- recreate
           }
-          await provider.prepareToGoLive?.(conn, row.platformBroadcastId);
           reuse.set(conn.id, {
             ingestUrl: row.ingestUrl,
             streamKey: row.streamKey,
