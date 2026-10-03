@@ -6,6 +6,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
+import { StreamThumbnail } from '../streams/entities/stream-thumbnail.entity';
 import { StudioSession } from '../studio/entities/studio-session.entity';
 import { StudioGuestInvite } from '../studio/entities/studio-guest-invite.entity';
 import { StudioParticipant } from '../studio/entities/studio-participant.entity';
@@ -29,6 +30,7 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
           PlatformConnection,
           LiveStream,
           LiveStreamDestination,
+          StreamThumbnail,
           StudioSession,
           StudioGuestInvite,
           StudioParticipant,

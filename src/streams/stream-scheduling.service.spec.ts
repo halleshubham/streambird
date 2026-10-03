@@ -47,6 +47,18 @@ function build() {
       for (const [k, r] of [...dests.entries()]) if (matches(r, where)) dests.delete(k);
     }),
   };
+  const thumbs = new Map<string, any>();
+  const thumbnails = {
+    create: (v: any) => ({ ...v }),
+    save: jest.fn(async (v: any) => {
+      thumbs.set(v.liveStreamId, { ...v, updatedAt: new Date() });
+      return v;
+    }),
+    findOne: jest.fn(async ({ where }: any) => thumbs.get(where.liveStreamId) ?? null),
+    delete: jest.fn(async (where: any) => {
+      thumbs.delete(where.liveStreamId);
+    }),
+  };
   const platformConnections = { find: jest.fn(async ({ where }: any) => [...conns.values()].filter((r) => matches(r, where))) };
 
   const studioSessions = {
@@ -77,6 +89,7 @@ function build() {
     })),
     updateBroadcast: jest.fn(async (_conn: any, _id: string, _meta: any) => undefined),
     deleteBroadcast: jest.fn(async (_conn: any, _id: string) => undefined),
+    setBroadcastThumbnail: jest.fn(async (_conn: any, _id: string, _image: any) => undefined),
   });
   const providers: Record<string, ReturnType<typeof makeProvider>> = {
     youtube: makeProvider('youtube', true),
@@ -89,10 +102,22 @@ function build() {
   const email = { sendStreamInvite: jest.fn(async () => undefined) };
 
   const service = new StreamSchedulingService(
-    liveStreams as any, destinations as any, platformConnections as any, studioSessions as any, streamsService as any, email as any,
+    liveStreams as any, destinations as any, platformConnections as any, thumbnails as any, studioSessions as any, streamsService as any, email as any,
   );
   jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
-  return { service, streams, dests, invites, studioSessions, streamsService, email, providers };
+  return { service, streams, dests, invites, studioSessions, streamsService, email, providers, thumbs };
+}
+
+
+/** A real (header-only) PNG of the given size -- parseThumbnail reads nothing else. */
+function pngBuffer(width = 1280, height = 720): Buffer {
+  const b = Buffer.alloc(40);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'ascii');
+  b.writeUInt32BE(width, 16);
+  b.writeUInt32BE(height, 20);
+  return b;
 }
 
 const CONN_YT = '11111111-1111-4111-8111-111111111111';
@@ -379,6 +404,94 @@ describe('StreamSchedulingService', () => {
 
       await expect(service.cancel(ACCOUNT, detail.id)).resolves.toBeUndefined();
       expect(streamsService.end).toHaveBeenCalled();
+    });
+  });
+
+  describe('thumbnail', () => {
+    const withPlatforms = () => ({ ...baseDto(), createOnPlatforms: true });
+
+    it('stores the image and sends it to broadcasts that exist on a platform that can take one', async () => {
+      const { service, providers, thumbs } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+      expect(detail.hasThumbnail).toBe(false);
+
+      const after = await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+
+      expect(after.hasThumbnail).toBe(true);
+      expect(after.thumbnailUpdatedAt).toBeInstanceOf(Date);
+      expect(thumbs.get(detail.id)).toMatchObject({ contentType: 'image/png', width: 1280, height: 720 });
+      expect(providers.youtube.setBroadcastThumbnail).toHaveBeenCalledTimes(1); // Twitch has no broadcast yet
+      const [, broadcastId, image] = providers.youtube.setBroadcastThumbnail.mock.calls[0] as any[];
+      expect(broadcastId).toBe('youtube-bc-1');
+      expect(image).toMatchObject({ contentType: 'image/png', width: 1280 });
+      expect(after.platformWarnings).toBeUndefined();
+    });
+
+    it('rejects a non-image or too-small file and keeps the previous thumbnail', async () => {
+      const { service, thumbs } = build();
+      const detail = await service.schedule(ACCOUNT, baseDto());
+      await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+
+      await expect(service.setThumbnail(ACCOUNT, detail.id, Buffer.from('not an image at all, just text bytes'))).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.setThumbnail(ACCOUNT, detail.id, pngBuffer(320, 180))).rejects.toBeInstanceOf(BadRequestException);
+      expect(thumbs.get(detail.id).width).toBe(1280);
+    });
+
+    it('a platform refusing the image is a warning -- the image is still saved', async () => {
+      const { service, providers, thumbs } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+      providers.youtube.setBroadcastThumbnail.mockRejectedValueOnce(new Error('403 verified channel'));
+
+      const after = await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+
+      expect(thumbs.has(detail.id)).toBe(true);
+      expect(after.hasThumbnail).toBe(true);
+      expect(after.platformWarnings).toHaveLength(1);
+      expect(after.platformWarnings![0]).toContain('YouTube');
+      expect(after.platformWarnings![0]).toContain('verified channel');
+    });
+
+    it('applies an already-saved thumbnail to a broadcast created afterwards', async () => {
+      const { service, providers } = build();
+      const detail = await service.schedule(ACCOUNT, baseDto()); // nothing on the platforms yet
+      await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+      expect(providers.youtube.setBroadcastThumbnail).not.toHaveBeenCalled();
+
+      await service.update(ACCOUNT, detail.id, { createOnPlatforms: true });
+
+      expect(providers.youtube.createBroadcast).toHaveBeenCalledTimes(1);
+      expect(providers.youtube.setBroadcastThumbnail).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves the stored image to its owner only, and 404s when there is none', async () => {
+      const { service } = build();
+      const detail = await service.schedule(ACCOUNT, baseDto());
+      await expect(service.getThumbnail(ACCOUNT, detail.id)).rejects.toBeInstanceOf(NotFoundException);
+
+      await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+      const got = await service.getThumbnail(ACCOUNT, detail.id);
+      expect(got.contentType).toBe('image/png');
+      expect(got.data.length).toBe(40);
+      await expect(service.getThumbnail({ id: 'someone_else' } as any, detail.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('removing it deletes the saved image and says the platform copy cannot be removed via the API', async () => {
+      const { service, thumbs } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+      await service.setThumbnail(ACCOUNT, detail.id, pngBuffer());
+
+      const after = await service.removeThumbnail(ACCOUNT, detail.id);
+
+      expect(thumbs.has(detail.id)).toBe(false);
+      expect(after.hasThumbnail).toBe(false);
+      expect(after.platformWarnings![0]).toContain("can't be removed");
+    });
+
+    it('cannot be changed once the stream has started', async () => {
+      const { service, streams } = build();
+      const detail = await service.schedule(ACCOUNT, baseDto());
+      streams.get(detail.id).status = StreamStatus.LIVE;
+      await expect(service.setThumbnail(ACCOUNT, detail.id, pngBuffer())).rejects.toBeInstanceOf(UnprocessableEntityException);
     });
   });
 });

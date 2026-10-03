@@ -1679,3 +1679,36 @@ a.icon-btn--danger {
 .precreate-toggle .field-hint {
   margin: 0;
 }
+
+.thumbnail-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.thumbnail-picker .field-hint {
+  margin: 0;
+}
+
+.thumbnail-preview {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.thumbnail-preview img,
+.thumbnail-img {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.thumbnail-picker + .field-hint {
+  margin-top: 8px;
+}

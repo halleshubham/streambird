@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, ApiError } from './client';
 import type { Destination, ScheduleDetail, Stream, StreamListResponse, StreamStatusResponse } from '../types/api';
 
 export function listStreams(limit = 20, offset = 0, view?: 'upcoming'): Promise<StreamListResponse> {
@@ -90,4 +90,31 @@ export function startStream(id: string): Promise<Stream> {
 /** Silently discards a scheduled stream that never started (no guest emails, unlike cancelSchedule). */
 export function deleteScheduledStream(id: string): Promise<void> {
   return api.delete(`/streams/${id}/schedule`);
+}
+
+// ---- Thumbnail --------------------------------------------------------------
+
+export const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+export const THUMBNAIL_TYPES = ['image/jpeg', 'image/png'];
+
+/** Multipart upload -- api.* always sends JSON, so this one talks to fetch directly. */
+export async function uploadScheduleThumbnail(id: string, file: File): Promise<ScheduleDetail> {
+  const form = new FormData();
+  form.set('file', file);
+  const res = await fetch(`/api/streams/${id}/schedule/thumbnail`, { method: 'PUT', credentials: 'include', body: form });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const raw = body?.message;
+    throw new ApiError(Array.isArray(raw) ? raw.join(', ') : (raw ?? `Upload failed (${res.status})`), res.status);
+  }
+  return body as ScheduleDetail;
+}
+
+export function removeScheduleThumbnail(id: string): Promise<ScheduleDetail> {
+  return api.delete(`/streams/${id}/schedule/thumbnail`);
+}
+
+/** URL of the stored thumbnail for an <img> (cookie-authenticated, same origin). */
+export function scheduleThumbnailUrl(id: string, version: string | null): string {
+  return `/api/streams/${id}/schedule/thumbnail${version ? `?v=${encodeURIComponent(version)}` : ''}`;
 }

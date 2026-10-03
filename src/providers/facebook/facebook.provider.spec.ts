@@ -216,4 +216,22 @@ describe('FacebookProvider', () => {
     expect(del[1].method).toBe('DELETE');
     expect(new URLSearchParams(live[1].body).get('status')).toBe('LIVE_NOW');
   });
+
+  it('setBroadcastThumbnail posts the image as schedule_custom_profile_image in a multipart form', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+    await provider.setBroadcastThumbnail(conn, 'video_5', { contentType: 'image/jpeg', data: Buffer.from([9, 9, 9]), width: 1280, height: 720 });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/video_5');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toBeUndefined(); // fetch sets the multipart boundary itself
+    const form = init.body as FormData;
+    expect(form.get('access_token')).toBe('page-token');
+    const file = form.get('schedule_custom_profile_image') as File;
+    expect(file.type).toBe('image/jpeg');
+    expect(file.name).toBe('thumbnail.jpg');
+    expect(file.size).toBe(3);
+  });
 });

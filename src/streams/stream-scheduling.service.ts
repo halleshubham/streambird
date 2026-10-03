@@ -17,6 +17,8 @@ import { StreamsService } from './streams.service';
 import { EMAIL_SERVICE, EmailService } from '../email/email.interface';
 import { StreamInviteData, buildInvitationText } from '../email/stream-invite.template';
 import { BroadcastMeta } from '../providers/stream-provider.interface';
+import { StreamThumbnail } from './entities/stream-thumbnail.entity';
+import { ThumbnailImage, parseThumbnail } from './thumbnail.util';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { Account } from '../accounts/entities/account.entity';
@@ -60,6 +62,9 @@ export interface ScheduleDetail {
   passwordProtected: boolean;
   /** Whether the platform broadcasts (YouTube, Facebook) are created now rather than at start. */
   precreateOnPlatforms: boolean;
+  hasThumbnail: boolean;
+  /** Changes whenever the thumbnail is replaced -- for cache-busting the preview. */
+  thumbnailUpdatedAt: Date | null;
   destinations: Array<{
     id: string;
     platformConnectionId: string;
@@ -104,6 +109,7 @@ export class StreamSchedulingService {
     @InjectRepository(LiveStream) private readonly liveStreams: Repository<LiveStream>,
     @InjectRepository(LiveStreamDestination) private readonly destinations: Repository<LiveStreamDestination>,
     @InjectRepository(PlatformConnection) private readonly platformConnections: Repository<PlatformConnection>,
+    @InjectRepository(StreamThumbnail) private readonly thumbnails: Repository<StreamThumbnail>,
     private readonly studioSessions: StudioSessionsService,
     private readonly streamsService: StreamsService,
     @Inject(EMAIL_SERVICE) private readonly email: EmailService,
@@ -320,7 +326,72 @@ export class StreamSchedulingService {
     await this.liveStreams.delete({ id: stream.id, accountId: account.id });
   }
 
+  // ---- thumbnail ------------------------------------------------------
+
+  /**
+   * Stores the stream's thumbnail (replacing any previous one) and pushes it
+   * to every broadcast that already exists on a platform. A platform
+   * refusing it (YouTube: unverified channel; Facebook: not accepted on an
+   * existing scheduled live) is a warning -- the image is still saved and
+   * is applied to broadcasts created later.
+   */
+  async setThumbnail(account: Account, streamId: string, file: Buffer | undefined): Promise<ScheduleDetail> {
+    const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    const image = parseThumbnail(file);
+    await this.thumbnails.save(
+      this.thumbnails.create({ liveStreamId: stream.id, contentType: image.contentType, data: image.data, width: image.width, height: image.height }),
+    );
+    const warnings = await this.applyThumbnail(await this.loadDestinations(stream.id), image);
+    return this.buildDetail(account, stream.id, { platformWarnings: warnings.length ? warnings : undefined });
+  }
+
+  async getThumbnail(account: Account, streamId: string): Promise<{ contentType: string; data: Buffer; updatedAt: Date }> {
+    const stream = await this.liveStreams.findOne({ where: { id: streamId, accountId: account.id } });
+    if (!stream || !stream.isScheduledEvent) throw new NotFoundException(`Scheduled stream ${streamId} not found`);
+    const row = await this.thumbnails.findOne({ where: { liveStreamId: stream.id } });
+    if (!row) throw new NotFoundException('This stream has no thumbnail');
+    return { contentType: row.contentType, data: row.data, updatedAt: row.updatedAt };
+  }
+
+  async removeThumbnail(account: Account, streamId: string): Promise<ScheduleDetail> {
+    const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    await this.thumbnails.delete({ liveStreamId: stream.id });
+
+    // No platform lets an app clear a thumbnail it set; say so rather than imply it's gone.
+    const rows = await this.loadDestinations(stream.id);
+    const warnings = rows
+      .filter((r) => r.platformBroadcastId && r.platformConnection && this.streamsService.resolveProvider(r.platformConnection).setBroadcastThumbnail)
+      .map((r) => `${this.describe(r)}: the image already sent can't be removed through the API -- replace it in the platform's own studio if needed.`);
+    return this.buildDetail(account, stream.id, { platformWarnings: warnings.length ? warnings : undefined });
+  }
+
   // ---- helpers --------------------------------------------------------
+
+  private async loadThumbnail(streamId: string): Promise<ThumbnailImage | null> {
+    const row = await this.thumbnails.findOne({ where: { liveStreamId: streamId } });
+    return row ? { contentType: row.contentType as ThumbnailImage['contentType'], data: row.data, width: row.width, height: row.height } : null;
+  }
+
+  /** Sends the image to each destination that has a platform broadcast and can take one; failures come back as warnings. */
+  private async applyThumbnail(rows: LiveStreamDestination[], image: ThumbnailImage): Promise<string[]> {
+    const warnings: string[] = [];
+    await Promise.all(
+      rows.map(async (row) => {
+        const conn = row.platformConnection;
+        if (!conn || !row.platformBroadcastId) return;
+        const provider = this.streamsService.resolveProvider(conn);
+        if (!provider.setBroadcastThumbnail) return;
+        try {
+          await provider.setBroadcastThumbnail(conn, row.platformBroadcastId, image);
+        } catch (err) {
+          warnings.push(`${this.describe(row)}: couldn't set the thumbnail (${(err as Error).message}).`);
+        }
+      }),
+    );
+    return warnings;
+  }
+
+
 
   private parseFutureDate(iso: string): Date {
     const date = new Date(iso);
@@ -402,6 +473,8 @@ export class StreamSchedulingService {
             status: DestinationStatus.READY,
             errorMessage: null,
           });
+          const image = await this.loadThumbnail(stream.id);
+          if (image) warnings.push(...(await this.applyThumbnail([row], image)));
         } catch (err) {
           const message = (err as Error).message;
           row.errorMessage = message;
@@ -534,6 +607,7 @@ export class StreamSchedulingService {
 
     const destRows = await this.loadDestinations(stream.id);
     const platforms = [...new Set(destRows.map((d) => d.platformConnection?.platform).filter(Boolean) as string[])].map(platformLabel);
+    const thumbnailMeta = await this.thumbnails.findOne({ where: { liveStreamId: stream.id }, select: ['liveStreamId', 'updatedAt'] });
 
     const generalJoinUrl = general ? this.studioSessions.joinUrlFor(general.token) : null;
     return {
@@ -549,6 +623,8 @@ export class StreamSchedulingService {
       studioSessionId: session.id,
       passwordProtected,
       precreateOnPlatforms: stream.precreateOnPlatforms,
+      hasThumbnail: !!thumbnailMeta,
+      thumbnailUpdatedAt: thumbnailMeta?.updatedAt ?? null,
       destinations: destRows.map((d) => ({
         id: d.id,
         platformConnectionId: d.platformConnectionId,

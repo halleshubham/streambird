@@ -158,6 +158,9 @@ export interface ScheduleDetail {
   passwordProtected: boolean;
   /** Platform broadcasts (YouTube, Facebook) are created now rather than at start. */
   precreateOnPlatforms: boolean;
+  hasThumbnail: boolean;
+  /** Changes when the thumbnail is replaced -- use as a cache-busting query param. */
+  thumbnailUpdatedAt: string | null;
   destinations: Array<{
     id: string;
     platformConnectionId: string;
