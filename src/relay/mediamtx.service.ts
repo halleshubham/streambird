@@ -104,16 +104,26 @@ export class MediaMtxService {
       // non-monotonic DTS -- corrupt enough that Twitch's player couldn't
       // decode it. TCP retransmits; on loopback the overhead is negligible.
       '-rtsp_transport tcp',
-      // Confirmed live (2026-10-01): without an explicit probe budget,
-      // ffmpeg sometimes starts reading the RTSP pull before the first
-      // keyframe (carrying H264's SPS/PPS, which is what tells ffmpeg the
-      // frame dimensions) has arrived, gives up with "Could not find codec
-      // parameters... unspecified size", and the tee output writes nothing
-      // at all to ANY destination for that attempt -- probabilistic,
-      // depending on exactly how the probe window lines up against when
-      // the browser's first keyframe actually lands (see goLive()'s
-      // immediate generateKeyFrame() call, added for the same reason).
-      '-analyzeduration 10M -probesize 10M',
+      // Confirmed live (2026-10-01, revisited 2026-10-03): ffmpeg can fail
+      // to find a usable keyframe and give up with "Could not find codec
+      // parameters... unspecified size" -- not from arriving *late* (a
+      // generous -analyzeduration/-probesize budget here didn't fix it),
+      // but because an ordinary bit of internet packet loss on the WHIP
+      // leg corrupted one of its RTP fragments ("invalid FU-A packet
+      // (non-starting)" in MediaMTX's own logs) -- a keyframe is large
+      // enough to need several RTP packets, so losing any single one of
+      // them corrupts the whole keyframe, and no amount of waiting
+      // recovers data that was never received intact. Confirmed live
+      // (2026-10-03): each failed attempt was taking 60-90+ seconds of
+      // dead air to every destination before runOnReadyRestart got a
+      // chance to retry -- the generous 10M budget was making a bad
+      // attempt die *slower*, not helping it succeed. goLive() forces a
+      // fresh keyframe every 2s, so a short timeout here just means a bad
+      // attempt fails fast and the next restart gets a fresh shot at an
+      // intact one, instead of a single attempt burning a minute-plus on
+      // a keyframe that was already lost.
+      '-timeout 5000000',
+      '-analyzeduration 3M -probesize 3M',
       '-i "rtsp://127.0.0.1:$RTSP_PORT/$MTX_PATH"',
       // The tee muxer needs explicit maps -- without them it fails with
       // "Output file does not contain any stream" as soon as there's more
