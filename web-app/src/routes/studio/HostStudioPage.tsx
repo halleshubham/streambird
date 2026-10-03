@@ -1,3 +1,4 @@
+import { NameBadge } from '../../components/NameBadge';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -253,7 +254,7 @@ export function HostStudioPage() {
         <div className="participant-list">
           {participants.map((p) => (
             <div key={p.id} className="participant-row">
-              <span className="participant-row-name">{p.displayName}</span>
+              <span className="participant-row-name"><NameBadge name={p.displayName} /><span>{p.displayName}</span></span>
               {!p.isScreenShare && (
                 <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
               )}
