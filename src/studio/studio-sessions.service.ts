@@ -139,6 +139,22 @@ export class StudioSessionsService {
     );
   }
 
+  /** Number of email-addressed, non-revoked invites per live stream -- for list views. */
+  async countGuestsByStream(liveStreamIds: string[]): Promise<Map<string, number>> {
+    if (liveStreamIds.length === 0) return new Map();
+    const rows = await this.invites
+      .createQueryBuilder('i')
+      .innerJoin('i.studioSession', 's')
+      .select('s.liveStreamId', 'liveStreamId')
+      .addSelect('COUNT(*)', 'count')
+      .where('s.liveStreamId IN (:...ids)', { ids: liveStreamIds })
+      .andWhere('i.email IS NOT NULL')
+      .andWhere('i.revokedAt IS NULL')
+      .groupBy('s.liveStreamId')
+      .getRawMany<{ liveStreamId: string; count: string }>();
+    return new Map(rows.map((r) => [r.liveStreamId, Number(r.count)]));
+  }
+
   async markInviteEmailed(inviteId: string): Promise<void> {
     await this.invites.update({ id: inviteId }, { emailedAt: new Date() });
   }

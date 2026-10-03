@@ -215,6 +215,8 @@ export interface StreamListItem {
   endedAt: string | null;
   cancelledAt: string | null;
   isScheduledEvent: boolean;
+  /** Upcoming view only. */
+  guestCount?: number;
   createdAt: string;
   destinationsSummary: DestinationSummary[];
 }

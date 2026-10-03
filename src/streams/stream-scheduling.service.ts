@@ -135,6 +135,10 @@ export class StreamSchedulingService {
     return this.buildDetail(account, stream.id, failures);
   }
 
+  guestCounts(liveStreamIds: string[]): Promise<Map<string, number>> {
+    return this.studioSessions.countGuestsByStream(liveStreamIds);
+  }
+
   async getDetail(account: Account, streamId: string): Promise<ScheduleDetail> {
     return this.buildDetail(account, streamId);
   }

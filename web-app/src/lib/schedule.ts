@@ -53,3 +53,31 @@ export const DURATION_OPTIONS = [
   { value: 120, label: '2 hours' },
   { value: 180, label: '3 hours' },
 ];
+
+/** "in 2 days", "in 3 hours", "in 12 minutes" -- or "starting now" / "was due 2 hours ago" once past. */
+export function timeUntil(iso: string, now: number = Date.now()): { label: string; overdue: boolean } {
+  const diffMs = new Date(iso).getTime() - now;
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const abs = Math.abs(diffMs);
+  const minutes = Math.round(abs / 60_000);
+  const sign = diffMs < 0 ? -1 : 1;
+
+  if (abs < 60_000) return { label: 'starting now', overdue: false };
+  const text =
+    minutes < 60
+      ? rtf.format(sign * minutes, 'minute')
+      : minutes < 60 * 24
+        ? rtf.format(sign * Math.round(minutes / 60), 'hour')
+        : rtf.format(sign * Math.round(minutes / (60 * 24)), 'day');
+  return diffMs < 0 ? { label: `was due ${text}`, overdue: true } : { label: text, overdue: false };
+}
+
+/** Local calendar-day bucket for grouping: "Today", "Tomorrow", or a weekday + date. */
+export function dayHeading(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(d) - startOf(now)) / 86_400_000);
+  if (days <= 0) return days < 0 ? 'Overdue' : 'Today';
+  if (days === 1) return 'Tomorrow';
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+}

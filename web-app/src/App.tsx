@@ -9,6 +9,7 @@ import { DashboardPage } from './routes/DashboardPage';
 import { ConnectionsPage } from './routes/ConnectionsPage';
 import { CreateStreamPage } from './routes/CreateStreamPage';
 import { StreamDetailPage } from './routes/StreamDetailPage';
+import { UpcomingStreamsPage } from './routes/UpcomingStreamsPage';
 import { TeamPage } from './routes/TeamPage';
 import { HostStudioPage } from './routes/studio/HostStudioPage';
 import { GuestJoinPage } from './routes/studio/GuestJoinPage';
@@ -69,6 +70,7 @@ export function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/streams/new" element={<CreateStreamPage />} />
+          <Route path="/streams/upcoming" element={<UpcomingStreamsPage />} />
           <Route path="/streams/:streamId" element={<StreamDetailPage />} />
           <Route path="/team" element={<TeamPage />} />
         </Route>

@@ -7,6 +7,7 @@ import { listConnections } from '../api/connections';
 import { UsageMeter } from '../components/UsageMeter';
 import { BirdLoader } from '../components/BirdLoader';
 import { StreamListItem } from '../components/StreamListItem';
+import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
 import { PlatformBadge } from '../components/PlatformBadge';
 import type { Account, PlatformConnection, StreamListItem as StreamListItemType } from '../types/api';
 
@@ -75,19 +76,23 @@ export function DashboardPage() {
         )}
       </section>
 
-      {upcoming.length > 0 && (
-        <section>
-          <div className="section-header">
-            <h2>Upcoming</h2>
-            <Link to="/streams/new">Schedule another</Link>
-          </div>
+      <section>
+        <div className="section-header">
+          <h2>Upcoming streams</h2>
+          {upcoming.length > 0 ? <Link to="/streams/upcoming">View all</Link> : null}
+        </div>
+        {upcoming.length > 0 ? (
           <div className="stream-list">
-            {upcoming.map((s) => (
-              <StreamListItem key={s.id} stream={s} />
+            {upcoming.slice(0, 5).map((s) => (
+              <UpcomingStreamItem key={s.id} stream={s} />
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="empty-state">
+            Nothing scheduled. {hasConnections ? <Link to="/streams/new">Schedule a stream</Link> : 'Connect a platform to schedule one.'}
+          </p>
+        )}
+      </section>
 
       <section>
         <h2>Recent streams</h2>

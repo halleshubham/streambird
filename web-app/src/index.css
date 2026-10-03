@@ -1616,3 +1616,23 @@ a.icon-btn--danger {
   margin-top: 12px;
   font-family: inherit;
 }
+
+.upcoming-item .stream-list-item-main {
+  gap: 10px;
+}
+
+.upcoming-guests {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.upcoming-day {
+  margin: 20px 0 8px;
+  font-size: 15px;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

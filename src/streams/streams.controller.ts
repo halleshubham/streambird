@@ -121,12 +121,16 @@ export class StreamsController {
       query.view === 'upcoming',
     );
 
+    const guestCounts =
+      query.view === 'upcoming' ? await this.scheduling.guestCounts(items.map((s) => s.id)) : null;
+
     return {
       items: items.map((stream) =>
         plainToInstance(
           StreamListItemDto,
           {
             ...stream,
+            ...(guestCounts ? { guestCount: guestCounts.get(stream.id) ?? 0 } : {}),
             destinationsSummary: stream.destinations.map((d) => ({
               platform: d.platformConnection.platform,
               status: d.status,
