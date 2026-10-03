@@ -176,7 +176,7 @@ describe('FacebookProvider', () => {
 
     const sent = new URLSearchParams(fetchMock.mock.calls[0][1].body);
     expect(sent.get('status')).toBe('LIVE_NOW');
-    expect(sent.get('planned_start_time')).toBeNull();
+    expect(sent.get('event_params')).toBeNull();
   });
 
   it('createBroadcast with precreate makes a hidden scheduled live video with a planned start time', async () => {
@@ -188,7 +188,8 @@ describe('FacebookProvider', () => {
 
     const sent = new URLSearchParams(fetchMock.mock.calls[0][1].body);
     expect(sent.get('status')).toBe('SCHEDULED_UNPUBLISHED');
-    expect(sent.get('planned_start_time')).toBe(String(at.getTime() / 1000));
+    expect(sent.get('event_params')).toBe(String(at.getTime() / 1000));
+    expect(sent.get('planned_start_time')).toBeNull();
   });
 
   it('createBroadcast with precreate and public visibility also posts the upcoming live to the Page', async () => {
@@ -200,21 +201,54 @@ describe('FacebookProvider', () => {
     expect(new URLSearchParams(fetchMock.mock.calls[0][1].body).get('status')).toBe('SCHEDULED_LIVE');
   });
 
-  it('updateBroadcast, deleteBroadcast and prepareToGoLive hit the live video itself', async () => {
+  it('updateBroadcast sends title/description, then the start time as a separate best-effort call', async () => {
     const { provider } = buildProvider();
     fetchMock.mockResolvedValue(jsonResponse({ success: true }));
     const at = new Date('2026-10-10T13:00:00Z');
 
     await provider.updateBroadcast(conn, 'video_9', { title: 'New', description: 'd', scheduledAt: at });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [first, second] = fetchMock.mock.calls.map((c) => new URLSearchParams(c[1].body));
+    expect(fetchMock.mock.calls[0][0]).toContain('/video_9');
+    expect(first.get('title')).toBe('New');
+    expect(first.get('event_params')).toBeNull();
+    expect(second.get('event_params')).toBe(String(at.getTime() / 1000));
+  });
+
+  it('updateBroadcast keeps the new title even when Facebook rejects the new start time, and says so', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ success: true }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 100, message: 'Invalid parameter' } }, false, 400));
+
+    await expect(provider.updateBroadcast(conn, 'v', { title: 'New', scheduledAt: new Date(Date.now() + 3_600_000) })).rejects.toThrow(
+      /title and description were updated, but Facebook did not accept the new start time/,
+    );
+  });
+
+  it('deleteBroadcast and prepareToGoLive hit the live video itself', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValue(jsonResponse({ success: true }));
+
     await provider.deleteBroadcast(conn, 'video_9');
     await provider.prepareToGoLive(conn, 'video_9');
 
-    const [update, del, live] = fetchMock.mock.calls;
-    expect(update[0]).toContain('/video_9');
-    expect(new URLSearchParams(update[1].body).get('title')).toBe('New');
-    expect(new URLSearchParams(update[1].body).get('planned_start_time')).toBe(String(at.getTime() / 1000));
+    const [del, live] = fetchMock.mock.calls;
     expect(del[1].method).toBe('DELETE');
     expect(new URLSearchParams(live[1].body).get('status')).toBe('LIVE_NOW');
+  });
+
+  it('explains Meta capability errors (code 3) and advertises the 7-day scheduling limit', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { code: 3, type: 'OAuthException', message: '(#3) Application does not have the capability to make this API call.' } }, false, 400),
+    );
+
+    await expect(provider.createBroadcast(conn, { title: 'T', scheduledAt: new Date(Date.now() + 3_600_000), precreate: true })).rejects.toThrow(
+      /lacks the capability for this call/,
+    );
+    expect(provider.maxPrescheduleLeadMs).toBe(7 * 24 * 60 * 60_000);
   });
 
   it('setBroadcastThumbnail posts the image as schedule_custom_profile_image in a multipart form', async () => {

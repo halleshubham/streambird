@@ -247,7 +247,7 @@ export function CreateStreamPage() {
             </label>
             <p className="field-hint">
               {precreatable.length > 0
-                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Other destinations (e.g. Twitch) are always created when you start the stream.'
+                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Facebook only allows scheduling up to 7 days ahead. Other destinations (e.g. Twitch) are always created when you start the stream.'
                 : 'Select a YouTube or Facebook destination to use this. Other platforms are created when you start the stream.'}
             </p>
 

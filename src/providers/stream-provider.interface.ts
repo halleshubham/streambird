@@ -59,6 +59,9 @@ export interface StreamProvider {
   /** True when the thumbnail also applies once the broadcast is live (YouTube); false when it is only the scheduled/lobby image (Facebook), so it is pointless to send at start. */
   readonly thumbnailAppliesWhenLive?: boolean;
 
+  /** How far ahead the platform allows a broadcast to be scheduled (Facebook: 7 days). Undefined = no limit known. */
+  readonly maxPrescheduleLeadMs?: number;
+
   /** Re-syncs a pre-created broadcast's title/description/time/visibility after the host edits the schedule. */
   updateBroadcast?(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void>;
 

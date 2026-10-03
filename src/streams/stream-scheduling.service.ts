@@ -463,6 +463,18 @@ export class StreamSchedulingService {
         if (!conn || row.platformBroadcastId) return;
         const provider = this.streamsService.resolveProvider(conn);
         if (!provider.canPrescheduleBroadcast) return;
+
+        // Facebook only accepts a scheduled live up to 7 days ahead -- say so
+        // instead of sending a call that is bound to fail.
+        const leadMs = (stream.scheduledAt?.getTime() ?? 0) - Date.now();
+        if (provider.maxPrescheduleLeadMs && leadMs > provider.maxPrescheduleLeadMs) {
+          const days = Math.floor(provider.maxPrescheduleLeadMs / 86_400_000);
+          warnings.push(
+            `${this.describe(row, conn)}: the platform only allows scheduling up to ${days} days ahead, so it will be created when you start the stream (or turn "Create on platforms now" on again within ${days} days of the start time).`,
+          );
+          return;
+        }
+
         try {
           const result = await provider.createBroadcast(conn, this.broadcastMeta(stream));
           Object.assign(row, {
