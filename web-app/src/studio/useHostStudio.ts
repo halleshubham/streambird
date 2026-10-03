@@ -619,16 +619,26 @@ export function useHostStudio(streamId: string | undefined) {
       }
     };
 
-    // Diagnostic only -- this guest-publish connection previously had no
-    // visibility into ICE/connection failures (unlike every other
-    // RTCPeerConnection in this file), making a silently-stuck negotiation
-    // indistinguishable from "it's just slow" in the console.
-    pc.oniceconnectionstatechange = () => {
-      console.log(`[guest ${fromSocketId}] ICE connection state: ${pc.iceConnectionState}`);
+    // Diagnostic: this is a direct P2P connection (no TURN server
+    // configured -- see ICE_SERVERS), so it can silently fail to ever
+    // carry media for a guest behind a NAT/firewall STUN alone can't
+    // traverse, with nothing in the UI distinguishing that from "just
+    // slow". Previously only console.log'd (invisible once the session's
+    // over); also reported to the server now so a stuck/failed guest
+    // connection actually shows up in production logs after the fact,
+    // not just in a console nobody was watching live.
+    const reportRtcState = () => {
+      console.log(
+        `[guest ${fromSocketId}] ICE connection state: ${pc.iceConnectionState}, connection state: ${pc.connectionState}`,
+      );
+      socketRef.current?.emit('rtc-state', {
+        about: fromSocketId,
+        iceConnectionState: pc.iceConnectionState,
+        connectionState: pc.connectionState,
+      });
     };
-    pc.onconnectionstatechange = () => {
-      console.log(`[guest ${fromSocketId}] connection state: ${pc.connectionState}`);
-    };
+    pc.oniceconnectionstatechange = reportRtcState;
+    pc.onconnectionstatechange = reportRtcState;
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();

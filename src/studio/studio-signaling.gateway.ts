@@ -242,6 +242,35 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     });
   }
 
+  /**
+   * Pure diagnostics: this server is a signaling relay only (see the class
+   * doc comment) and never otherwise learns whether a P2P connection it
+   * helped set up actually ended up carrying media -- WebRTC's ICE/
+   * connection state only exists in each browser. The host and each guest
+   * now self-report theirs here specifically so a connection that's stuck
+   * or failed (the exact signature of a NAT/firewall STUN alone can't
+   * traverse -- there's no TURN server configured, see the client-side
+   * ICE_SERVERS) actually shows up in production logs after the fact,
+   * instead of only ever existing in a browser console nobody was
+   * watching live.
+   */
+  @SubscribeMessage('rtc-state')
+  handleRtcState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { about: string; iceConnectionState: string; connectionState: string },
+  ) {
+    const state = this.socketState.get(client.id);
+    if (!state) return;
+
+    const isTrouble = body.iceConnectionState === 'failed' || body.connectionState === 'failed';
+    const message = `[rtc-state] session=${state.sessionId} reporter=${state.role}:${state.participantId} about=${body.about} ice=${body.iceConnectionState} connection=${body.connectionState}`;
+    if (isTrouble) {
+      this.logger.warn(message);
+    } else {
+      this.logger.log(message);
+    }
+  }
+
   private roomName(sessionId: string): string {
     return `session:${sessionId}`;
   }

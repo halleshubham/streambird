@@ -112,3 +112,75 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
     expect(streamsService.end).not.toHaveBeenCalled();
   });
 });
+
+describe('StudioSignalingGateway -- rtc-state diagnostics', () => {
+  let gateway: StudioSignalingGateway;
+  let loggerWarnSpy: jest.SpyInstance;
+  let loggerLogSpy: jest.SpyInstance;
+
+  function fakeSocket(id: string) {
+    return {
+      id,
+      handshake: { auth: { role: 'host', sessionId: 'session_1', hostToken: 'token_1' } },
+      join: jest.fn(async () => undefined),
+      emit: jest.fn(),
+      to: jest.fn(() => ({ emit: jest.fn() })),
+      disconnect: jest.fn(),
+    };
+  }
+
+  beforeEach(() => {
+    const sessionsService = {
+      resolveHostToken: jest.fn(async () => ({ studioSessionId: 'session_1' })),
+      recordHostJoined: jest.fn(async () => ({ id: 'participant_1' })),
+      recordParticipantLeft: jest.fn(async () => undefined),
+      findByIdWithLiveStream: jest.fn(),
+    };
+    gateway = new StudioSignalingGateway(sessionsService as any, {} as any);
+    loggerWarnSpy = jest.spyOn((gateway as any).logger, 'warn').mockImplementation(() => undefined);
+    loggerLogSpy = jest.spyOn((gateway as any).logger, 'log').mockImplementation(() => undefined);
+  });
+
+  it('logs a failed ICE/connection state as a warning, tagged with who reported it and who it concerns', async () => {
+    const socket = fakeSocket('socket_1');
+    await gateway.handleConnection(socket as any);
+
+    gateway.handleRtcState(socket as any, {
+      about: 'guest_socket_7',
+      iceConnectionState: 'failed',
+      connectionState: 'failed',
+    });
+
+    expect(loggerWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('session=session_1 reporter=host:participant_1 about=guest_socket_7 ice=failed connection=failed'),
+    );
+    expect(loggerLogSpy).not.toHaveBeenCalled();
+  });
+
+  it('logs a healthy state at normal log level, not as a warning', async () => {
+    const socket = fakeSocket('socket_1');
+    await gateway.handleConnection(socket as any);
+
+    gateway.handleRtcState(socket as any, {
+      about: 'guest_socket_7',
+      iceConnectionState: 'connected',
+      connectionState: 'connected',
+    });
+
+    expect(loggerLogSpy).toHaveBeenCalled();
+    expect(loggerWarnSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a report from a socket with no known session state', () => {
+    const socket = fakeSocket('unknown_socket');
+
+    gateway.handleRtcState(socket as any, {
+      about: 'guest_socket_7',
+      iceConnectionState: 'failed',
+      connectionState: 'failed',
+    });
+
+    expect(loggerWarnSpy).not.toHaveBeenCalled();
+    expect(loggerLogSpy).not.toHaveBeenCalled();
+  });
+});

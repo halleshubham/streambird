@@ -86,7 +86,25 @@ export function useGuestStudio(token: string | undefined) {
       }
     };
 
+    // Reported to the server (see StudioSignalingGateway's 'rtc-state'
+    // handler) so a guest whose publish connection silently fails to ever
+    // carry media -- e.g. a NAT/firewall STUN alone can't traverse, since
+    // there's no TURN server configured (see ICE_SERVERS) -- actually
+    // shows up in production logs, instead of only a UI status string
+    // nobody necessarily saw at the time.
+    conn.oniceconnectionstatechange = () => {
+      socketRef.current?.emit('rtc-state', {
+        about: 'host',
+        iceConnectionState: conn.iceConnectionState,
+        connectionState: conn.connectionState,
+      });
+    };
     conn.onconnectionstatechange = () => {
+      socketRef.current?.emit('rtc-state', {
+        about: 'host',
+        iceConnectionState: conn.iceConnectionState,
+        connectionState: conn.connectionState,
+      });
       // pc.close() (deliberate leave, or a kick) fires this asynchronously
       // -- without this guard it overwrites the "removed by host"/"you
       // left" message with a generic "Connection: closed" moments later.
