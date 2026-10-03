@@ -490,6 +490,7 @@ export class StreamSchedulingService {
         } catch (err) {
           const message = (err as Error).message;
           row.errorMessage = message;
+          this.logger.warn(`Pre-creating the ${conn.platform} broadcast for stream ${stream.id} failed: ${message}`);
           warnings.push(`${this.describe(row, conn)}: couldn't create it on the platform now (${message}). It will be created when you start the stream.`);
         }
         await this.destinations.save(row);

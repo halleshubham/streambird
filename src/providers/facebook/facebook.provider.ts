@@ -12,6 +12,21 @@ export interface FacebookCredentials {
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v23.0';
 
+/** A Graph API error with Meta's own error code, so callers can tell "wrong format, try another" (1/2/100) from "not allowed" (3/190). */
+export class FacebookApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+    readonly httpStatus: number,
+  ) {
+    super(message);
+    this.name = 'FacebookApiError';
+  }
+}
+
+/** Codes that mean the request itself was unacceptable (generic error, service error, invalid parameter) -- worth retrying in a different shape. Not 3 (capability) or 190 (token): another shape won't change those. */
+const RETRY_WITH_OTHER_FORMAT = new Set([1, 2, 100]);
+
 /**
  * Unlike YouTubeProvider, there is no refresh flow here at all: a Page
  * access token derived from a long-lived user token (see
@@ -94,8 +109,10 @@ export class FacebookProvider implements StreamProvider {
       ]
         .filter(Boolean)
         .join(' -- ');
-      throw new Error(
+      throw new FacebookApiError(
         `Facebook API ${method} ${path} failed (${res.status}): ${err?.message ?? 'unknown error'}${detail ? ` (${detail})` : ''}${reconnectHint}`,
+        err?.code,
+        res.status,
       );
     }
     return body as T;
@@ -126,15 +143,16 @@ export class FacebookProvider implements StreamProvider {
    * posts the upcoming-live promo to the Page (SCHEDULED_LIVE) -- mirroring
    * YouTubeProvider's "never publicly visible unless asked" default.
    */
-  private statusFields(meta: BroadcastMeta): Record<string, string> {
-    if (meta.precreate && meta.scheduledAt) {
-      return {
-        status: meta.visibility === 'public' ? 'SCHEDULED_LIVE' : 'SCHEDULED_UNPUBLISHED',
-        // Meta's scheduling guide: `event_params` is the start time as a UNIX timestamp.
-        event_params: String(Math.floor(meta.scheduledAt.getTime() / 1000)),
-      };
-    }
-    return { status: 'LIVE_NOW' };
+  /**
+   * Meta documents the scheduled start time two incompatible ways: the
+   * reference types `event_params` as an object (`{start_time, cover}`),
+   * the scheduling guide shows a bare UNIX timestamp. Which one a given
+   * app/Page accepts isn't knowable from the docs, so callers try the
+   * object form first and fall back to the plain timestamp.
+   */
+  private eventParamsVariants(at: Date): Array<{ event_params: string }> {
+    const ts = Math.floor(at.getTime() / 1000);
+    return [{ event_params: JSON.stringify({ start_time: ts }) }, { event_params: String(ts) }];
   }
 
   async updateBroadcast(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void> {
@@ -148,14 +166,16 @@ export class FacebookProvider implements StreamProvider {
     // by Meta, so it is a separate best-effort call: the title/description
     // above must not be lost if Facebook rejects it.
     if (meta.scheduledAt) {
-      try {
-        await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, {
-          method: 'POST',
-          body: { event_params: String(Math.floor(meta.scheduledAt.getTime() / 1000)) },
-        });
-      } catch (err) {
-        throw new Error(`title and description were updated, but Facebook did not accept the new start time (${(err as Error).message})`);
+      let lastError: Error | undefined;
+      for (const variant of this.eventParamsVariants(meta.scheduledAt)) {
+        try {
+          await this.callApi(`/${platformBroadcastId}`, creds.pageAccessToken, { method: 'POST', body: variant });
+          return;
+        } catch (err) {
+          lastError = err as Error;
+        }
       }
+      throw new Error(`title and description were updated, but Facebook did not accept the new start time (${lastError?.message})`);
     }
   }
 
@@ -190,30 +210,45 @@ export class FacebookProvider implements StreamProvider {
 
   async createBroadcast(conn: PlatformConnection, meta: BroadcastMeta): Promise<BroadcastResult> {
     const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    const scheduled = !!(meta.precreate && meta.scheduledAt);
 
-    const result = await this.callApi<{ id: string; secure_stream_url: string }>(
-      `/${creds.pageId}/live_videos`,
-      creds.pageAccessToken,
-      {
-        method: 'POST',
-        body: {
-          title: meta.title,
-          description: meta.description ?? '',
-          ...this.statusFields(meta),
-        },
-      },
-    );
+    const baseFields = { title: meta.title, description: meta.description ?? '' };
+    const scheduledStatus = meta.visibility === 'public' ? 'SCHEDULED_LIVE' : 'SCHEDULED_UNPUBLISHED';
+    const attempts: Array<Record<string, string>> = scheduled
+      ? this.eventParamsVariants(meta.scheduledAt!).map((variant) => ({ ...baseFields, status: scheduledStatus, ...variant }))
+      : [{ ...baseFields, status: 'LIVE_NOW' }];
 
-    const { ingestUrl, streamKey } = this.splitStreamUrl(result.secure_stream_url);
+    let result: { id: string; secure_stream_url: string } | undefined;
+    const failures: string[] = [];
+    for (const [i, body] of attempts.entries()) {
+      try {
+        result = await this.callApi<{ id: string; secure_stream_url: string }>(`/${creds.pageId}/live_videos`, creds.pageAccessToken, {
+          method: 'POST',
+          body,
+        });
+        break;
+      } catch (err) {
+        failures.push((err as Error).message);
+        const last = i === attempts.length - 1;
+        const retryable = err instanceof FacebookApiError && err.code !== undefined && RETRY_WITH_OTHER_FORMAT.has(err.code);
+        if (last || !retryable) {
+          // Only the first failure matters when we never got to try the other shape.
+          const also = failures.length > 1 ? ` -- an alternative request format was tried first and failed too: ${failures[0]}` : '';
+          throw err instanceof FacebookApiError ? new FacebookApiError(`${(err as Error).message}${also}`, err.code, err.httpStatus) : err;
+        }
+      }
+    }
+
+    const { ingestUrl, streamKey } = this.splitStreamUrl(result!.secure_stream_url);
 
     return {
       ingestUrl,
       streamKey,
-      platformBroadcastId: result.id,
+      platformBroadcastId: result!.id,
       // Meta resolves any object id to its canonical permalink -- the same
       // "one stable, always-correct" reasoning YouTubeProvider's own watch
       // URL comment uses, just via Facebook's own id-based permalink form.
-      watchUrl: `https://www.facebook.com/${result.id}`,
+      watchUrl: `https://www.facebook.com/${result!.id}`,
     };
   }
 
