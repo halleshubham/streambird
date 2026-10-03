@@ -99,6 +99,13 @@ export class StreamsController {
     return this.scheduling.resendInvite(account, id, inviteId);
   }
 
+  /** Discards a not-yet-started scheduled stream without emailing anyone (see StreamSchedulingService.delete). */
+  @Delete(':id/schedule')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteSchedule(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
+    await this.scheduling.delete(account, id);
+  }
+
   @Post(':id/schedule/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
   async cancelSchedule(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {

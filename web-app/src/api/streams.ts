@@ -84,3 +84,8 @@ export function cancelSchedule(id: string): Promise<void> {
 export function startStream(id: string): Promise<Stream> {
   return api.post(`/streams/${id}/start`);
 }
+
+/** Silently discards a scheduled stream that never started (no guest emails, unlike cancelSchedule). */
+export function deleteScheduledStream(id: string): Promise<void> {
+  return api.delete(`/streams/${id}/schedule`);
+}

@@ -5,6 +5,7 @@ import { listStreams } from '../api/streams';
 import { BirdLoader } from '../components/BirdLoader';
 import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
 import { dayHeading } from '../lib/schedule';
+import { confirmAndDelete } from '../lib/deleteUpcoming';
 import type { StreamListItem } from '../types/api';
 
 export function UpcomingStreamsPage() {
@@ -17,7 +18,11 @@ export function UpcomingStreamsPage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load upcoming streams.'));
   }, []);
 
-  if (error) return <p className="error">{error}</p>;
+  const handleDelete = async (stream: StreamListItem) => {
+    if (await confirmAndDelete(stream, setError)) setItems((prev) => prev?.filter((s) => s.id !== stream.id) ?? prev);
+  };
+
+  if (error && !items) return <p className="error">{error}</p>;
   if (!items) return <BirdLoader loading compact label="Loading upcoming streams…" />;
 
   // Soonest first (the API already sorts), bucketed by local calendar day.
@@ -39,6 +44,8 @@ export function UpcomingStreamsPage() {
         </Link>
       </div>
 
+      {error && <p className="error">{error}</p>}
+
       {groups.length === 0 ? (
         <p className="empty-state">
           Nothing scheduled yet. <Link to="/streams/new">Schedule a stream</Link> and invite your guests by email.
@@ -49,7 +56,7 @@ export function UpcomingStreamsPage() {
             <h2 className="upcoming-day">{g.heading}</h2>
             <div className="stream-list">
               {g.streams.map((s) => (
-                <UpcomingStreamItem key={s.id} stream={s} />
+                <UpcomingStreamItem key={s.id} stream={s} onDelete={(x) => void handleDelete(x)} />
               ))}
             </div>
           </section>

@@ -1636,3 +1636,18 @@ a.icon-btn--danger {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upcoming-row .upcoming-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.upcoming-delete {
+  flex: none;
+}

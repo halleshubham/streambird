@@ -235,6 +235,19 @@ export class StreamSchedulingService {
     await this.streamsService.end(stream.id, account.id);
   }
 
+  /**
+   * Silently discards a scheduled stream that never started -- no emails
+   * (unlike cancel(), which tells the guests). Meant for streams whose time
+   * has already passed, where a "cancelled" notice would only confuse
+   * people. Everything hanging off it (destinations, studio session,
+   * invites, host tokens) goes with it via ON DELETE CASCADE; nothing was
+   * ever created on a platform or billed for a stream that never started.
+   */
+  async delete(account: Account, streamId: string): Promise<void> {
+    const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    await this.liveStreams.delete({ id: stream.id, accountId: account.id });
+  }
+
   // ---- helpers --------------------------------------------------------
 
   private parseFutureDate(iso: string): Date {

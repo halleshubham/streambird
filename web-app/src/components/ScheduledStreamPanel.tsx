@@ -5,6 +5,7 @@ import { CalendarClock, Clapperboard, Copy, Mail, Pencil, Play, Trash2, UserPlus
 import {
   addScheduleGuests,
   cancelSchedule,
+  deleteScheduledStream,
   getSchedule,
   removeScheduleGuest,
   resendScheduleInvite,
@@ -91,6 +92,7 @@ export function ScheduledStreamPanel({
   if (error && !detail) return <p className="error">{error}</p>;
   if (!detail) return <BirdLoader loading compact label="Loading the schedule…" />;
 
+  const overdue = new Date(detail.scheduledAt).getTime() < Date.now();
   const duration = DURATION_OPTIONS.find((d) => d.value === detail.durationMinutes)?.label ?? (detail.durationMinutes ? `${detail.durationMinutes} min` : null);
 
   async function handleAddGuests(e: FormEvent) {
@@ -108,6 +110,12 @@ export function ScheduledStreamPanel({
     <div className="scheduled-panel">
       {notice && <p className={`notice${notice.isError ? ' error' : ''}`}>{notice.text}</p>}
       {error && <p className="error">{error}</p>}
+
+      {overdue && (
+        <p className="notice error">
+          This stream's start time has passed and it was never started. Start it now, change the time under Edit details, or delete it.
+        </p>
+      )}
 
       <div className="panel scheduled-summary">
         <div className="scheduled-when">
@@ -170,6 +178,23 @@ export function ScheduledStreamPanel({
           >
             <Trash2 size={16} /> Cancel stream
           </button>
+          {overdue && (
+            <button
+              type="button"
+              className="icon-btn icon-btn--danger"
+              disabled={busy !== null}
+              title="Removes it without emailing your guests"
+              onClick={() => {
+                if (!window.confirm('Delete this stream? Your guests will not be emailed.')) return;
+                void run('delete', async () => {
+                  await deleteScheduledStream(streamId);
+                  navigate('/streams/upcoming');
+                });
+              }}
+            >
+              <Trash2 size={16} /> {busy === 'delete' ? 'Deleting…' : 'Delete (no emails)'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { UsageMeter } from '../components/UsageMeter';
 import { BirdLoader } from '../components/BirdLoader';
 import { StreamListItem } from '../components/StreamListItem';
 import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
+import { confirmAndDelete } from '../lib/deleteUpcoming';
 import { PlatformBadge } from '../components/PlatformBadge';
 import type { Account, PlatformConnection, StreamListItem as StreamListItemType } from '../types/api';
 
@@ -84,7 +85,11 @@ export function DashboardPage() {
         {upcoming.length > 0 ? (
           <div className="stream-list">
             {upcoming.slice(0, 5).map((s) => (
-              <UpcomingStreamItem key={s.id} stream={s} />
+              <UpcomingStreamItem
+                key={s.id}
+                stream={s}
+                onDelete={(x) => void confirmAndDelete(x, setError).then((ok) => ok && setUpcoming((prev) => prev.filter((u) => u.id !== x.id)))}
+              />
             ))}
           </div>
         ) : (

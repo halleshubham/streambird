@@ -27,6 +27,9 @@ function build() {
       return v;
     }),
     findOne: jest.fn(async ({ where }: any) => [...streams.values()].find((r) => matches(r, where)) ?? null),
+    delete: jest.fn(async (where: any) => {
+      for (const [k, r] of [...streams.entries()]) if (matches(r, where)) streams.delete(k);
+    }),
   };
   const destinations = {
     create: (v: any) => ({ ...v }),
@@ -224,5 +227,22 @@ describe('StreamSchedulingService', () => {
     expect(calls.every((c) => c[1].kind === 'cancelled')).toBe(true);
     expect(streams.get(detail.id).cancelledAt).toBeInstanceOf(Date);
     expect(streamsService.end).toHaveBeenCalledWith(detail.id, 'acc_1');
+  });
+
+  it('delete discards a scheduled stream silently -- no emails -- and refuses one that has started', async () => {
+    const { service, streams, email } = build();
+    const detail = await service.schedule(ACCOUNT, baseDto());
+    (email.sendStreamInvite as jest.Mock).mockClear();
+
+    await service.delete(ACCOUNT, detail.id);
+    expect(streams.has(detail.id)).toBe(false);
+    expect(email.sendStreamInvite).not.toHaveBeenCalled();
+
+    const live = await service.schedule(ACCOUNT, baseDto());
+    streams.get(live.id).status = StreamStatus.LIVE;
+    await expect(service.delete(ACCOUNT, live.id)).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(streams.has(live.id)).toBe(true);
+
+    await expect(service.delete({ id: 'someone_else' } as any, live.id)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
