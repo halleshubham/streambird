@@ -142,6 +142,9 @@ export function ScheduledStreamPanel({
             <strong>Note to guests:</strong> {detail.guestNotes}
           </p>
         )}
+        <p className="field-hint">
+          <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Other destinations (Facebook, Twitch) are created when you start the stream.
+        </p>
         <div className="destination-status-list">
           {detail.destinations.map((d) => (
             <div key={d.id} className="destination-status-row">
@@ -188,8 +191,8 @@ export function ScheduledStreamPanel({
               </button>
               <p className="field-hint">
                 {detail.precreateOnPlatforms
-                  ? 'YouTube/Facebook show this as an upcoming stream. Editing, cancelling or deleting here keeps them in sync.'
-                  : 'YouTube and Facebook can show this as an upcoming stream with a watch link for your guests.'}
+                  ? 'YouTube shows this as an upcoming stream. Editing, cancelling or deleting here keeps it in sync.'
+                  : 'YouTube can show this as an upcoming stream with a watch link for your guests. (Facebook no longer supports scheduled live videos, so it is created when you start.)'}
               </p>
             </div>
           )}
@@ -305,7 +308,7 @@ export function ScheduledStreamPanel({
             }}
           />
           <p className="field-hint">
-            JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. YouTube needs a verified channel for custom thumbnails; Facebook uses it as the scheduled-live image. It is also applied to broadcasts created later, e.g. at start.
+            JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. It is used for YouTube (which needs a verified channel for custom thumbnails), also on a broadcast created later, e.g. at start. Facebook and Twitch don't take a thumbnail from here.
           </p>
         </div>
       </section>

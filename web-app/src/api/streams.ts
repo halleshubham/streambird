@@ -46,7 +46,7 @@ export interface ScheduleStreamInput {
   destinationConnectionIds: string[];
   guestEmails?: string[];
   invitePassword?: string;
-  /** Create the broadcast on YouTube/Facebook now instead of at start. */
+  /** Create the broadcast on YouTube now instead of at start. */
   createOnPlatforms?: boolean;
 }
 

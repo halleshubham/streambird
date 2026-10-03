@@ -11,9 +11,7 @@ export interface BroadcastMeta {
   visibility?: 'public' | 'unlisted' | 'private';
   /**
    * Set only when a scheduled StreamBird stream creates the platform-side
-   * broadcast ahead of time (see StreamSchedulingService) -- providers that
-   * can hold a future broadcast (Facebook) then create it as a scheduled
-   * one instead of "live as soon as data arrives". Never set by the
+   * broadcast ahead of time (see StreamSchedulingService). Never set by the
    * go-live-now path, which must keep behaving exactly as before.
    */
   precreate?: boolean;
@@ -42,34 +40,28 @@ export interface StreamProvider {
 
   /**
    * True when the platform can hold a broadcast scheduled for a future time
-   * (YouTube, Facebook) -- so a scheduled StreamBird stream can create it
-   * ahead of time and have it show up on the platform. Twitch has no such
-   * concept and is only ever created at start.
+   * (YouTube) -- so a scheduled StreamBird stream can create it ahead of
+   * time and have it show up on the platform. Twitch has no such concept and
+   * Facebook retired scheduled live videos (Graph API: "Scheduled Live has
+   * been deprecated"), so both are only ever created at start.
    */
   readonly canPrescheduleBroadcast?: boolean;
 
   /**
    * Sets the thumbnail of an existing broadcast -- YouTube (thumbnails.set,
-   * works on the broadcast's video id) and Facebook (the scheduled-live
-   * image). Best-effort: callers treat a rejection (unverified YouTube
-   * channel, Facebook refusing the image) as a warning, never a failure.
+   * works on the broadcast's video id). Best-effort: callers treat a
+   * rejection (unverified YouTube channel) as a warning, never a failure.
    */
   setBroadcastThumbnail?(conn: PlatformConnection, platformBroadcastId: string, image: ThumbnailImage): Promise<void>;
 
-  /** True when the thumbnail also applies once the broadcast is live (YouTube); false when it is only the scheduled/lobby image (Facebook), so it is pointless to send at start. */
+  /** True when the thumbnail also applies once the broadcast is live (YouTube), so it is worth sending to a broadcast created at start. */
   readonly thumbnailAppliesWhenLive?: boolean;
-
-  /** How far ahead the platform allows a broadcast to be scheduled (Facebook: 7 days). Undefined = no limit known. */
-  readonly maxPrescheduleLeadMs?: number;
 
   /** Re-syncs a pre-created broadcast's title/description/time/visibility after the host edits the schedule. */
   updateBroadcast?(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void>;
 
   /** Removes a pre-created broadcast from the platform (the scheduled stream was cancelled/deleted, or the destination dropped). Best-effort. */
   deleteBroadcast?(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
-
-  /** Called when a pre-created broadcast is about to receive data, for platforms that need an explicit "go live" nudge (Facebook). Best-effort. */
-  prepareToGoLive?(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
 
   endBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
 

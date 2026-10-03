@@ -37,7 +37,7 @@ export function CreateStreamPage() {
   }, []);
 
   // Platforms that can hold a broadcast scheduled for later (see StreamProvider.canPrescheduleBroadcast server-side).
-  const PRECREATABLE = ['youtube', 'facebook'];
+  const PRECREATABLE = ['youtube'];
   const precreatable = (connections ?? []).filter((c) => selected.has(c.id) && PRECREATABLE.includes(c.platform));
 
   function toggle(id: string) {
@@ -189,7 +189,7 @@ export function CreateStreamPage() {
 
             <label>Thumbnail (optional)</label>
             <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
-            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Shown on YouTube and as Facebook's scheduled-live image.</p>
+            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Used for YouTube (needs a verified channel); Facebook and Twitch don't take a thumbnail from here.</p>
 
             <label htmlFor="duration">Expected duration</label>
             <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
@@ -203,6 +203,11 @@ export function CreateStreamPage() {
         )}
 
         <label>Destinations</label>
+        {mode === 'schedule' && (
+          <p className="notice">
+            <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Facebook (Meta retired scheduled lives) and Twitch are created when you start the stream.
+          </p>
+        )}
         {!connections ? (
           <BirdLoader loading compact label="Loading your connections…" />
         ) : (
@@ -243,12 +248,12 @@ export function CreateStreamPage() {
                 disabled={precreatable.length === 0}
                 onChange={(e) => setCreateOnPlatforms(e.target.checked)}
               />{' '}
-              Create the broadcast on {precreatable.length > 0 ? [...new Set(precreatable.map((c) => (c.platform === 'youtube' ? 'YouTube' : 'Facebook')))].join(' and ') : 'YouTube / Facebook'} now
+              Create the broadcast on YouTube now
             </label>
             <p className="field-hint">
               {precreatable.length > 0
-                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Facebook only allows scheduling up to 7 days ahead. Other destinations (e.g. Twitch) are always created when you start the stream.'
-                : 'Select a YouTube or Facebook destination to use this. Other platforms are created when you start the stream.'}
+                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Other destinations (Twitch, and Facebook -- which no longer supports scheduled live videos) are always created when you start the stream.'
+                : 'Select a YouTube destination to use this. Other platforms are created when you start the stream.'}
             </p>
 
             <label className="checkbox-row">
