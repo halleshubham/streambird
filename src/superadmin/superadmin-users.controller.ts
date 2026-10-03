@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { AccountGuard } from '../common/guards/account.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -63,5 +63,28 @@ export class SuperadminUsersController {
     const user = await this.usersService.reactivateUser(id);
     await this.auditLog.log(admin, 'reactivate_user', 'user', user.id);
     return { id: user.id, suspendedAt: user.suspendedAt };
+  }
+
+  /**
+   * One-off superadmin lever: promotes an existing solo (role=user)
+   * account to a company account in place -- see
+   * UsersService.convertToCompanyAccount for exactly what that does and
+   * doesn't change (notably: preserves the account's existing
+   * approval/login history rather than starting a fresh unapproved
+   * signup).
+   */
+  @Post('users/:id/convert-to-company')
+  async convertToCompany(
+    @CurrentUser() admin: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('companyName') companyName?: string,
+  ) {
+    const trimmed = companyName?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('companyName is required');
+    }
+    const { user, company } = await this.usersService.convertToCompanyAccount(id, trimmed);
+    await this.auditLog.log(admin, 'convert_to_company', 'user', user.id, { companyName: trimmed });
+    return { id: user.id, role: user.role, companyId: company.id, companyName: company.name };
   }
 }

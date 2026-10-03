@@ -143,6 +143,44 @@ describe('UsersService', () => {
     );
   });
 
+  describe('convertToCompanyAccount', () => {
+    it('promotes a solo user to company_admin, attaches a new Company, and preserves their existing approvedAt', async () => {
+      const { service, users, companies } = await build();
+      const { user } = await service.findOrCreateForEmail('solo@example.com');
+      user.approvedAt = new Date('2026-01-01T00:00:00Z');
+      await users.save(user);
+
+      const result = await service.convertToCompanyAccount(user.id!, 'Solo Co');
+
+      expect(result.user.role).toBe(Role.COMPANY_ADMIN);
+      expect(result.user.approvedAt).toEqual(new Date('2026-01-01T00:00:00Z'));
+      expect(result.company.name).toBe('Solo Co');
+      expect(result.company.accountId).toBe(user.accountId);
+      expect(companies.rows.size).toBe(1);
+    });
+
+    it('refuses to convert a user who is already company_admin or superadmin', async () => {
+      const { service } = await build();
+      const { user: admin } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+
+      await expect(service.convertToCompanyAccount(admin.id!, 'New Name')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
+    it('refuses to convert an account that already has a Company', async () => {
+      const { service } = await build();
+      const { user } = await service.createCompanyAdmin('Acme Inc', 'admin@acme.com');
+      // Simulate a teammate added to that same company -- still role=user,
+      // but their account already has a Company row.
+      user.role = Role.USER;
+
+      await expect(service.convertToCompanyAccount(user.id!, 'Acme Inc 2')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
   describe('company-scoped team management', () => {
     it('inviteUser adds a Normal User scoped to the inviter\'s own account, auto-approved immediately', async () => {
       const { service } = await build();

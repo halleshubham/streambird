@@ -106,6 +106,40 @@ export class UsersService {
     return { user, account, company };
   }
 
+  /**
+   * Converts an existing solo (role=user, no Company row) account into a
+   * company account in place -- same Account/User row, just promoted to
+   * role=company_admin with a new Company row attached, rather than
+   * createCompanyAdmin's "create a brand-new Account from scratch" path.
+   * Deliberately preserves the user's existing approvedAt instead of
+   * nulling it out the way a brand-new company signup starts unapproved:
+   * this is already an active, approved account, and promoting its role
+   * must not newly subject it to AccountGuard's approval gate (which now
+   * covers every non-Superadmin role, not just company_admin).
+   */
+  async convertToCompanyAccount(userId: string, companyName: string): Promise<{ user: User; company: Company }> {
+    const user = await this.findByIdOrThrow(userId);
+    if (user.role !== Role.USER) {
+      throw new ConflictException(
+        `User ${userId} is role=${user.role}, not a plain solo user -- nothing to convert.`,
+      );
+    }
+    const existingCompany = await this.companies.findOne({ where: { accountId: user.accountId } });
+    if (existingCompany) {
+      throw new ConflictException(
+        `Account ${user.accountId} already has a company ("${existingCompany.name}").`,
+      );
+    }
+
+    const company = this.companies.create({ name: companyName, accountId: user.accountId });
+    await this.companies.save(company);
+
+    user.role = Role.COMPANY_ADMIN;
+    await this.users.save(user);
+
+    return { user, company };
+  }
+
   /** All Users belonging to one Account ("team members"), oldest first. */
   async listForAccount(accountId: string): Promise<User[]> {
     return this.users.find({ where: { accountId }, order: { createdAt: 'ASC' } });
