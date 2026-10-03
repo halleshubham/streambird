@@ -46,6 +46,8 @@ export interface ScheduleStreamInput {
   destinationConnectionIds: string[];
   guestEmails?: string[];
   invitePassword?: string;
+  /** Create the broadcast on YouTube/Facebook now instead of at start. */
+  createOnPlatforms?: boolean;
 }
 
 export type UpdateScheduleInput = Partial<Omit<ScheduleStreamInput, 'guestEmails' | 'invitePassword'>> & {

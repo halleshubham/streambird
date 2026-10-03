@@ -8,6 +8,14 @@ export interface BroadcastMeta {
   scheduledAt?: Date;
   /** Only YouTubeProvider acts on this (liveBroadcasts.insert's status.privacyStatus) -- defaults to 'unlisted' there if omitted. Providers with no such concept (Twitch) ignore it. */
   visibility?: 'public' | 'unlisted' | 'private';
+  /**
+   * Set only when a scheduled StreamBird stream creates the platform-side
+   * broadcast ahead of time (see StreamSchedulingService) -- providers that
+   * can hold a future broadcast (Facebook) then create it as a scheduled
+   * one instead of "live as soon as data arrives". Never set by the
+   * go-live-now path, which must keep behaving exactly as before.
+   */
+  precreate?: boolean;
 }
 
 export interface BroadcastResult {
@@ -30,6 +38,23 @@ export interface StreamProvider {
     conn: PlatformConnection,
     meta: BroadcastMeta,
   ): Promise<BroadcastResult>;
+
+  /**
+   * True when the platform can hold a broadcast scheduled for a future time
+   * (YouTube, Facebook) -- so a scheduled StreamBird stream can create it
+   * ahead of time and have it show up on the platform. Twitch has no such
+   * concept and is only ever created at start.
+   */
+  readonly canPrescheduleBroadcast?: boolean;
+
+  /** Re-syncs a pre-created broadcast's title/description/time/visibility after the host edits the schedule. */
+  updateBroadcast?(conn: PlatformConnection, platformBroadcastId: string, meta: BroadcastMeta): Promise<void>;
+
+  /** Removes a pre-created broadcast from the platform (the scheduled stream was cancelled/deleted, or the destination dropped). Best-effort. */
+  deleteBroadcast?(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
+
+  /** Called when a pre-created broadcast is about to receive data, for platforms that need an explicit "go live" nudge (Facebook). Best-effort. */
+  prepareToGoLive?(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
 
   endBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
 

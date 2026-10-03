@@ -167,4 +167,53 @@ describe('FacebookProvider', () => {
     const count = await provider.getViewerCount(conn, 'video_1');
     expect(count).toBe(0);
   });
+
+  it('createBroadcast without precreate stays LIVE_NOW even when a scheduledAt is passed (go-live-now path is unchanged)', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'v', secure_stream_url: 'rtmps://h:443/rtmp/k' }));
+
+    await provider.createBroadcast(conn, { title: 'T', scheduledAt: new Date(Date.now() + 3_600_000) });
+
+    const sent = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(sent.get('status')).toBe('LIVE_NOW');
+    expect(sent.get('planned_start_time')).toBeNull();
+  });
+
+  it('createBroadcast with precreate makes a hidden scheduled live video with a planned start time', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'v', secure_stream_url: 'rtmps://h:443/rtmp/k' }));
+    const at = new Date('2026-10-10T13:00:00Z');
+
+    await provider.createBroadcast(conn, { title: 'T', scheduledAt: at, precreate: true, visibility: 'unlisted' });
+
+    const sent = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(sent.get('status')).toBe('SCHEDULED_UNPUBLISHED');
+    expect(sent.get('planned_start_time')).toBe(String(at.getTime() / 1000));
+  });
+
+  it('createBroadcast with precreate and public visibility also posts the upcoming live to the Page', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'v', secure_stream_url: 'rtmps://h:443/rtmp/k' }));
+
+    await provider.createBroadcast(conn, { title: 'T', scheduledAt: new Date(Date.now() + 3_600_000), precreate: true, visibility: 'public' });
+
+    expect(new URLSearchParams(fetchMock.mock.calls[0][1].body).get('status')).toBe('SCHEDULED_LIVE');
+  });
+
+  it('updateBroadcast, deleteBroadcast and prepareToGoLive hit the live video itself', async () => {
+    const { provider } = buildProvider();
+    fetchMock.mockResolvedValue(jsonResponse({ success: true }));
+    const at = new Date('2026-10-10T13:00:00Z');
+
+    await provider.updateBroadcast(conn, 'video_9', { title: 'New', description: 'd', scheduledAt: at });
+    await provider.deleteBroadcast(conn, 'video_9');
+    await provider.prepareToGoLive(conn, 'video_9');
+
+    const [update, del, live] = fetchMock.mock.calls;
+    expect(update[0]).toContain('/video_9');
+    expect(new URLSearchParams(update[1].body).get('title')).toBe('New');
+    expect(new URLSearchParams(update[1].body).get('planned_start_time')).toBe(String(at.getTime() / 1000));
+    expect(del[1].method).toBe('DELETE');
+    expect(new URLSearchParams(live[1].body).get('status')).toBe('LIVE_NOW');
+  });
 });

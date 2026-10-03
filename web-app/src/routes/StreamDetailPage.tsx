@@ -26,7 +26,7 @@ const STATUS_POLL_MS = 10_000;
 export function StreamDetailPage() {
   const { streamId } = useParams<{ streamId: string }>();
   const location = useLocation();
-  const justScheduled = (location.state as { justScheduled?: boolean; emailFailures?: string[] } | null) ?? null;
+  const justScheduled = (location.state as { justScheduled?: boolean; emailFailures?: string[]; platformWarnings?: string[] } | null) ?? null;
   const [stream, setStream] = useState<Stream | null>(null);
   const [status, setStatus] = useState<StreamStatusResponse | null>(null);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -86,6 +86,7 @@ export function StreamDetailPage() {
   // (time, guests, invitation, start/cancel) replaces the live-stream view.
   if (stream.isScheduledEvent && stream.status === 'scheduled') {
     const failures = justScheduled?.emailFailures ?? [];
+    const warnings = justScheduled?.platformWarnings ?? [];
     return (
       <div className="stream-detail-page">
         <div className="section-header">
@@ -96,8 +97,17 @@ export function StreamDetailPage() {
           streamId={stream.id}
           initialNotice={
             justScheduled?.justScheduled
-              ? failures.length > 0
-                ? { text: `Stream scheduled, but we couldn't email: ${failures.join(', ')}. Use "Resend" to try again.`, isError: true }
+              ? failures.length > 0 || warnings.length > 0
+                ? {
+                    text: [
+                      'Stream scheduled.',
+                      failures.length > 0 ? `We couldn't email: ${failures.join(', ')} (use "Resend").` : '',
+                      ...warnings,
+                    ]
+                      .filter(Boolean)
+                      .join(' '),
+                    isError: true,
+                  }
                 : { text: 'Stream scheduled. Invitations were emailed to your guests.', isError: false }
               : null
           }

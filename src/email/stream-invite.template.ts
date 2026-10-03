@@ -18,6 +18,8 @@ export interface StreamInviteData {
   joinUrl: string;
   passwordProtected: boolean;
   platforms: string[];
+  /** Public watch links on the platforms, once the broadcast exists there. */
+  watchLinks?: Array<{ platform: string; url: string }>;
 }
 
 export interface StreamInviteEmail {
@@ -102,6 +104,11 @@ export function buildInvitationText(data: StreamInviteData): string {
   if (data.notes) {
     lines.push('');
     lines.push(`Note from ${data.hostName}: ${data.notes}`);
+  }
+  if (data.watchLinks && data.watchLinks.length > 0) {
+    lines.push('');
+    lines.push('Watch live:');
+    for (const link of data.watchLinks) lines.push(`  ${link.platform}: ${link.url}`);
   }
   lines.push('');
   lines.push(`Join link: ${data.joinUrl}`);
@@ -190,6 +197,18 @@ export function buildStreamInviteEmail(data: StreamInviteData): StreamInviteEmai
     `<div style="margin:20px 0 0"><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:4px">${heading}</div>` +
     `<div style="font-size:14px;line-height:1.55;color:#111827;white-space:pre-wrap">${escapeHtml(body)}</div></div>`;
 
+  const watch =
+    !cancelled && data.watchLinks && data.watchLinks.length > 0
+      ? `<div style="margin:20px 0 0"><div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:4px">Watch live</div>` +
+        data.watchLinks
+          .map(
+            (l) =>
+              `<div style="font-size:14px;line-height:1.7"><strong>${escapeHtml(l.platform)}:</strong> <a href="${escapeHtml(l.url)}" style="color:#7c3aed;word-break:break-all">${escapeHtml(l.url)}</a></div>`,
+          )
+          .join('') +
+        '</div>'
+      : '';
+
   const button = cancelled
     ? ''
     : `<div style="margin:28px 0 8px"><a href="${escapeHtml(data.joinUrl)}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#ec4899);background-color:#7c3aed;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 28px;border-radius:999px">Join the stream</a></div>` +
@@ -212,6 +231,7 @@ export function buildStreamInviteEmail(data: StreamInviteData): StreamInviteEmai
 <table role="presentation" cellpadding="0" cellspacing="0">${rows}</table>
 ${data.description && !cancelled ? block('About', data.description) : ''}
 ${data.notes && !cancelled ? block(`Note from ${data.hostName}`, data.notes) : ''}
+${watch}
 ${button}
 </td></tr></table>
 <div style="font-size:11px;color:#9ca3af;margin-top:14px">Sent via StreamBird on behalf of ${escapeHtml(data.hostName)}</div>

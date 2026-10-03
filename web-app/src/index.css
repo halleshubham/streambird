@@ -1655,3 +1655,27 @@ a.icon-btn--danger {
   padding: 0;
   justify-content: center;
 }
+
+.destination-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.destination-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.precreate-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.precreate-toggle .field-hint {
+  margin: 0;
+}

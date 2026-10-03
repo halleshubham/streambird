@@ -73,6 +73,16 @@ export class ScheduleStreamDto {
   @IsEmail({}, { each: true })
   guestEmails?: string[];
 
+  /**
+   * Create the broadcast on the platforms that can hold a scheduled one
+   * (YouTube, Facebook) right now instead of when the stream starts, so it
+   * shows up there and its watch link can go in the invites. Twitch is
+   * always created at start.
+   */
+  @IsOptional()
+  @IsBoolean()
+  createOnPlatforms?: boolean;
+
   /** Optional join password applied to every guest link of this stream. */
   @IsOptional()
   @IsString()
@@ -125,6 +135,11 @@ export class UpdateScheduleDto {
   @IsUUID('4', { each: true })
   @Type(() => String)
   destinationConnectionIds?: string[];
+
+  /** Turn pre-creating on the platforms on (creates the missing broadcasts) or off (removes them from the platforms). */
+  @IsOptional()
+  @IsBoolean()
+  createOnPlatforms?: boolean;
 
   /** Email invited guests about a change to the time/title/details (default true). */
   @IsOptional()

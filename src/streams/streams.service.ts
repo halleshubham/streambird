@@ -37,7 +37,8 @@ export class StreamsService {
     private readonly accountsService: AccountsService,
   ) {}
 
-  private resolveProvider(connection: PlatformConnection): StreamProvider {
+  /** Public: StreamSchedulingService pre-creates/updates/deletes platform broadcasts through the same providers. */
+  resolveProvider(connection: PlatformConnection): StreamProvider {
     const provider = this.providers.find((p) => p.identifier === connection.platform);
     if (!provider) {
       throw new UnprocessableEntityException(
@@ -98,12 +99,16 @@ export class StreamsService {
     stream: LiveStream,
     connections: PlatformConnection[],
     meta: { title: string; description?: string; scheduledAt?: Date; visibility?: 'public' | 'unlisted' | 'private' },
+    /** Broadcasts already created on the platform (scheduled streams that pre-created them), keyed by connection id -- used as-is instead of creating a new one. */
+    reuse?: Map<string, Awaited<ReturnType<StreamProvider['createBroadcast']>>>,
   ): Promise<LiveStream> {
     // Fan out createBroadcast() in parallel; a rejection here never blocks
     // the destinations that succeeded — that is the whole point of
     // Promise.allSettled over Promise.all for this step.
     const settled = await Promise.allSettled(
       connections.map(async (conn) => {
+        const reused = reuse?.get(conn.id);
+        if (reused) return { conn, result: reused };
         const provider = this.resolveProvider(conn);
         const result = await provider.createBroadcast(conn, {
           title: meta.title,
@@ -217,6 +222,23 @@ export class StreamsService {
       throw new UnprocessableEntityException('None of this stream\'s destinations are connected any more.');
     }
 
+    // Broadcasts the host pre-created on the platforms when scheduling are
+    // reused -- but only if still alive (not deleted or completed on the
+    // platform since); a dead one is silently created afresh instead.
+    const reuse = await this.collectReusableBroadcasts(stream.destinations, connections);
+
+    // Snapshot the rows so a failed start can put them back exactly as they were.
+    const snapshot = stream.destinations.map((d) => ({
+      liveStreamId: d.liveStreamId,
+      platformConnectionId: d.platformConnectionId,
+      platformBroadcastId: d.platformBroadcastId,
+      ingestUrl: d.ingestUrl,
+      streamKey: d.streamKey,
+      watchUrl: d.watchUrl,
+      status: d.status,
+      errorMessage: d.errorMessage,
+    }));
+
     // Placeholder rows would collide with the real ones (unique per
     // stream + connection), so clear them for the provisioning run. Then
     // re-read the stream WITHOUT its destinations relation: saving the
@@ -227,28 +249,64 @@ export class StreamsService {
     if (!fresh) throw new NotFoundException(`LiveStream ${id} not found`);
 
     try {
-      return await this.provision(fresh, connections, {
-        title: fresh.title,
-        description: fresh.description ?? undefined,
-        visibility: (fresh.visibility as 'public' | 'unlisted' | 'private' | null) ?? undefined,
-      });
+      return await this.provision(
+        fresh,
+        connections,
+        {
+          title: fresh.title,
+          description: fresh.description ?? undefined,
+          visibility: (fresh.visibility as 'public' | 'unlisted' | 'private' | null) ?? undefined,
+        },
+        reuse,
+      );
     } catch (err) {
       // provision() marked it FAILED and left FAILED destination rows --
       // undo that so a scheduled stream is never lost to one bad start.
       await this.destinations.delete({ liveStreamId: stream.id });
-      await this.destinations.save(
-        connections.map((c) =>
-          this.destinations.create({
-            liveStreamId: stream.id,
-            platformConnectionId: c.id,
-            status: DestinationStatus.PENDING,
-          }),
-        ),
-      );
+      await this.destinations.save(snapshot.map((row) => this.destinations.create(row)));
       fresh.status = StreamStatus.SCHEDULED;
       await this.liveStreams.save(fresh);
       throw err;
     }
+  }
+
+  /**
+   * For each destination that already has a platform broadcast (pre-created
+   * while scheduling), checks the platform still considers it usable and
+   * tells it to be ready for data. Anything dead, missing or erroring is
+   * left out so start() creates a fresh broadcast for that destination.
+   */
+  private async collectReusableBroadcasts(
+    rows: LiveStreamDestination[],
+    connections: PlatformConnection[],
+  ): Promise<Map<string, { ingestUrl: string; streamKey: string; platformBroadcastId: string; watchUrl: string | null }>> {
+    const DEAD_STATUSES = new Set(['complete', 'revoked', 'LIVE_STOPPED', 'VOD']);
+    const reuse = new Map<string, { ingestUrl: string; streamKey: string; platformBroadcastId: string; watchUrl: string | null }>();
+
+    await Promise.all(
+      rows.map(async (row) => {
+        if (!row.platformBroadcastId || !row.ingestUrl || !row.streamKey) return;
+        const conn = connections.find((c) => c.id === row.platformConnectionId);
+        if (!conn) return;
+        try {
+          const provider = this.resolveProvider(conn);
+          if (provider.getBroadcastStatus) {
+            const status = await provider.getBroadcastStatus(conn, row.platformBroadcastId);
+            if (!status || DEAD_STATUSES.has(status)) return; // gone/finished on the platform -- recreate
+          }
+          await provider.prepareToGoLive?.(conn, row.platformBroadcastId);
+          reuse.set(conn.id, {
+            ingestUrl: row.ingestUrl,
+            streamKey: row.streamKey,
+            platformBroadcastId: row.platformBroadcastId,
+            watchUrl: row.watchUrl,
+          });
+        } catch {
+          // Can't confirm it's usable -- fall back to a fresh broadcast.
+        }
+      }),
+    );
+    return reuse;
   }
 
   async findByIdOrThrow(id: string, accountId: string): Promise<LiveStream> {

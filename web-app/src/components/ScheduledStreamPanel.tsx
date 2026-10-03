@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Clapperboard, Copy, Mail, Pencil, Play, Trash2, UserPlus, X } from 'lucide-react';
+import { CalendarClock, Clapperboard, Copy, ExternalLink, Mail, Pencil, Play, Trash2, UserPlus, X } from 'lucide-react';
 import {
   addScheduleGuests,
   cancelSchedule,
@@ -63,8 +63,12 @@ export function ScheduledStreamPanel({
         if (result) {
           setDetail(result);
           const failures = result.emailFailures ?? [];
-          if (failures.length > 0) {
-            setNotice({ text: `Couldn't send to: ${failures.join(', ')}. Use "Resend" to try again.`, isError: true });
+          const warnings = result.platformWarnings ?? [];
+          if (failures.length > 0 || warnings.length > 0) {
+            setNotice({
+              text: [failures.length > 0 ? `Couldn't send to: ${failures.join(', ')}. Use "Resend" to try again.` : '', ...warnings].filter(Boolean).join(' '),
+              isError: true,
+            });
             return;
           }
         }
@@ -133,13 +137,57 @@ export function ScheduledStreamPanel({
             <strong>Note to guests:</strong> {detail.guestNotes}
           </p>
         )}
-        <div className="connections-summary">
+        <div className="destination-status-list">
           {detail.destinations.map((d) => (
-            <span key={d.id} className="destination-checkbox">
-              <PlatformBadge platform={d.platform} /> {d.label}
-            </span>
+            <div key={d.id} className="destination-status-row">
+              <span className="destination-checkbox">
+                <PlatformBadge platform={d.platform} /> {d.label}
+              </span>
+              {d.onPlatform ? (
+                <span className="badge badge-accent">Created on the platform</span>
+              ) : (
+                <span className="badge">{d.canPrecreate ? 'Not created yet' : 'Created at start'}</span>
+              )}
+              {d.watchUrl && (
+                <>
+                  <a href={d.watchUrl} target="_blank" rel="noopener noreferrer" className="icon-btn icon-btn--small">
+                    <ExternalLink size={14} /> Watch page
+                  </a>
+                  <button type="button" className="icon-btn icon-btn--small" onClick={() => void handleCopy(d.watchUrl!, 'Watch link')}>
+                    <Copy size={14} /> Copy link
+                  </button>
+                </>
+              )}
+              {d.errorMessage && !d.onPlatform && <span className="field-hint error">{d.errorMessage}</span>}
+            </div>
           ))}
           {detail.visibility && <span className="field-hint">Visibility: {detail.visibility}</span>}
+          {detail.destinations.some((d) => d.canPrecreate) && (
+            <div className="precreate-toggle">
+              <button
+                type="button"
+                className="icon-btn icon-btn--small"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run(
+                    'precreate',
+                    () => updateSchedule(streamId, { createOnPlatforms: !detail.precreateOnPlatforms, notifyGuests: true }),
+                    () =>
+                      detail.precreateOnPlatforms
+                        ? 'Removed the broadcasts from the platforms. They will be created when you start the stream.'
+                        : 'Created on the platforms. The watch links are in your guests\' invitations.',
+                  )
+                }
+              >
+                {busy === 'precreate' ? 'Working…' : detail.precreateOnPlatforms ? 'Remove from platforms until start' : 'Create on platforms now'}
+              </button>
+              <p className="field-hint">
+                {detail.precreateOnPlatforms
+                  ? 'YouTube/Facebook show this as an upcoming stream. Editing, cancelling or deleting here keeps them in sync.'
+                  : 'YouTube and Facebook can show this as an upcoming stream with a watch link for your guests.'}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="scheduled-actions">
@@ -168,7 +216,8 @@ export function ScheduledStreamPanel({
             disabled={busy !== null}
             onClick={() => {
               const n = detail.guests.length;
-              const msg = n > 0 ? `Cancel this stream? ${n} invited ${n === 1 ? 'guest' : 'guests'} will get a cancellation email.` : 'Cancel this stream?';
+              const onPlatforms = detail.destinations.some((d) => d.onPlatform) ? ' It will also be removed from the platforms.' : '';
+              const msg = n > 0 ? `Cancel this stream? ${n} invited ${n === 1 ? 'guest' : 'guests'} will get a cancellation email.${onPlatforms}` : `Cancel this stream?${onPlatforms}`;
               if (!window.confirm(msg)) return;
               void run('cancel', async () => {
                 await cancelSchedule(streamId);
@@ -185,7 +234,7 @@ export function ScheduledStreamPanel({
               disabled={busy !== null}
               title="Removes it without emailing your guests"
               onClick={() => {
-                if (!window.confirm('Delete this stream? Your guests will not be emailed.')) return;
+                if (!window.confirm(`Delete this stream? Your guests will not be emailed.${detail.destinations.some((d) => d.onPlatform) ? ' It will also be removed from the platforms.' : ''}`)) return;
                 void run('delete', async () => {
                   await deleteScheduledStream(streamId);
                   navigate('/streams/upcoming');

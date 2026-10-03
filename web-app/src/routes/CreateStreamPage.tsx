@@ -23,6 +23,7 @@ export function CreateStreamPage() {
   const [duration, setDuration] = useState(60);
   const [guestNotes, setGuestNotes] = useState('');
   const [guestEmailsText, setGuestEmailsText] = useState('');
+  const [createOnPlatforms, setCreateOnPlatforms] = useState(false);
   const [requirePassword, setRequirePassword] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
   const timeZone = browserTimeZone();
@@ -32,6 +33,10 @@ export function CreateStreamPage() {
   useEffect(() => {
     listConnections().then(setConnections);
   }, []);
+
+  // Platforms that can hold a broadcast scheduled for later (see StreamProvider.canPrescheduleBroadcast server-side).
+  const PRECREATABLE = ['youtube', 'facebook'];
+  const precreatable = (connections ?? []).filter((c) => selected.has(c.id) && PRECREATABLE.includes(c.platform));
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -82,8 +87,11 @@ export function CreateStreamPage() {
           destinationConnectionIds: [...selected],
           guestEmails: valid.length > 0 ? valid : undefined,
           invitePassword: requirePassword ? invitePassword.trim() : undefined,
+          createOnPlatforms: createOnPlatforms && precreatable.length > 0 ? true : undefined,
         });
-        navigate(`/streams/${detail.id}`, { state: { justScheduled: true, emailFailures: detail.emailFailures ?? [] } });
+        navigate(`/streams/${detail.id}`, {
+          state: { justScheduled: true, emailFailures: detail.emailFailures ?? [], platformWarnings: detail.platformWarnings ?? [] },
+        });
         return;
       }
 
@@ -210,6 +218,21 @@ export function CreateStreamPage() {
               rows={3}
               maxLength={2000}
             />
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={createOnPlatforms}
+                disabled={precreatable.length === 0}
+                onChange={(e) => setCreateOnPlatforms(e.target.checked)}
+              />{' '}
+              Create the broadcast on {precreatable.length > 0 ? [...new Set(precreatable.map((c) => (c.platform === 'youtube' ? 'YouTube' : 'Facebook')))].join(' and ') : 'YouTube / Facebook'} now
+            </label>
+            <p className="field-hint">
+              {precreatable.length > 0
+                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Other destinations (e.g. Twitch) are always created when you start the stream.'
+                : 'Select a YouTube or Facebook destination to use this. Other platforms are created when you start the stream.'}
+            </p>
 
             <label className="checkbox-row">
               <input type="checkbox" checked={requirePassword} onChange={(e) => setRequirePassword(e.target.checked)} /> Require a password to join

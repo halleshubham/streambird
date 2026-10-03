@@ -67,14 +67,32 @@ function build() {
     revokeInvite: jest.fn(async (_s: string, id: string) => { invites.get(id).revokedAt = new Date(); }),
     joinUrlFor: (t: string) => `https://app.example.com/join/${t}`,
   };
-  const streamsService = { end: jest.fn(async () => undefined) };
+  const makeProvider = (name: string, canPrecreate: boolean) => ({
+    canPrescheduleBroadcast: canPrecreate,
+    createBroadcast: jest.fn(async (_conn: any, _meta: any) => ({
+      ingestUrl: `rtmp://${name}/live`,
+      streamKey: `${name}-key`,
+      platformBroadcastId: `${name}-bc-1`,
+      watchUrl: `https://${name}.example/watch/bc-1`,
+    })),
+    updateBroadcast: jest.fn(async (_conn: any, _id: string, _meta: any) => undefined),
+    deleteBroadcast: jest.fn(async (_conn: any, _id: string) => undefined),
+  });
+  const providers: Record<string, ReturnType<typeof makeProvider>> = {
+    youtube: makeProvider('youtube', true),
+    twitch: makeProvider('twitch', false),
+  };
+  const streamsService = {
+    end: jest.fn(async () => undefined),
+    resolveProvider: (conn: any) => providers[conn.platform],
+  };
   const email = { sendStreamInvite: jest.fn(async () => undefined) };
 
   const service = new StreamSchedulingService(
     liveStreams as any, destinations as any, platformConnections as any, studioSessions as any, streamsService as any, email as any,
   );
   jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
-  return { service, streams, dests, invites, studioSessions, streamsService, email };
+  return { service, streams, dests, invites, studioSessions, streamsService, email, providers };
 }
 
 const CONN_YT = '11111111-1111-4111-8111-111111111111';
@@ -244,5 +262,123 @@ describe('StreamSchedulingService', () => {
     expect(streams.has(live.id)).toBe(true);
 
     await expect(service.delete({ id: 'someone_else' } as any, live.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  describe('creating broadcasts on the platforms now', () => {
+    const withPlatforms = () => ({ ...baseDto(), createOnPlatforms: true });
+
+    it('pre-creates only on platforms that can hold a scheduled broadcast, and puts the watch link in the invites', async () => {
+      const { service, dests, providers, email } = build();
+
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+
+      expect(providers.youtube.createBroadcast).toHaveBeenCalledTimes(1);
+      expect(providers.youtube.createBroadcast.mock.calls[0][1]).toMatchObject({ title: 'Launch Q&A', precreate: true });
+      expect((providers.youtube.createBroadcast.mock.calls[0][1] as any).scheduledAt).toBeInstanceOf(Date);
+      expect(providers.twitch.createBroadcast).not.toHaveBeenCalled(); // Twitch is created at start
+
+      const rows = [...dests.values()];
+      const yt = rows.find((r) => r.platformConnectionId === CONN_YT);
+      const tw = rows.find((r) => r.platformConnectionId === CONN_TW);
+      expect(yt).toMatchObject({ status: DestinationStatus.READY, platformBroadcastId: 'youtube-bc-1', watchUrl: 'https://youtube.example/watch/bc-1' });
+      expect(tw).toMatchObject({ status: DestinationStatus.PENDING });
+      expect(tw.platformBroadcastId).toBeUndefined();
+
+      expect(detail.precreateOnPlatforms).toBe(true);
+      expect(detail.destinations.find((d) => d.platform === 'youtube')).toMatchObject({ canPrecreate: true, onPlatform: true });
+      expect(detail.destinations.find((d) => d.platform === 'twitch')).toMatchObject({ canPrecreate: false, onPlatform: false });
+      expect(detail.invitationText).toContain('Watch live:');
+      expect(detail.invitationText).toContain('YouTube: https://youtube.example/watch/bc-1');
+      expect((email.sendStreamInvite as jest.Mock).mock.calls[0][1].watchLinks).toEqual([
+        { platform: 'YouTube', url: 'https://youtube.example/watch/bc-1' },
+      ]);
+    });
+
+    it('does nothing on the platforms unless asked', async () => {
+      const { service, providers } = build();
+      const detail = await service.schedule(ACCOUNT, baseDto());
+      expect(providers.youtube.createBroadcast).not.toHaveBeenCalled();
+      expect(detail.precreateOnPlatforms).toBe(false);
+      expect(detail.invitationText).not.toContain('Watch live');
+    });
+
+    it('never shares a watch link for a private stream', async () => {
+      const { service, email } = build();
+      const detail = await service.schedule(ACCOUNT, { ...withPlatforms(), visibility: 'private' });
+      expect(detail.invitationText).not.toContain('Watch live');
+      expect((email.sendStreamInvite as jest.Mock).mock.calls[0][1].watchLinks).toEqual([]);
+    });
+
+    it('still schedules when the platform refuses, recording a warning and leaving that destination to be created at start', async () => {
+      const { service, dests, providers } = build();
+      providers.youtube.createBroadcast.mockRejectedValueOnce(new Error('quota exceeded'));
+
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+
+      expect(detail.platformWarnings).toHaveLength(1);
+      expect(detail.platformWarnings![0]).toContain('YouTube');
+      expect(detail.platformWarnings![0]).toContain('quota exceeded');
+      const yt = [...dests.values()].find((r) => r.platformConnectionId === CONN_YT);
+      expect(yt.status).toBe(DestinationStatus.PENDING);
+      expect(yt.errorMessage).toBe('quota exceeded');
+      expect(detail.destinations.find((d) => d.platform === 'youtube')!.onPlatform).toBe(false);
+    });
+
+    it('re-syncs title/time to the platform broadcast when the schedule is edited', async () => {
+      const { service, providers } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+
+      await service.update(ACCOUNT, detail.id, { title: 'Renamed', scheduledAt: new Date(Date.now() + 7_200_000).toISOString() });
+
+      expect(providers.youtube.updateBroadcast).toHaveBeenCalledTimes(1);
+      const [, id, meta] = providers.youtube.updateBroadcast.mock.calls[0] as any[];
+      expect(id).toBe('youtube-bc-1');
+      expect(meta).toMatchObject({ title: 'Renamed' });
+    });
+
+    it('removes a destination\'s platform broadcast when that destination is dropped', async () => {
+      const { service, dests, providers } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+
+      await service.update(ACCOUNT, detail.id, { destinationConnectionIds: [CONN_TW] });
+
+      expect(providers.youtube.deleteBroadcast).toHaveBeenCalledWith(expect.anything(), 'youtube-bc-1');
+      expect([...dests.values()].map((r) => r.platformConnectionId)).toEqual([CONN_TW]);
+    });
+
+    it('turning the option off removes the broadcasts from the platforms; turning it on creates the missing ones', async () => {
+      const { service, providers } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+
+      const off = await service.update(ACCOUNT, detail.id, { createOnPlatforms: false });
+      expect(providers.youtube.deleteBroadcast).toHaveBeenCalledTimes(1);
+      expect(off.precreateOnPlatforms).toBe(false);
+      expect(off.destinations.every((d) => !d.onPlatform)).toBe(true);
+
+      const on = await service.update(ACCOUNT, detail.id, { createOnPlatforms: true });
+      expect(providers.youtube.createBroadcast).toHaveBeenCalledTimes(2);
+      expect(on.destinations.find((d) => d.platform === 'youtube')!.onPlatform).toBe(true);
+    });
+
+    it('cancel and delete both remove the broadcast from the platform', async () => {
+      const a = build();
+      const first = await a.service.schedule(ACCOUNT, withPlatforms());
+      await a.service.cancel(ACCOUNT, first.id);
+      expect(a.providers.youtube.deleteBroadcast).toHaveBeenCalledTimes(1);
+
+      const b = build();
+      const second = await b.service.schedule(ACCOUNT, withPlatforms());
+      await b.service.delete(ACCOUNT, second.id);
+      expect(b.providers.youtube.deleteBroadcast).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failure to delete on the platform never blocks cancelling', async () => {
+      const { service, providers, streamsService } = build();
+      const detail = await service.schedule(ACCOUNT, withPlatforms());
+      providers.youtube.deleteBroadcast.mockRejectedValueOnce(new Error('403'));
+
+      await expect(service.cancel(ACCOUNT, detail.id)).resolves.toBeUndefined();
+      expect(streamsService.end).toHaveBeenCalled();
+    });
   });
 });

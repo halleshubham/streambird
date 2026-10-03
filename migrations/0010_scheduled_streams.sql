@@ -11,6 +11,8 @@ ALTER TABLE live_streams ADD COLUMN timezone TEXT;
 ALTER TABLE live_streams ADD COLUMN expected_duration_minutes INTEGER;
 ALTER TABLE live_streams ADD COLUMN guest_notes TEXT;
 ALTER TABLE live_streams ADD COLUMN cancelled_at TIMESTAMPTZ;
+-- Host chose to create the platform broadcasts (YouTube, Facebook) at scheduling time rather than at start.
+ALTER TABLE live_streams ADD COLUMN precreate_on_platforms BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX ix_live_streams_upcoming ON live_streams(account_id, scheduled_at) WHERE is_scheduled_event;
 
 -- Email-addressed guest invites: one personal join link per invited address.

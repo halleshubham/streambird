@@ -16,6 +16,7 @@ import { StudioSessionsService } from '../studio/studio-sessions.service';
 import { StreamsService } from './streams.service';
 import { EMAIL_SERVICE, EmailService } from '../email/email.interface';
 import { StreamInviteData, buildInvitationText } from '../email/stream-invite.template';
+import { BroadcastMeta } from '../providers/stream-provider.interface';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { DestinationStatus } from '../common/enums/destination-status.enum';
 import { Account } from '../accounts/entities/account.entity';
@@ -57,7 +58,20 @@ export interface ScheduleDetail {
   guestNotes: string | null;
   studioSessionId: string;
   passwordProtected: boolean;
-  destinations: Array<{ id: string; platformConnectionId: string; platform: string; label: string }>;
+  /** Whether the platform broadcasts (YouTube, Facebook) are created now rather than at start. */
+  precreateOnPlatforms: boolean;
+  destinations: Array<{
+    id: string;
+    platformConnectionId: string;
+    platform: string;
+    label: string;
+    /** This destination's platform can hold a scheduled broadcast ahead of time. */
+    canPrecreate: boolean;
+    /** The broadcast already exists on the platform. */
+    onPlatform: boolean;
+    watchUrl: string | null;
+    errorMessage: string | null;
+  }>;
   guests: ScheduleGuest[];
   /** Shareable link not tied to any email -- what "Copy invitation" includes. */
   generalJoinUrl: string | null;
@@ -65,6 +79,13 @@ export interface ScheduleDetail {
   invitationText: string;
   /** Present on responses that sent email: which addresses failed. */
   emailFailures?: string[];
+  /** Present on responses that touched the platforms: what couldn't be created/updated/removed there. */
+  platformWarnings?: string[];
+}
+
+interface DetailExtras {
+  emailFailures?: string[];
+  platformWarnings?: string[];
 }
 
 /**
@@ -104,11 +125,12 @@ export class StreamSchedulingService {
         guestNotes: dto.guestNotes?.trim() || null,
         visibility: dto.visibility ?? null,
         isScheduledEvent: true,
+        precreateOnPlatforms: !!dto.createOnPlatforms,
         status: StreamStatus.SCHEDULED,
       }),
     );
 
-    await this.destinations.save(
+    const rows = await this.destinations.save(
       connections.map((c) =>
         this.destinations.create({
           liveStreamId: stream.id,
@@ -117,6 +139,12 @@ export class StreamSchedulingService {
         }),
       ),
     );
+
+    // Done before the invites go out so the emails can carry the watch links.
+    let platformWarnings: string[] | undefined;
+    if (dto.createOnPlatforms) {
+      platformWarnings = await this.precreate(stream, rows, connections);
+    }
 
     const session = await this.studioSessions.createForStream(stream);
 
@@ -132,7 +160,7 @@ export class StreamSchedulingService {
     }
 
     const failures = await this.sendInvites(account, stream, invites, 'invite', !!dto.invitePassword);
-    return this.buildDetail(account, stream.id, failures);
+    return this.buildDetail(account, stream.id, { emailFailures: failures, platformWarnings });
   }
 
   guestCounts(liveStreamIds: string[]): Promise<Map<string, number>> {
@@ -145,7 +173,8 @@ export class StreamSchedulingService {
 
   async update(account: Account, streamId: string, dto: UpdateScheduleDto): Promise<ScheduleDetail> {
     const stream = await this.loadScheduledOrThrow(account.id, streamId);
-    const before = { title: stream.title, scheduledAt: stream.scheduledAt?.getTime(), description: stream.description, notes: stream.guestNotes, duration: stream.expectedDurationMinutes };
+    const before = { title: stream.title, scheduledAt: stream.scheduledAt?.getTime(), description: stream.description, notes: stream.guestNotes, duration: stream.expectedDurationMinutes, visibility: stream.visibility };
+    const platformWarnings: string[] = [];
 
     if (dto.title !== undefined) stream.title = dto.title.trim();
     if (dto.description !== undefined) stream.description = dto.description.trim() || null;
@@ -157,26 +186,65 @@ export class StreamSchedulingService {
     if (dto.durationMinutes !== undefined) stream.expectedDurationMinutes = dto.durationMinutes;
     if (dto.guestNotes !== undefined) stream.guestNotes = dto.guestNotes.trim() || null;
     if (dto.visibility !== undefined) stream.visibility = dto.visibility;
+
+    const wasPrecreated = stream.precreateOnPlatforms;
+    if (dto.createOnPlatforms !== undefined) stream.precreateOnPlatforms = dto.createOnPlatforms;
     await this.liveStreams.save(stream);
 
+    // Destinations: drop removed ones (and their platform broadcast), add new ones.
     if (dto.destinationConnectionIds) {
-      await this.replaceDestinations(account.id, stream.id, dto.destinationConnectionIds);
+      const wanted = await this.loadOwnedConnections(account.id, dto.destinationConnectionIds);
+      const wantedIds = new Set(wanted.map((c) => c.id));
+      const existing = await this.loadDestinations(stream.id);
+
+      const removed = existing.filter((r) => !wantedIds.has(r.platformConnectionId));
+      platformWarnings.push(...(await this.removeFromPlatform(removed)));
+      if (removed.length > 0) await this.destinations.delete({ id: In(removed.map((r) => r.id)) as any });
+
+      const have = new Set(existing.map((r) => r.platformConnectionId));
+      const added = wanted.filter((c) => !have.has(c.id));
+      if (added.length > 0) {
+        await this.destinations.save(
+          added.map((c) => this.destinations.create({ liveStreamId: stream.id, platformConnectionId: c.id, status: DestinationStatus.PENDING })),
+        );
+      }
     }
 
-    const changed =
+    // Platform broadcasts: create / remove / re-sync to match the (possibly changed) settings.
+    const rows = await this.loadDestinations(stream.id);
+    // What the platforms show (title, time, description, privacy) vs. what a
+    // guest's invitation shows (no privacy setting) -- a visibility-only
+    // change re-syncs the platforms but never emails anyone.
+    const guestVisibleChanged =
       before.title !== stream.title ||
       before.scheduledAt !== stream.scheduledAt?.getTime() ||
-      before.description !== stream.description ||
+      before.description !== stream.description;
+    const detailsChanged = guestVisibleChanged || before.visibility !== stream.visibility;
+
+    if (stream.precreateOnPlatforms) {
+      const missing = rows.filter((r) => !r.platformBroadcastId);
+      platformWarnings.push(...(await this.precreate(stream, missing)));
+      if (detailsChanged) {
+        platformWarnings.push(...(await this.syncToPlatform(stream, rows.filter((r) => !!r.platformBroadcastId && !missing.includes(r)))));
+      }
+    } else if (wasPrecreated) {
+      platformWarnings.push(...(await this.removeFromPlatform(rows)));
+    }
+
+    const watchLinksChanged = wasPrecreated !== stream.precreateOnPlatforms;
+    const changed =
+      guestVisibleChanged ||
+      watchLinksChanged ||
       before.notes !== stream.guestNotes ||
       before.duration !== stream.expectedDurationMinutes;
 
-    let failures: string[] | undefined;
+    let emailFailures: string[] | undefined;
     if (changed && dto.notifyGuests !== false) {
       const session = await this.studioSessions.findByLiveStreamId(stream.id);
       const invites = (await this.studioSessions.listActiveInvites(session!.id, account.id)).filter((i) => i.email);
-      failures = await this.sendInvites(account, stream, invites, 'update', invites.some((i) => !!i.passwordHash));
+      emailFailures = await this.sendInvites(account, stream, invites, 'update', invites.some((i) => !!i.passwordHash));
     }
-    return this.buildDetail(account, stream.id, failures);
+    return this.buildDetail(account, stream.id, { emailFailures, platformWarnings: platformWarnings.length ? platformWarnings : undefined });
   }
 
   async addGuests(account: Account, streamId: string, dto: AddScheduleGuestsDto): Promise<ScheduleDetail> {
@@ -200,7 +268,7 @@ export class StreamSchedulingService {
     }
 
     const failures = await this.sendInvites(account, stream, invites, 'invite', protectedByPassword);
-    return this.buildDetail(account, stream.id, failures);
+    return this.buildDetail(account, stream.id, { emailFailures: failures });
   }
 
   async removeGuest(account: Account, streamId: string, inviteId: string): Promise<ScheduleDetail> {
@@ -219,7 +287,7 @@ export class StreamSchedulingService {
     if (!invite) throw new NotFoundException('Guest invite not found');
 
     const failures = await this.sendInvites(account, stream, [invite], 'invite', !!invite.passwordHash);
-    return this.buildDetail(account, stream.id, failures);
+    return this.buildDetail(account, stream.id, { emailFailures: failures });
   }
 
   /** Cancels a stream that hasn't started: tells every invited guest, then ends it (which also revokes every link). */
@@ -229,6 +297,9 @@ export class StreamSchedulingService {
     const invites = (await this.studioSessions.listActiveInvites(session!.id, account.id)).filter((i) => i.email);
 
     await this.sendInvites(account, stream, invites, 'cancelled', invites.some((i) => !!i.passwordHash));
+
+    // A cancelled stream must not linger as an upcoming broadcast on the platforms.
+    await this.removeFromPlatform(await this.loadDestinations(stream.id));
 
     stream.cancelledAt = new Date();
     await this.liveStreams.save(stream);
@@ -245,6 +316,7 @@ export class StreamSchedulingService {
    */
   async delete(account: Account, streamId: string): Promise<void> {
     const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    await this.removeFromPlatform(await this.loadDestinations(stream.id));
     await this.liveStreams.delete({ id: stream.id, accountId: account.id });
   }
 
@@ -285,19 +357,106 @@ export class StreamSchedulingService {
     return stream;
   }
 
-  private async replaceDestinations(accountId: string, streamId: string, connectionIds: string[]) {
-    const connections = await this.loadOwnedConnections(accountId, connectionIds);
-    await this.destinations.delete({ liveStreamId: streamId });
-    await this.destinations.save(
-      connections.map((c) =>
-        this.destinations.create({ liveStreamId: streamId, platformConnectionId: c.id, status: DestinationStatus.PENDING }),
-      ),
-    );
+  private async loadDestinations(streamId: string): Promise<LiveStreamDestination[]> {
+    return this.destinations.find({ where: { liveStreamId: streamId }, relations: ['platformConnection'] });
   }
 
-  private async platformNames(streamId: string): Promise<string[]> {
-    const rows = await this.destinations.find({ where: { liveStreamId: streamId }, relations: ['platformConnection'] });
-    return [...new Set(rows.map((r) => r.platformConnection?.platform).filter((p): p is NonNullable<typeof p> => !!p))].map(platformLabel);
+  private broadcastMeta(stream: LiveStream): BroadcastMeta {
+    return {
+      title: stream.title,
+      description: stream.description ?? undefined,
+      scheduledAt: stream.scheduledAt ?? undefined,
+      visibility: (stream.visibility as BroadcastMeta['visibility']) ?? undefined,
+      precreate: true,
+    };
+  }
+
+  private describe(row: LiveStreamDestination, conn?: PlatformConnection): string {
+    const c = conn ?? row.platformConnection;
+    return c ? `${platformLabel(c.platform)} (${c.label})` : 'a destination';
+  }
+
+  /**
+   * Creates the platform-side broadcast now, scheduled for the stream's
+   * start time, for every given destination whose platform can hold one
+   * (YouTube, Facebook). The rest -- Twitch -- are left PENDING and created
+   * when the stream starts. A failure never fails the schedule: it's
+   * recorded on that destination and reported back as a warning, and start()
+   * simply creates a fresh broadcast for it.
+   */
+  private async precreate(stream: LiveStream, rows: LiveStreamDestination[], connections?: PlatformConnection[]): Promise<string[]> {
+    const warnings: string[] = [];
+    await Promise.all(
+      rows.map(async (row) => {
+        const conn = connections?.find((c) => c.id === row.platformConnectionId) ?? row.platformConnection;
+        if (!conn || row.platformBroadcastId) return;
+        const provider = this.streamsService.resolveProvider(conn);
+        if (!provider.canPrescheduleBroadcast) return;
+        try {
+          const result = await provider.createBroadcast(conn, this.broadcastMeta(stream));
+          Object.assign(row, {
+            platformBroadcastId: result.platformBroadcastId,
+            ingestUrl: result.ingestUrl,
+            streamKey: result.streamKey,
+            watchUrl: result.watchUrl,
+            status: DestinationStatus.READY,
+            errorMessage: null,
+          });
+        } catch (err) {
+          const message = (err as Error).message;
+          row.errorMessage = message;
+          warnings.push(`${this.describe(row, conn)}: couldn't create it on the platform now (${message}). It will be created when you start the stream.`);
+        }
+        await this.destinations.save(row);
+      }),
+    );
+    return warnings;
+  }
+
+  /** Pushes the stream's current title/description/time/visibility to broadcasts that already exist on the platforms. */
+  private async syncToPlatform(stream: LiveStream, rows: LiveStreamDestination[]): Promise<string[]> {
+    const warnings: string[] = [];
+    await Promise.all(
+      rows.map(async (row) => {
+        const conn = row.platformConnection;
+        if (!conn || !row.platformBroadcastId) return;
+        const provider = this.streamsService.resolveProvider(conn);
+        try {
+          await provider.updateBroadcast?.(conn, row.platformBroadcastId, this.broadcastMeta(stream));
+        } catch (err) {
+          warnings.push(`${this.describe(row)}: couldn't update it on the platform (${(err as Error).message}).`);
+        }
+      }),
+    );
+    return warnings;
+  }
+
+  /** Deletes pre-created platform broadcasts (best effort) and resets those rows to "will be created at start". */
+  private async removeFromPlatform(rows: LiveStreamDestination[]): Promise<string[]> {
+    const warnings: string[] = [];
+    await Promise.all(
+      rows.map(async (row) => {
+        const conn = row.platformConnection;
+        if (!conn || !row.platformBroadcastId) return;
+        const provider = this.streamsService.resolveProvider(conn);
+        try {
+          await provider.deleteBroadcast?.(conn, row.platformBroadcastId);
+        } catch (err) {
+          warnings.push(`${this.describe(row)}: couldn't remove it from the platform (${(err as Error).message}). You may need to delete it there yourself.`);
+        }
+        Object.assign(row, { platformBroadcastId: null, ingestUrl: null, streamKey: null, watchUrl: null, status: DestinationStatus.PENDING, errorMessage: null });
+        await this.destinations.save(row);
+      }),
+    );
+    return warnings;
+  }
+
+  /** Public watch links for the invite -- not for a private stream, whose link only works for the owner. */
+  private watchLinks(stream: LiveStream, rows: LiveStreamDestination[]): Array<{ platform: string; url: string }> {
+    if (stream.visibility === 'private') return [];
+    return rows
+      .filter((r) => !!r.watchUrl && r.platformConnection)
+      .map((r) => ({ platform: platformLabel(r.platformConnection.platform), url: r.watchUrl! }));
   }
 
   private inviteData(
@@ -307,6 +466,7 @@ export class StreamSchedulingService {
     joinUrl: string,
     passwordProtected: boolean,
     platforms: string[],
+    watchLinks: Array<{ platform: string; url: string }> = [],
   ): StreamInviteData {
     return {
       kind,
@@ -321,6 +481,7 @@ export class StreamSchedulingService {
       joinUrl,
       passwordProtected,
       platforms,
+      watchLinks,
     };
   }
 
@@ -333,13 +494,15 @@ export class StreamSchedulingService {
     passwordProtected: boolean,
   ): Promise<string[]> {
     if (invites.length === 0) return [];
-    const platforms = await this.platformNames(stream.id);
+    const destRows = await this.loadDestinations(stream.id);
+    const platforms = [...new Set(destRows.map((r) => r.platformConnection?.platform).filter((p): p is NonNullable<typeof p> => !!p))].map(platformLabel);
+    const watchLinks = this.watchLinks(stream, destRows);
 
     const results = await Promise.allSettled(
       invites.map(async (invite) => {
         await this.email.sendStreamInvite(
           invite.email!,
-          this.inviteData(account, stream, kind, this.studioSessions.joinUrlFor(invite.token), passwordProtected, platforms),
+          this.inviteData(account, stream, kind, this.studioSessions.joinUrlFor(invite.token), passwordProtected, platforms, watchLinks),
         );
         if (kind !== 'cancelled') await this.studioSessions.markInviteEmailed(invite.id);
       }),
@@ -355,7 +518,7 @@ export class StreamSchedulingService {
     return failures;
   }
 
-  private async buildDetail(account: Account, streamId: string, emailFailures?: string[]): Promise<ScheduleDetail> {
+  private async buildDetail(account: Account, streamId: string, extras: DetailExtras = {}): Promise<ScheduleDetail> {
     const stream = await this.liveStreams.findOne({ where: { id: streamId, accountId: account.id } });
     if (!stream || !stream.isScheduledEvent) throw new NotFoundException(`Scheduled stream ${streamId} not found`);
 
@@ -369,7 +532,7 @@ export class StreamSchedulingService {
       .map((i) => ({ id: i.id, email: i.email!, joinUrl: this.studioSessions.joinUrlFor(i.token), emailedAt: i.emailedAt }));
     const passwordProtected = invites.some((i) => !!i.passwordHash);
 
-    const destRows = await this.destinations.find({ where: { liveStreamId: stream.id }, relations: ['platformConnection'] });
+    const destRows = await this.loadDestinations(stream.id);
     const platforms = [...new Set(destRows.map((d) => d.platformConnection?.platform).filter(Boolean) as string[])].map(platformLabel);
 
     const generalJoinUrl = general ? this.studioSessions.joinUrlFor(general.token) : null;
@@ -385,18 +548,24 @@ export class StreamSchedulingService {
       guestNotes: stream.guestNotes,
       studioSessionId: session.id,
       passwordProtected,
+      precreateOnPlatforms: stream.precreateOnPlatforms,
       destinations: destRows.map((d) => ({
         id: d.id,
         platformConnectionId: d.platformConnectionId,
         platform: d.platformConnection?.platform ?? 'unknown',
         label: d.platformConnection?.label ?? '',
+        canPrecreate: d.platformConnection ? !!this.streamsService.resolveProvider(d.platformConnection).canPrescheduleBroadcast : false,
+        onPlatform: !!d.platformBroadcastId,
+        watchUrl: d.watchUrl,
+        errorMessage: d.errorMessage,
       })),
       guests,
       generalJoinUrl,
       invitationText: buildInvitationText(
-        this.inviteData(account, stream, 'invite', generalJoinUrl ?? '(link will appear once created)', passwordProtected, platforms),
+        this.inviteData(account, stream, 'invite', generalJoinUrl ?? '(link will appear once created)', passwordProtected, platforms, this.watchLinks(stream, destRows)),
       ),
-      ...(emailFailures ? { emailFailures } : {}),
+      ...(extras.emailFailures ? { emailFailures: extras.emailFailures } : {}),
+      ...(extras.platformWarnings ? { platformWarnings: extras.platformWarnings } : {}),
     };
   }
 }

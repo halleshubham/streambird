@@ -387,5 +387,73 @@ describe('StreamsService', () => {
 
       await expect(service.start('stream_1', 'acc_1')).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    describe('reusing broadcasts pre-created while scheduling', () => {
+      function precreatedProvider(status: string | null | Error) {
+        const p: any = fakeProvider(Platform.TWITCH, 'succeed');
+        p.getBroadcastStatus = jest.fn(async () => {
+          if (status instanceof Error) throw status;
+          return status;
+        });
+        p.prepareToGoLive = jest.fn(async () => undefined);
+        return p;
+      }
+
+      async function scheduledWithPrecreated(provider: StreamProvider) {
+        const ctx = await scheduled([provider]);
+        const row: any = ctx.destinationRepo.rows.get('dest_1');
+        Object.assign(row, {
+          status: DestinationStatus.READY,
+          platformBroadcastId: 'pre-bc',
+          ingestUrl: 'rtmp://pre/ingest',
+          streamKey: 'pre-key',
+          watchUrl: 'https://watch.example/pre-bc',
+        });
+        return ctx;
+      }
+
+      it('reuses a live pre-created broadcast: no new broadcast, same key and watch link, platform told to get ready', async () => {
+        const provider = precreatedProvider('ready');
+        const { service, destinationRepo } = await scheduledWithPrecreated(provider);
+
+        const stream = await service.start('stream_1', 'acc_1');
+
+        expect(provider.createBroadcast).not.toHaveBeenCalled();
+        expect((provider as any).prepareToGoLive).toHaveBeenCalledWith(expect.anything(), 'pre-bc');
+        expect(stream.status).toBe(StreamStatus.LIVE);
+        const row = [...destinationRepo.rows.values()][0] as any;
+        expect(row).toMatchObject({ status: DestinationStatus.LIVE, platformBroadcastId: 'pre-bc', streamKey: 'pre-key', watchUrl: 'https://watch.example/pre-bc' });
+      });
+
+      it.each([['complete'], [null], [new Error('404 not found')]])(
+        'creates a fresh broadcast when the pre-created one is dead (%s)',
+        async (status) => {
+          const provider = precreatedProvider(status as any);
+          const { service, destinationRepo } = await scheduledWithPrecreated(provider);
+
+          await service.start('stream_1', 'acc_1');
+
+          expect(provider.createBroadcast).toHaveBeenCalledTimes(1);
+          expect((provider as any).prepareToGoLive).not.toHaveBeenCalled();
+          expect(([...destinationRepo.rows.values()][0] as any).platformBroadcastId).toBe('twitch-broadcast-1');
+        },
+      );
+
+      it('a failed start restores the pre-created destination exactly as it was', async () => {
+        const provider = precreatedProvider('ready');
+        const ctx = await scheduledWithPrecreated(provider);
+        // The pre-created broadcast is reusable, but persisting the LIVE stream fails.
+        (ctx.liveStreamRepo.save as jest.Mock).mockImplementationOnce(async () => {
+          throw new Error('db down');
+        });
+
+        await expect(ctx.service.start('stream_1', 'acc_1')).rejects.toThrow();
+
+        expect((ctx.liveStreamRepo.rows.get('stream_1') as any).status).toBe(StreamStatus.SCHEDULED);
+        const rows = [...ctx.destinationRepo.rows.values()] as any[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ status: DestinationStatus.READY, platformBroadcastId: 'pre-bc', streamKey: 'pre-key' });
+      });
+    });
   });
 });

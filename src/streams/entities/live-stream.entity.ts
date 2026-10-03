@@ -63,6 +63,10 @@ export class LiveStream {
   @Column({ type: 'text', nullable: true })
   guestNotes!: string | null;
 
+  /** The host chose to create the platform-side broadcasts (YouTube, Facebook) when scheduling instead of at start -- see StreamSchedulingService. */
+  @Column({ default: false })
+  precreateOnPlatforms!: boolean;
+
   /** Set when a scheduled stream is cancelled before ever starting (status then becomes ENDED). */
   @Column({ type: 'timestamptz', nullable: true })
   cancelledAt!: Date | null;
