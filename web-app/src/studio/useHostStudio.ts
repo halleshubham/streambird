@@ -324,30 +324,65 @@ export function useHostStudio(streamId: string | undefined) {
     // slightly slower than the logo/ticker so a packed grid of simultaneous
     // joins doesn't read as everything popping in at once.
     const fontSize = brandingRef.current.nameFontSize;
-    const boxH = Math.min(h, fontSize + 14);
-    const plateY = y + h - boxH;
+    const margin = Math.max(6, Math.min(14, w * 0.03));
+    const boxH = Math.min(h - margin, fontSize + 16);
     const slideDuration = ENTRANCE_MS * 1.25;
     const t = Math.min((now - p.joinedAt) / slideDuration, 1);
     const eased = easeOutCubic(t);
-    const slideOffset = (1 - eased) * -Math.min(w, 200);
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, plateY, w, boxH);
-    ctx.clip();
-    ctx.translate(slideOffset, 0);
+    if (boxH > 12 && w > 60) {
+      const radius = boxH / 2;
+      const badgeD = boxH - 8;
+      const padX = 4;
+      const textGap = 8;
+      const maxPlateW = w - margin * 2;
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      const maxTextW = Math.max(0, maxPlateW - padX * 2 - badgeD - textGap - radius / 2);
+      let label = p.displayName;
+      if (ctx.measureText(label).width > maxTextW) {
+        while (label.length > 1 && ctx.measureText(label + '\u2026').width > maxTextW) label = label.slice(0, -1);
+        label += '\u2026';
+      }
+      const plateW = Math.min(maxPlateW, padX * 2 + badgeD + textGap + ctx.measureText(label).width + radius / 2);
+      const plateX = x + margin;
+      const plateY = y + h - boxH - margin;
 
-    const accentW = 6;
-    ctx.fillStyle = LOWER_THIRD_ACCENT;
-    ctx.fillRect(x, plateY, accentW, boxH);
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    ctx.fillRect(x + accentW, plateY, w - accentW, boxH);
+      ctx.save();
+      ctx.globalAlpha = eased;
+      ctx.translate((1 - eased) * -Math.min(w, 120), 0);
 
-    ctx.fillStyle = '#fff';
-    ctx.font = `600 ${fontSize}px sans-serif`;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(p.displayName, x + accentW + 8, plateY + boxH / 2);
-    ctx.restore();
+      // Soft drop shadow + translucent dark pill
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = 'rgba(15,15,25,0.78)';
+      ctx.beginPath();
+      ctx.roundRect(plateX, plateY, plateW, boxH, radius);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+
+      // Gradient initial badge
+      const cx = plateX + padX + badgeD / 2;
+      const cy = plateY + boxH / 2;
+      const grad = ctx.createLinearGradient(cx - badgeD / 2, cy - badgeD / 2, cx + badgeD / 2, cy + badgeD / 2);
+      grad.addColorStop(0, LOWER_THIRD_ACCENT);
+      grad.addColorStop(1, '#ec4899');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, badgeD / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.font = `700 ${Math.round(fontSize * 0.85)}px sans-serif`;
+      ctx.fillText((Array.from(p.displayName.trim())[0] ?? '?').toUpperCase(), cx, cy + 0.5);
+
+      ctx.textAlign = 'left';
+      ctx.font = `600 ${fontSize}px sans-serif`;
+      ctx.fillText(label, plateX + padX + badgeD + textGap, cy + 0.5);
+      ctx.restore();
+    }
   }
 
   function drawGrid(entries: Participant[], w: number, h: number, now: number) {
