@@ -7,6 +7,7 @@ import { StudioHostToken } from './entities/studio-host-token.entity';
 import { StudioSessionsService } from './studio-sessions.service';
 import { StudioSessionsController } from './studio-sessions.controller';
 import { StudioSignalingGateway } from './studio-signaling.gateway';
+import { TurnCredentialsService } from './turn-credentials.service';
 import { CommonModule } from '../common/common.module';
 import { StreamsModule } from '../streams/streams.module';
 
@@ -24,7 +25,7 @@ import { StreamsModule } from '../streams/streams.module';
     // Circular: see StreamsModule's own forwardRef back to this module.
     forwardRef(() => StreamsModule),
   ],
-  providers: [StudioSessionsService, StudioSignalingGateway],
+  providers: [StudioSessionsService, StudioSignalingGateway, TurnCredentialsService],
   controllers: [StudioSessionsController],
   exports: [StudioSessionsService],
 })

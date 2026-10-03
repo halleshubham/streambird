@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getStream, getStreamStatus } from '../api/streams';
 import { listConnections } from '../api/connections';
-import { mintHostToken, createInvite, updateLayout } from '../api/studio';
+import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
 import type { PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
 
@@ -11,7 +11,13 @@ import type { PlatformConnection, Stream, StreamStatusDestination } from '../typ
 // "testing" to "live" without hammering every provider's API every call).
 const DESTINATION_STATUS_POLL_MS = 10_000;
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Fallback only, used until (or unless) getTurnCredentials() resolves --
+// see iceServersRef. STUN alone cannot traverse every NAT/firewall a
+// guest might be behind, which is exactly what made some guests silently
+// never show up on the host's canvas (confirmed live via rtc-state
+// diagnostics); Cloudflare-issued TURN credentials are fetched below and
+// used everywhere a RTCPeerConnection gets created in this file.
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
 // Explicit rather than relying on browser defaults -- VDO.Ninja (a mature
 // WebRTC production tool) leans on exactly these three constraints as its
 // primary defense for participants on speakers rather than headphones.
@@ -115,6 +121,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
 
   const hostTokenRef = useRef<string | null>(null);
+  const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
   const socketRef = useRef<Socket | null>(null);
   const participantsRef = useRef<Map<string, Participant>>(new Map());
   const pendingDisplayNamesRef = useRef<Map<string, string>>(new Map());
@@ -258,7 +265,7 @@ export function useHostStudio(streamId: string | undefined) {
       const audioTrack = dest.stream.getAudioTracks()[0];
       if (!audioTrack) throw new Error('missing mix-minus audio track');
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       monitorConnectionsRef.current.set(socketId, pc);
 
       // addTransceiver(track, init) with no `streams` in init gives the
@@ -568,7 +575,7 @@ export function useHostStudio(streamId: string | undefined) {
   // ---- Guest signaling ---------------------------------------------------
 
   const handleGuestOffer = useCallback(async (fromSocketId: string, offer: RTCSessionDescriptionInit) => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
     const videoEl = document.createElement('video');
     videoEl.muted = true;
     videoEl.autoplay = true;
@@ -619,14 +626,15 @@ export function useHostStudio(streamId: string | undefined) {
       }
     };
 
-    // Diagnostic: this is a direct P2P connection (no TURN server
-    // configured -- see ICE_SERVERS), so it can silently fail to ever
-    // carry media for a guest behind a NAT/firewall STUN alone can't
-    // traverse, with nothing in the UI distinguishing that from "just
-    // slow". Previously only console.log'd (invisible once the session's
-    // over); also reported to the server now so a stuck/failed guest
-    // connection actually shows up in production logs after the fact,
-    // not just in a console nobody was watching live.
+    // Diagnostic: this is a direct P2P connection -- now TURN-backed (see
+    // iceServersRef) after this exact gap caused a guest behind a NAT/
+    // firewall STUN alone can't traverse to silently never show up, with
+    // nothing in the UI distinguishing that from "just slow". Kept after
+    // adding TURN as an ongoing health signal, not just removed now that
+    // the likely cause is fixed. Previously only console.log'd (invisible
+    // once the session's over); also reported to the server so a stuck/
+    // failed connection actually shows up in production logs after the
+    // fact, not just in a console nobody was watching live.
     const reportRtcState = () => {
       console.log(
         `[guest ${fromSocketId}] ICE connection state: ${pc.iceConnectionState}, connection state: ${pc.connectionState}`,
@@ -735,6 +743,18 @@ export function useHostStudio(streamId: string | undefined) {
     }
 
     let cancelled = false;
+
+    // Fired in parallel with the stream/host-token load below, not chained
+    // after it -- so iceServersRef is as likely as possible to already be
+    // populated with real TURN credentials by the time a guest's offer
+    // actually arrives. Never blocks stream loading on this: if it's slow
+    // or fails, every RTCPeerConnection in this file just falls back to
+    // DEFAULT_ICE_SERVERS (STUN-only) instead.
+    getTurnCredentials()
+      .then((res) => {
+        if (!cancelled && res.iceServers?.length) iceServersRef.current = res.iceServers;
+      })
+      .catch(() => {});
 
     (async () => {
       try {
@@ -1107,7 +1127,7 @@ export function useHostStudio(streamId: string | undefined) {
       const videoTrack = canvasRef.current!.captureStream(30).getVideoTracks()[0];
       const audioTrack = audioDestinationRef.current ? audioDestinationRef.current.stream.getAudioTracks()[0] : null;
 
-      const whipPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const whipPc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       whipPcRef.current = whipPc;
       const videoTransceiver = whipPc.addTransceiver(videoTrack, { direction: 'sendonly' });
       if (audioTrack) whipPc.addTransceiver(audioTrack, { direction: 'sendonly' });

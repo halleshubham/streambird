@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { resolveInvite } from '../api/studio';
+import { resolveInvite, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
 
 // Explicit rather than relying on browser defaults -- VDO.Ninja (a mature
 // WebRTC production tool) leans on exactly these three constraints as its
 // primary defense for participants on speakers rather than headphones.
 const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Fallback only -- see iceServersRef. STUN alone cannot traverse every
+// NAT/firewall a peer might be behind; Cloudflare-issued TURN credentials
+// are fetched below and used for every RTCPeerConnection in this file.
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export type GuestMode = 'checking-invite' | 'invite-invalid' | 'ready-to-join' | 'in-call';
 
@@ -51,6 +54,7 @@ export function useGuestStudio(token: string | undefined) {
 
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const monitorAudioElRef = useRef<HTMLAudioElement | null>(null);
+  const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const monitorPcRef = useRef<RTCPeerConnection | null>(null);
@@ -70,7 +74,7 @@ export function useGuestStudio(token: string | undefined) {
   }
 
   function setupPeerConnection(localStream: MediaStream): RTCPeerConnection {
-    const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const conn = new RTCPeerConnection({ iceServers: iceServersRef.current });
 
     for (const track of localStream.getTracks()) {
       conn.addTrack(track, localStream);
@@ -87,11 +91,11 @@ export function useGuestStudio(token: string | undefined) {
     };
 
     // Reported to the server (see StudioSignalingGateway's 'rtc-state'
-    // handler) so a guest whose publish connection silently fails to ever
-    // carry media -- e.g. a NAT/firewall STUN alone can't traverse, since
-    // there's no TURN server configured (see ICE_SERVERS) -- actually
-    // shows up in production logs, instead of only a UI status string
-    // nobody necessarily saw at the time.
+    // handler) so a guest whose publish connection fails to ever carry
+    // media -- the exact gap TURN (see iceServersRef) was added to close
+    // -- actually shows up in production logs as an ongoing health
+    // signal, instead of only a UI status string nobody necessarily saw
+    // at the time.
     conn.oniceconnectionstatechange = () => {
       socketRef.current?.emit('rtc-state', {
         about: 'host',
@@ -171,7 +175,7 @@ export function useGuestStudio(token: string | undefined) {
 
     try {
       monitorPcRef.current?.close();
-      const monitorPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const monitorPc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       monitorPcRef.current = monitorPc;
 
       monitorPc.ontrack = (event) => {
@@ -393,6 +397,16 @@ export function useGuestStudio(token: string | undefined) {
       setMode('invite-invalid');
       return;
     }
+    // Fired in parallel, not chained after invite resolution -- so
+    // iceServersRef is as likely as possible to already hold real TURN
+    // credentials by the time this guest actually publishes. Never blocks
+    // anything: a slow/failed fetch just leaves DEFAULT_ICE_SERVERS in
+    // place (STUN-only).
+    getTurnCredentials()
+      .then((res) => {
+        if (!cancelled && res.iceServers?.length) iceServersRef.current = res.iceServers;
+      })
+      .catch(() => {});
     resolveInvite(token)
       .then((res) => {
         if (cancelled) return;

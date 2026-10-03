@@ -11,7 +11,9 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { StudioSessionsService } from './studio-sessions.service';
+import { TurnCredentialsService } from './turn-credentials.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
 import { UpdateLayoutDto } from './dto/update-layout.dto';
 import { AccountGuard } from '../common/guards/account.guard';
@@ -20,7 +22,27 @@ import { Account } from '../accounts/entities/account.entity';
 
 @Controller('studio-sessions')
 export class StudioSessionsController {
-  constructor(private readonly studioSessionsService: StudioSessionsService) {}
+  constructor(
+    private readonly studioSessionsService: StudioSessionsService,
+    private readonly turnCredentials: TurnCredentialsService,
+  ) {}
+
+  /**
+   * Public, like invites/:token below -- both host and guest need this
+   * before/while negotiating WebRTC, and they authenticate completely
+   * differently (account session vs. invite token), so this just isn't
+   * gated by either. Nothing sensitive crosses this boundary: the
+   * Cloudflare API token that can mint these never leaves
+   * TurnCredentialsService, only the short-lived result does. Throttled
+   * per-IP since it's unauthenticated and calls out to a paid third-party
+   * API on a cache miss.
+   */
+  @Get('turn-credentials')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async turnCredentialsEndpoint() {
+    return { iceServers: await this.turnCredentials.getIceServers() };
+  }
 
   /**
    * Public — no API key. The guest join page (web/guest.html) calls this

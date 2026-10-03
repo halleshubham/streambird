@@ -63,6 +63,16 @@ export interface AppConfig {
      * `${publicBaseUrl}/api/platform-connections/facebook/callback`. */
     redirectUri: string;
   };
+  cloudflareTurn: {
+    /** Both empty = no TURN configured, StudioSignalingGateway's clients
+     * fall back to STUN-only (see TurnCredentialsService). */
+    tokenId: string;
+    /** NEVER sent to any client -- used server-side only, to mint
+     * short-lived per-session credentials (see TurnCredentialsService).
+     * This raw token can mint arbitrary TURN credentials against the
+     * Cloudflare account if it ever leaks. */
+    apiToken: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -104,5 +114,9 @@ export default (): AppConfig => ({
     appId: process.env.FACEBOOK_APP_ID ?? '',
     appSecret: process.env.FACEBOOK_APP_SECRET ?? '',
     redirectUri: process.env.FACEBOOK_REDIRECT_URI ?? '',
+  },
+  cloudflareTurn: {
+    tokenId: process.env.CLOUDFLARE_TURN_TOKEN_ID ?? '',
+    apiToken: process.env.CLOUDFLARE_TURN_API_TOKEN ?? '',
   },
 });

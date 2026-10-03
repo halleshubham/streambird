@@ -23,3 +23,11 @@ export function updateLayout(
 export function resolveInvite(token: string): Promise<ResolveInviteResponse> {
   return api.get(`/studio-sessions/invites/${encodeURIComponent(token)}`);
 }
+
+/** Public, same as resolveInvite -- host and guest both need this before
+ * negotiating WebRTC and authenticate completely differently, so neither
+ * gate applies. Short-lived credentials only; see TurnCredentialsService
+ * server-side for why the actual API token never reaches this layer. */
+export function getTurnCredentials(): Promise<{ iceServers: RTCIceServer[] }> {
+  return api.get('/studio-sessions/turn-credentials');
+}
