@@ -27,6 +27,8 @@ export interface AppConfig {
     apiPassword: string;
     /** Public base URL the host's browser publishes WHIP to -- MediaMTX's WebRTC/HTTP port, its own domain. */
     whipBaseUrl: string;
+    /** Override for the "technical glitch" slate image URL; defaults to `${publicBaseUrl}/glitch-slate.png`. */
+    slateUrl: string;
   };
   twitchClientId: string;
   twitchClientSecret: string;
@@ -94,6 +96,7 @@ export default (): AppConfig => ({
     apiUser: process.env.MEDIAMTX_API_USER ?? '',
     apiPassword: process.env.MEDIAMTX_API_PASSWORD ?? '',
     whipBaseUrl: process.env.MEDIAMTX_WHIP_BASE_URL ?? '',
+    slateUrl: process.env.GLITCH_SLATE_URL ?? '',
   },
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',

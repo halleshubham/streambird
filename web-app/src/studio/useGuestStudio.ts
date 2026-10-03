@@ -265,8 +265,14 @@ export function useGuestStudio(token: string | undefined) {
       });
     });
 
-    socket.on('peer-left', ({ socketId }: { socketId: string }) => {
+    socket.on('peer-left', ({ socketId, role }: { socketId: string; role?: string }) => {
       closePeer(socketId);
+      if (role === 'host' && !leavingRef.current) {
+        // The host is expected to reload/reconnect with the same link --
+        // our own connection stays up and they'll re-request our video.
+        setCallStatus('The host disconnected — hang tight, they should be back shortly.');
+        setCallIsError(true);
+      }
     });
 
     socket.on('signal', async (msg: { from: string; type: string; payload: unknown }) => {
@@ -289,8 +295,19 @@ export function useGuestStudio(token: string | undefined) {
       setCallIsError(true);
     });
 
-    socket.on('disconnect', () => {
-      setCallStatus('Disconnected from the studio.');
+    socket.on('disconnect', (reason) => {
+      if (leavingRef.current || reason === 'io client disconnect') {
+        setCallStatus('Disconnected from the studio.');
+      } else {
+        // socket.io reconnects on its own with the same invite token.
+        setCallStatus('Connection lost — reconnecting…');
+        setCallIsError(true);
+      }
+    });
+
+    socket.io.on('reconnect', () => {
+      setCallStatus('Reconnected — rejoining the studio…');
+      setCallIsError(false);
     });
 
     setJoining(false);

@@ -11,12 +11,14 @@ import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { Namespace, Socket } from 'socket.io';
 import { StudioSessionsService } from './studio-sessions.service';
 import { StreamsService } from '../streams/streams.service';
+import { GlitchRecoveryService } from '../streams/glitch-recovery.service';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 
 interface SocketState {
   sessionId: string;
   participantId: string;
   role: 'host' | 'guest';
+  displayName?: string;
 }
 
 // How long to wait after a host's socket disconnects before treating the
@@ -61,6 +63,8 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     private readonly studioSessionsService: StudioSessionsService,
     @Inject(forwardRef(() => StreamsService))
     private readonly streamsService: StreamsService,
+    @Inject(forwardRef(() => GlitchRecoveryService))
+    private readonly glitchRecovery: GlitchRecoveryService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -122,6 +126,22 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     }
 
     client.emit('joined', { sessionId, participantId: participant.id, role: 'host' });
+
+    // A host that reloaded (or lost its connection long enough to lose its
+    // peer connections) has no memory of the guests already in the room,
+    // and guests only announce themselves once, on their own connect.
+    // Replay them as ordinary 'peer-joined' events so the host's existing
+    // handler re-requests an offer from each -- it skips any guest it
+    // still has a healthy connection to, so a mere signaling blip is a no-op.
+    for (const [socketId, state] of this.socketState) {
+      if (state.sessionId !== sessionId || state.role !== 'guest' || socketId === client.id) continue;
+      client.emit('peer-joined', {
+        socketId,
+        participantId: state.participantId,
+        role: 'guest',
+        displayName: state.displayName ?? 'Guest',
+      });
+    }
   }
 
   private async handleGuestConnection(client: Socket) {
@@ -146,7 +166,12 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     );
 
     const sessionId = participant.studioSessionId;
-    this.socketState.set(client.id, { sessionId, participantId: participant.id, role: 'guest' });
+    this.socketState.set(client.id, {
+      sessionId,
+      participantId: participant.id,
+      role: 'guest',
+      displayName: displayName || 'Guest',
+    });
     await client.join(this.roomName(sessionId));
 
     client.emit('joined', { sessionId, participantId: participant.id, role: 'guest' });
@@ -170,6 +195,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     client.to(this.roomName(state.sessionId)).emit('peer-left', {
       socketId: client.id,
       participantId: state.participantId,
+      role: state.role,
     });
 
     if (state.role === 'host') {
@@ -183,9 +209,9 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
    * without ever hitting "End stream", so nothing ever called
    * StreamsService.end() and the row just stayed LIVE forever (never
    * billed its usage hours either, since that's also recorded in end()).
-   * There's no resume flow for a dropped host today (the whole compositor
-   * is in-memory React state), so once the grace window above elapses
-   * with no reconnect, the stream really is over.
+   * A stream that never started publishing has nothing to recover, so once
+   * the grace window above elapses with no reconnect, it really is over.
+   * (One that has been publishing is handled by GlitchRecoveryService.)
    */
   private scheduleStreamEndIfHostGone(sessionId: string): void {
     const existing = this.pendingHostEndTimers.get(sessionId);
@@ -197,6 +223,11 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
         try {
           const session = await this.studioSessionsService.findByIdWithLiveStream(sessionId);
           if (!session || session.liveStream.status !== StreamStatus.LIVE) return;
+          // A stream that has been publishing is owned by GlitchRecoveryService
+          // now: it shows a "technical difficulties" slate and gives the host
+          // up to 5 minutes to come back before ending it. This timer only
+          // still ends streams that never started publishing at all.
+          if (this.glitchRecovery.isWatching(session.liveStreamId)) return;
           await this.streamsService.end(session.liveStreamId, session.liveStream.accountId);
           this.logger.log(
             `Auto-ended stream ${session.liveStreamId} -- host disconnected and never reconnected within ${HOST_DISCONNECT_GRACE_MS}ms`,

@@ -80,6 +80,16 @@ npm run start:dev
 
 `ENCRYPTION_KEY_BASE64` must decode to exactly 32 bytes: `openssl rand -base64 32`.
 
+## Host drop recovery ("technical difficulties")
+
+If the host closes the tab, crashes or loses connection **without pressing End stream**, the stream isn't ended immediately:
+
+1. After ~10s with no publisher, the backend starts pushing a "technical difficulties" slate (`web-app/public/glitch-slate.png` + silence) to every destination, via a `<streamId>-slate` MediaMTX path (`GlitchRecoveryService`). Platform broadcasts stay up.
+2. The host reopens the **same studio link**; if that browser had already taken the stream live, it restores layout/branding/scenes from `localStorage`, restarts the camera and re-publishes. Guests keep their **same invite links** - the server replays connected guests to the returning host so video reconnects.
+3. When the publisher is back the slate stops within ~2s. If the host hasn't returned after **5 minutes**, the stream is ended (and billed) as before.
+
+The slate image is fetched by MediaMTX's ffmpeg over HTTP(S) from `PUBLIC_BASE_URL` (override with `GLITCH_SLATE_URL`).
+
 ## Testing
 
 ```bash

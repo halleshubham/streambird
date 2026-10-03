@@ -56,6 +56,8 @@ export function HostStudioPage() {
     activeSceneName,
     destinations,
     connectionById,
+    audioBlocked,
+    resumeAttempted,
     actions,
   } = useHostStudio(streamId);
 
@@ -101,6 +103,19 @@ export function HostStudioPage() {
       <h1 className="brand-heading">
         <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
       </h1>
+
+      {((resumeAttempted && !isLive) || (isLive && audioBlocked)) && (
+        <div className="panel studio-resume-banner" role="status">
+          <span>
+            {isLive
+              ? 'Your browser is blocking audio — viewers can’t hear you yet.'
+              : 'Your stream is still live, and viewers are seeing a “technical difficulties” screen. Resume to get back on air.'}
+          </span>
+          <button type="button" className="icon-btn icon-btn--accent" onClick={() => void actions.resumeLive()}>
+            {isLive ? 'Enable audio' : 'Resume stream'}
+          </button>
+        </div>
+      )}
 
       <div className="studio-video-wrap">
         <canvas

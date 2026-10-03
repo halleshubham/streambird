@@ -134,6 +134,123 @@ export class MediaMtxService {
     ].join(' ');
   }
 
+  /** MediaMTX path name for a stream's "technical glitch" slate pusher -- see startSlate(). */
+  static slatePathName(pathName: string): string {
+    return `${pathName}-slate`;
+  }
+
+  /**
+   * Builds the ffmpeg command for the "technical difficulties" slate: a
+   * looped still image + silent audio, libx264/aac encoded and teed to the
+   * same RTMP destinations the real forward uses, so every platform keeps
+   * receiving data (and the broadcast stays up) while the host's publisher
+   * is gone. Encoded rather than `-c copy` because there's no source
+   * bitstream to copy; a 720p still at veryfast costs very little CPU.
+   * The image is fetched over HTTP(S) from this app's own public URL
+   * (see slateUrl) -- the MediaMTX container has no fonts for ffmpeg's
+   * drawtext and no volume we control, but it can always reach the public
+   * internet (it already pushes RTMPS out).
+   */
+  private buildSlateCommand(rtmpDests: string[], slateUrl: string): string | null {
+    const validDests = rtmpDests.filter((dest) => /^rtmps?:\/\//i.test(dest));
+    if (validDests.length === 0 || !/^https?:\/\//i.test(slateUrl)) return null;
+
+    const teeTargets = validDests.map((dest) => `[f=flv]${dest}`).join('|');
+    return [
+      'ffmpeg -nostdin -loglevel warning',
+      `-re -loop 1 -framerate 30 -i ${this.shQuote(slateUrl)}`,
+      '-f lavfi -i anullsrc=r=48000:cl=stereo',
+      '-map 0:v:0 -map 1:a:0',
+      '-c:v libx264 -preset veryfast -tune stillimage -pix_fmt yuv420p -r 30 -g 60 -b:v 1500k -maxrate 1500k -bufsize 3000k',
+      '-c:a aac -b:a 64k',
+      `-f tee ${this.shQuote(teeTargets)}`,
+    ].join(' ');
+  }
+
+  private get slateUrl(): string {
+    const override = this.config.get<string>('mediamtx.slateUrl');
+    if (override) return override;
+    const base = (this.config.get<string>('publicBaseUrl') ?? '').replace(/\/$/, '');
+    return `${base}/glitch-slate.png`;
+  }
+
+  /**
+   * Starts pushing the "technical glitch" slate to every destination, via a
+   * dedicated `<path>-slate` MediaMTX path whose `runOnInit` command runs
+   * for as long as the path exists (deleting the path -- see stopSlate --
+   * stops ffmpeg). Idempotent: an already-existing slate path is left
+   * running. Returns whether a slate is now running; best-effort, never throws.
+   */
+  async startSlate(pathName: string, rtmpDests: string[]): Promise<boolean> {
+    const apiUrl = this.apiUrl;
+    if (!apiUrl) return false;
+
+    const runOnInit = this.buildSlateCommand(rtmpDests, this.slateUrl);
+    if (!runOnInit) return false;
+
+    try {
+      await firstValueFrom(
+        this.http.post(
+          `${apiUrl}/v3/config/paths/add/${MediaMtxService.slatePathName(pathName)}`,
+          { runOnInit, runOnInitRestart: true },
+          this.authConfig,
+        ),
+      );
+      return true;
+    } catch (err) {
+      // MediaMTX answers 400 "path already exists" if a slate is already running.
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 400) return true;
+      this.logger.warn(`Failed to start slate for '${pathName}': ${(err as Error).message}`);
+      return false;
+    }
+  }
+
+  /** Stops the slate pusher, if any. Best-effort: a missing path (404) is fine. */
+  async stopSlate(pathName: string): Promise<void> {
+    const apiUrl = this.apiUrl;
+    if (!apiUrl) return;
+
+    try {
+      await firstValueFrom(
+        this.http.delete(
+          `${apiUrl}/v3/config/paths/delete/${MediaMtxService.slatePathName(pathName)}`,
+          this.authConfig,
+        ),
+      );
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status !== 404) {
+        this.logger.warn(`Failed to stop slate for '${pathName}': ${(err as Error).message}`);
+      }
+    }
+  }
+
+  /**
+   * Every currently-active MediaMTX path and whether it has a live source
+   * (`ready`) -- a configured path with no publisher connected isn't in the
+   * list at all. Returns null if MediaMTX is unreachable, so callers can
+   * tell "nobody is publishing" apart from "couldn't ask" and avoid acting
+   * on a monitoring blip.
+   */
+  async listPaths(): Promise<Map<string, boolean> | null> {
+    const apiUrl = this.apiUrl;
+    if (!apiUrl) return null;
+
+    try {
+      const res = await firstValueFrom(
+        this.http.get<{ items?: Array<{ name: string; ready?: boolean }> }>(
+          `${apiUrl}/v3/paths/list?itemsPerPage=1000`,
+          this.authConfig,
+        ),
+      );
+      return new Map((res.data?.items ?? []).map((item) => [item.name, item.ready === true]));
+    } catch (err) {
+      this.logger.warn(`Failed to list MediaMTX paths: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /**
    * Registers a path that accepts a WHIP publisher and forwards it to every
    * URL in rtmpDests, and returns the public WHIP URL the host's browser
@@ -193,6 +310,9 @@ export class MediaMtxService {
   async removeForward(pathName: string): Promise<void> {
     const apiUrl = this.apiUrl;
     if (!apiUrl) return;
+
+    // A running glitch slate must never outlive the stream it belongs to.
+    await this.stopSlate(pathName);
 
     try {
       await firstValueFrom(

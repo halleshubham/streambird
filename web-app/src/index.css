@@ -1516,3 +1516,13 @@ a.icon-btn--danger {
     padding: 24px 16px;
   }
 }
+
+.studio-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-color: var(--accent);
+  font-size: 14px;
+}
