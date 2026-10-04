@@ -143,9 +143,13 @@ describe('MediaMtxService', () => {
     const [url, body] = post.mock.calls[0];
     expect(url).toBe('https://mtx-api.example.com/v3/config/paths/add/stream-1-slate');
     expect(body.runOnInitRestart).toBe(true);
-    expect(body.runOnInit).toContain("-re -stream_loop -1 -i 'https://app.example.com/glitch-slate.mp4'");
+    // Fetched once to a local file (Range isn't reliable through the CDN), then looped from there.
+    expect(body.runOnInit).toContain("-i 'https://app.example.com/glitch-slate.mp4' -c copy -f mp4");
+    expect(body.runOnInit).toContain('-re -stream_loop -1 -i /tmp/glitch-slate.mp4');
     expect(body.runOnInit).toContain('-c:v copy -tag:v 7');
-    expect(body.runOnInit).not.toContain('libx264');
+    // ...with the old encode as a fallback when the clip can't be fetched.
+    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://app.example.com/glitch-slate.png'");
+    expect(body.runOnInit).toMatch(/^if .*; then exec ffmpeg .*; else exec ffmpeg .*; fi$/);
     expect(body.runOnInit).toContain('anullsrc');
     expect(body.runOnInit).toContain("-f tee '[f=flv]rtmp://live.twitch.tv/app/k1|[f=flv]rtmps://b.example.com/live/k2'");
   });
@@ -157,8 +161,9 @@ describe('MediaMtxService', () => {
     await service.startSlate('stream-1', ['rtmp://a/b']);
 
     const [, body] = post.mock.calls[0];
-    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://cdn.example.com/slate.png'");
+    expect(body.runOnInit).toContain("exec ffmpeg -nostdin -loglevel warning -re -loop 1 -framerate 30 -i 'https://cdn.example.com/slate.png'");
     expect(body.runOnInit).toContain('libx264');
+    expect(body.runOnInit).not.toContain('stream_loop');
   });
 
   it('treats an already-running slate (400) as success and a missing one on stop (404) as fine', async () => {

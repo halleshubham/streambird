@@ -164,20 +164,43 @@ export class MediaMtxService {
     if (validDests.length === 0 || !/^https?:\/\//i.test(slateUrl)) return null;
 
     const teeTargets = validDests.map((dest) => `[f=flv]${dest}`).join('|');
+    const tee = `-f tee ${this.shQuote(teeTargets)}`;
+    const silence = '-f lavfi -i anullsrc=r=48000:cl=stereo';
     const isStillImage = /\.(png|jpe?g)(\?|$)/i.test(slateUrl);
-    return [
-      'ffmpeg -nostdin -loglevel warning',
-      isStillImage
-        ? `-re -loop 1 -framerate 30 -i ${this.shQuote(slateUrl)}`
-        : `-re -stream_loop -1 -i ${this.shQuote(slateUrl)}`,
-      '-f lavfi -i anullsrc=r=48000:cl=stereo',
+
+    // Still image: encode it (the original behaviour).
+    const encodeStill = (url: string) =>
+      [
+        'exec ffmpeg -nostdin -loglevel warning',
+        `-re -loop 1 -framerate 30 -i ${this.shQuote(url)}`,
+        silence,
+        '-map 0:v:0 -map 1:a:0',
+        '-c:v libx264 -preset veryfast -tune stillimage -pix_fmt yuv420p -r 30 -g 60 -b:v 1500k -maxrate 1500k -bufsize 3000k',
+        '-c:a aac -b:a 64k',
+        tee,
+      ].join(' ');
+    if (isStillImage) return encodeStill(slateUrl);
+
+    // Pre-encoded loop. ffmpeg can only `-stream_loop` a seekable input, and
+    // this app is served through Cloudflare, which does not honour Range
+    // requests for it -- so fetch the clip once into a local file (atomically
+    // replaced, so a slate already looping from the old copy is unaffected)
+    // and loop that. If the fetch or the local /tmp fails, fall back to
+    // encoding the same-named .png so a slate always starts.
+    const local = '/tmp/glitch-slate.mp4';
+    const part = '/tmp/.glitch-slate.$$.mp4';
+    const fetchClip = `ffmpeg -nostdin -loglevel error -y -i ${this.shQuote(slateUrl)} -c copy -f mp4 ${part} && mv -f ${part} ${local}`;
+    const loopClip = [
+      'exec ffmpeg -nostdin -loglevel warning',
+      `-re -stream_loop -1 -i ${local}`,
+      silence,
       '-map 0:v:0 -map 1:a:0',
-      isStillImage
-        ? '-c:v libx264 -preset veryfast -tune stillimage -pix_fmt yuv420p -r 30 -g 60 -b:v 1500k -maxrate 1500k -bufsize 3000k'
-        : '-c:v copy -tag:v 7',
+      '-c:v copy -tag:v 7',
       '-c:a aac -b:a 64k',
-      `-f tee ${this.shQuote(teeTargets)}`,
+      tee,
     ].join(' ');
+    const fallbackPng = slateUrl.replace(/\.[a-z0-9]+(\?|$)/i, '.png$1');
+    return `if ${fetchClip}; then ${loopClip}; else ${encodeStill(fallbackPng)}; fi`;
   }
 
   private get slateUrl(): string {
