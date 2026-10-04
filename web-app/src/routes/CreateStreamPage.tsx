@@ -12,6 +12,7 @@ import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 import { BirdBusy } from '../components/BirdBusy';
+import { DocsLink } from '../components/DocsLink';
 
 export function CreateStreamPage() {
   const navigate = useNavigate();
@@ -136,6 +137,11 @@ export function CreateStreamPage() {
   return (
     <div>
       <h1>{mode === 'schedule' ? 'Schedule a stream' : 'Create a stream'}</h1>
+      <p className="docs-hint">
+        <DocsLink page={mode === 'schedule' ? 'schedule-and-invite' : 'go-live'}>
+          {mode === 'schedule' ? 'How scheduling and guest invites work' : 'How to go live'}
+        </DocsLink>
+      </p>
       <div className="mode-toggle" role="tablist" aria-label="When to stream">
         <button type="button" role="tab" aria-selected={mode === 'now'} className={mode === 'now' ? 'active' : ''} onClick={() => setMode('now')}>
           <Radio size={14} /> Go live now

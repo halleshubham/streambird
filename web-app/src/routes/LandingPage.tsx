@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import * as authApi from '../api/auth';
+import { docsUrl } from '../docs';
 import { PlatformBadge } from '../components/PlatformBadge';
 
 const FEATURES = [
@@ -301,7 +302,7 @@ export function LandingPage() {
           </a>
         </span>
         <span>
-          <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link>
+          <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link>
         </span>
         <span>
           <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>

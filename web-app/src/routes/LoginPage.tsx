@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import * as authApi from '../api/auth';
 import { ApiError } from '../api/client';
 import { BirdBusy } from '../components/BirdBusy';
+import { DocsLink } from '../components/DocsLink';
 
 const GOOGLE_OAUTH_ERRORS: Record<string, string> = {
   google_oauth_failed: 'Google sign-in failed. Please try again.',
@@ -156,7 +157,7 @@ export function LoginPage() {
         )}
 
         <p className="auth-legal-links">
-          <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+          <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
         </p>
       </div>
     </div>
