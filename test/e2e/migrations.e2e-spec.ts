@@ -53,11 +53,18 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     const plans = await db.query('SELECT key, included_hours_per_month AS h, max_destinations AS d, max_guests AS g, price_inr AS p FROM plans ORDER BY sort_order');
     expect(plans.rows.map((r) => [r.key, r.h === null ? null : Number(r.h), r.d, r.g, r.p])).toEqual([
       ['free', 2, 1, 2, 0],
-      ['starter', 10, 2, 4, 999],
-      ['pro', 30, 4, 6, 1999],
-      ['enterprise', 100, 6, 8, 6999],
+      ['starter', 20, 2, 4, 999],
+      ['pro', null, 4, 8, 1999],
+      ['enterprise', null, 8, 10, 4999],
       ['day_pass', null, 4, 10, 199],
     ]);
+
+    // The ladder is moved only while a plan still has its seeded values: an admin-edited plan is left alone.
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0015%'`);
+    await db.query(`UPDATE plans SET included_hours_per_month = 25, price_inr = 1099 WHERE key = 'starter'`);
+    await runMigrations(url, { quiet: true });
+    const edited = await db.query(`SELECT included_hours_per_month AS h, price_inr AS p FROM plans WHERE key = 'starter'`);
+    expect([Number(edited.rows[0].h), edited.rows[0].p]).toEqual([25, 1099]);
 
     const settings = await db.query(`SELECT value FROM app_settings WHERE key = 'payments_enabled'`);
     expect(settings.rows[0].value).toBe(false); // payments ship OFF

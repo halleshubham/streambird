@@ -25,8 +25,8 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
     expect(plans.map((p: any) => [p.key, p.priceInr, p.maxGuests, p.maxDestinations])).toEqual([
       ['free', 0, 2, 1],
       ['starter', 999, 4, 2],
-      ['pro', 1999, 6, 4],
-      ['enterprise', 6999, 8, 6],
+      ['pro', 1999, 8, 4],
+      ['enterprise', 4999, 10, 8],
       ['day_pass', 199, 10, 4],
     ]);
   });
