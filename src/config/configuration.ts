@@ -78,6 +78,15 @@ export interface AppConfig {
     loginConfigId: string;
     connectConfigId: string;
   };
+  razorpay: {
+    /** Public key id (rzp_test_... / rzp_live_...). Blank = payments cannot be enabled. */
+    keyId: string;
+    keySecret: string;
+    /** Secret set on the webhook in the Razorpay dashboard; webhooks are rejected without it. */
+    webhookSecret: string;
+    /** Override only for tests (a local mock). */
+    apiBase: string;
+  };
   cloudflareTurn: {
     /** Both empty = no TURN configured, StudioSignalingGateway's clients
      * fall back to STUN-only (see TurnCredentialsService). */
@@ -136,6 +145,12 @@ export default (): AppConfig => ({
       `${process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`}/api/auth/facebook/callback`,
     loginConfigId: process.env.FACEBOOK_LOGIN_CONFIG_ID ?? '',
     connectConfigId: process.env.FACEBOOK_CONNECT_CONFIG_ID ?? '',
+  },
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID ?? '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
+    apiBase: process.env.RAZORPAY_API_BASE ?? 'https://api.razorpay.com/v1',
   },
   cloudflareTurn: {
     tokenId: process.env.CLOUDFLARE_TURN_TOKEN_ID ?? '',

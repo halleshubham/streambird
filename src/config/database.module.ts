@@ -1,3 +1,5 @@
+import { Payment } from '../billing/entities/payment.entity';
+import { AppSetting } from '../billing/entities/app-setting.entity';
 import { Plan } from '../plans/entities/plan.entity';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -29,6 +31,8 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
         entities: [
           Account,
           Plan,
+          Payment,
+          AppSetting,
           PlatformConnection,
           LiveStream,
           LiveStreamDestination,

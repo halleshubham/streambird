@@ -178,6 +178,36 @@ describe('AccountsService', () => {
       expect(saved.dayPassExpiresAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * 3_600_000 - 1000);
     });
 
+    describe('activatePlan', () => {
+      const NOW = new Date('2026-10-05T00:00:00Z');
+      const days = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
+      const pro = SEED.find((p) => p.key === 'pro')!;
+
+      it('starts a 30-day period and resets usage for a new purchase', async () => {
+        (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ streamHourUsageCurrentPeriod: '1.5' }));
+        const saved = await service.activatePlan('acc_1', pro, NOW);
+        expect(saved.planKey).toBe('pro');
+        expect(saved.currentTier).toBe(PlanTier.PRO);
+        expect(saved.planExpiresAt).toEqual(days(30));
+        expect(saved.streamHourUsageCurrentPeriod).toBe('0');
+        expect(saved.includedHoursPerMonth).toBe('30');
+      });
+
+      it('renewing the same active plan extends from its expiry and keeps this period\'s usage', async () => {
+        (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ planKey: 'pro', planExpiresAt: days(10), streamHourUsageCurrentPeriod: '12' }));
+        const saved = await service.activatePlan('acc_1', pro, NOW);
+        expect(saved.planExpiresAt).toEqual(days(40));
+        expect(saved.streamHourUsageCurrentPeriod).toBe('12');
+      });
+
+      it('an expired plan is replaced from now, and an hours override still shows in the mirror', async () => {
+        (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ planKey: 'pro', planExpiresAt: days(-2), includedHoursOverride: '55' }));
+        const saved = await service.activatePlan('acc_1', pro, NOW);
+        expect(saved.planExpiresAt).toEqual(days(30));
+        expect(saved.includedHoursPerMonth).toBe('55');
+      });
+    });
+
     it('recordStreamUsage adds the given hours to the running total', async () => {
       (repo.findOne as jest.Mock).mockResolvedValue(
         fakeAccount({ streamHourUsageCurrentPeriod: '1.5' }),

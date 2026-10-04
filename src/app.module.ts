@@ -1,3 +1,4 @@
+import { BillingModule } from './billing/billing.module';
 import { PlansModule } from './plans/plans.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -40,6 +41,7 @@ import { AppController } from './app.controller';
     CommonModule,
     AccountsModule,
     PlansModule,
+    BillingModule,
     PlatformConnectionsModule,
     StreamsModule,
     StudioModule,

@@ -19,6 +19,10 @@ export interface EffectiveLimits {
   /** A single live session ends after this many hours; null = no cap. */
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: Date } | null;
+  /** When a purchased plan lapses (null = no expiry). */
+  planExpiresAt: Date | null;
+  /** The account's plan has lapsed, so these are Free limits. */
+  planExpired: boolean;
 }
 
 const num = (v: string | null | undefined): number | null => (v === null || v === undefined ? null : Number(v));
@@ -71,6 +75,8 @@ export function computeLimits(
     maxResolution,
     maxSessionHours,
     dayPass: activePass,
+    planExpiresAt: null,
+    planExpired: false,
   };
 }
 
@@ -128,13 +134,21 @@ export class PlansService {
 
   /** Effective limits for an account, resolving its plan (and day pass, if any). Falls back to 'free' if the plan row is gone. */
   async effectiveLimits(account: Account, now: Date = new Date()): Promise<EffectiveLimits> {
-    const plan =
+    let plan =
       (await this.plans.findOne({ where: { key: account.planKey } })) ?? (await this.findByKeyOrThrow('free'));
+    // A purchased plan that has lapsed drops the account to Free, and its
+    // admin exceptions (which were granted for the old plan) stop applying.
+    const planExpired = !!account.planExpiresAt && account.planExpiresAt.getTime() <= now.getTime() && plan.key !== 'free';
+    if (planExpired) {
+      plan = await this.findByKeyOrThrow('free');
+      account = { ...account, includedHoursOverride: null, maxDestinationsOverride: null, maxGuestsOverride: null } as Account;
+    }
     const dayPass =
       account.dayPassPlanKey && account.dayPassExpiresAt && account.dayPassExpiresAt.getTime() > now.getTime()
         ? await this.plans.findOne({ where: { key: account.dayPassPlanKey } })
         : null;
-    return computeLimits(plan, account, dayPass, now);
+    const limits = computeLimits(plan, account, dayPass, now);
+    return { ...limits, planExpiresAt: planExpired ? null : account.planExpiresAt, planExpired };
   }
 
   private fromDto(dto: Partial<CreatePlanDto>): Partial<Plan> {

@@ -382,4 +382,58 @@ export interface EffectiveLimits {
   maxResolution: Resolution;
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: string } | null;
+  /** When a purchased plan lapses (null = no expiry). */
+  planExpiresAt: string | null;
+  /** The plan has lapsed, so these are Free limits. */
+  planExpired: boolean;
+}
+
+export interface BillingConfig {
+  enabled: boolean;
+  /** Razorpay's public key id; null while payments are off. */
+  keyId: string | null;
+}
+
+export interface CheckoutOrder {
+  orderId: string;
+  amountPaise: number;
+  currency: string;
+  keyId: string;
+  planKey: string;
+  planName: string;
+  description: string;
+}
+
+export interface MyPayment {
+  id: string;
+  planKey: string;
+  kind: 'plan' | 'day_pass';
+  amountInr: number;
+  status: 'created' | 'paid' | 'failed';
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminPayment {
+  id: string;
+  accountId: string;
+  accountName: string | null;
+  planKey: string;
+  kind: 'plan' | 'day_pass';
+  amountInr: number;
+  status: 'created' | 'paid' | 'failed';
+  razorpayPaymentId: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+export interface AdminBilling {
+  enabled: boolean;
+  keysConfigured: boolean;
+  webhookSecretConfigured: boolean;
+  mode: 'live' | 'test' | null;
+  webhookUrl: string;
+  webhookEvents: string[];
+  payments: AdminPayment[];
 }

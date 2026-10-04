@@ -1,5 +1,14 @@
 import { StreamInviteData } from './stream-invite.template';
 
+export interface PaymentReceiptData {
+  planName: string;
+  kind: 'plan' | 'day_pass';
+  amountInr: number;
+  paymentId: string;
+  /** When the plan period / day pass ends. */
+  validUntil: Date;
+}
+
 export const EMAIL_SERVICE = Symbol('EMAIL_SERVICE');
 
 export interface EmailService {
@@ -13,4 +22,6 @@ export interface EmailService {
   /** Guest invite / schedule-change / cancellation for a scheduled stream
    * (HTML + plaintext + .ics calendar attachment -- see stream-invite.template). */
   sendStreamInvite(to: string, data: StreamInviteData): Promise<void>;
+  /** Receipt after a successful Razorpay payment. Best-effort: callers never fail a payment over it. */
+  sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void>;
 }

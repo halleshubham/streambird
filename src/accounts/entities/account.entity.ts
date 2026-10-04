@@ -39,6 +39,10 @@ export class Account {
   @Column({ type: 'int', nullable: true })
   maxGuestsOverride!: number | null;
 
+  /** A purchased monthly plan lasts until this instant, then the account falls back to Free. null = no expiry. */
+  @Column({ type: 'timestamptz', nullable: true })
+  planExpiresAt!: Date | null;
+
   /** An active day pass (see Plan.kind) lifts the limits for its duration. */
   @Column({ type: 'text', nullable: true })
   dayPassPlanKey!: string | null;

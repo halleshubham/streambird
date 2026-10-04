@@ -1844,3 +1844,23 @@ a.icon-btn--danger {
   text-align: center;
   font-size: 15px;
 }
+
+/* ---- Billing ---- */
+.billing-plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+  margin: 12px 0;
+}
+
+.billing-plan h3 { margin: 0 0 4px; }
+.billing-plan ul { padding-left: 18px; margin: 8px 0 14px; font-size: 14px; }
+.billing-plan--highlight { outline: 2px solid var(--accent); }
+
+.billing-price {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0;
+}
+.billing-price span { font-size: 13px; font-weight: 400; }
+.billing-current { margin-bottom: 12px; }

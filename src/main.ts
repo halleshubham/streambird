@@ -8,7 +8,8 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { legacyHostRedirect } from './common/legacy-hosts';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: Razorpay's webhook signature is an HMAC of the exact bytes received.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.use(cookieParser());
   // After a domain move, send page visits on the old host to the new one (no-op unless LEGACY_HOSTS is set).
   const config = app.get(ConfigService);
