@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
 import type { AnalyticsOverview, LiveStreamRow, UsageAlert } from '../../types/api';
+import { BirdBusy } from '../../components/BirdBusy';
 
 // A legitimate broadcast running this long is rare -- past this, a stream
 // still marked LIVE is more likely a hung row (host's browser closed/
@@ -139,7 +140,7 @@ export function AdminAnalyticsPage() {
                           disabled={endingId !== null}
                           onClick={() => void handleForceEnd(s)}
                         >
-                          {endingId === s.id ? 'Ending…' : 'Force end'}
+                          {endingId === s.id && <BirdBusy />} Force end
                         </button>
                       </td>
                     </tr>

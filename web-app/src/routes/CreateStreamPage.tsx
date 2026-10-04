@@ -11,6 +11,7 @@ import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
+import { BirdBusy } from '../components/BirdBusy';
 
 export function CreateStreamPage() {
   const navigate = useNavigate();
@@ -268,8 +269,8 @@ export function CreateStreamPage() {
 
         {error && <p className="error">{error}</p>}
         <button type="submit" className="icon-btn" disabled={busy}>
-          {mode === 'schedule' ? <CalendarClock size={16} /> : <Radio size={16} />}{' '}
-          {busy ? (mode === 'schedule' ? 'Scheduling…' : 'Creating…') : mode === 'schedule' ? 'Schedule stream' : 'Create and open studio'}
+          {busy ? <BirdBusy /> : mode === 'schedule' ? <CalendarClock size={16} /> : <Radio size={16} />}{' '}
+          {mode === 'schedule' ? 'Schedule stream' : 'Create and open studio'}
         </button>
       </form>
     </div>

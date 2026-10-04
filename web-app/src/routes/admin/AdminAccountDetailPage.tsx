@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
 import type { AccountDetail, PlanTier } from '../../types/api';
+import { BirdBusy } from '../../components/BirdBusy';
 
 const PLAN_TIERS: PlanTier[] = ['free', 'starter', 'pro', 'enterprise'];
 
@@ -138,7 +139,7 @@ export function AdminAccountDetailPage() {
           />
         </label>
         <button type="submit" disabled={saving}>
-          Save
+          {saving && <BirdBusy />} Save
         </button>
       </form>
       <p>Usage this period:</p>

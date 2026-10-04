@@ -8,6 +8,7 @@ import { BirdLoader } from '../components/BirdLoader';
 import { ScheduledStreamPanel } from '../components/ScheduledStreamPanel';
 import { ApiError } from '../api/client';
 import type { PlatformConnection, Stream, StreamStatusResponse } from '../types/api';
+import { BirdBusy } from '../components/BirdBusy';
 
 const STATUS_LABELS: Record<Stream['status'], string> = {
   scheduled: 'Scheduled',
@@ -163,7 +164,7 @@ export function StreamDetailPage() {
                     disabled={retryingId === d.id}
                     onClick={() => void handleRetry(d.id)}
                   >
-                    <RotateCw size={14} /> {retryingId === d.id ? 'Retrying…' : 'Retry'}
+                    {retryingId === d.id ? <BirdBusy /> : <RotateCw size={14} />} Retry
                   </button>
                 )}
               </div>

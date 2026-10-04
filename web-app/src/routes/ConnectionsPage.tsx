@@ -14,6 +14,7 @@ import { PlatformLogo } from '../components/PlatformLogo';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
+import { BirdBusy } from '../components/BirdBusy';
 
 const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   youtube_oauth_failed: "Connecting YouTube failed. Please try again.",
@@ -158,7 +159,7 @@ export function ConnectionsPage() {
                   disabled={removingId !== null}
                   onClick={() => void handleRemove(c.id, c.label)}
                 >
-                  <Trash2 size={14} /> {removingId === c.id ? 'Removing…' : 'Remove'}
+                  {removingId === c.id ? <BirdBusy /> : <Trash2 size={14} />} Remove
                 </button>
               </li>
             ))}
@@ -204,7 +205,7 @@ export function ConnectionsPage() {
                 disabled={selectingPageId !== null}
                 onClick={() => void handleSelectFacebookPage(p.id)}
               >
-                <PlatformLogo platform="facebook" /> {selectingPageId === p.id ? 'Connecting…' : p.name}
+                {selectingPageId === p.id ? <BirdBusy /> : <PlatformLogo platform="facebook" />} {p.name}
               </button>
             ))}
             <button type="button" className="link-button" disabled={selectingPageId !== null} onClick={cancelFacebookPageSelection}>
@@ -262,7 +263,7 @@ export function ConnectionsPage() {
 
           {error && <p className="error">{error}</p>}
           <button type="submit" className="icon-btn" disabled={busy || !ingestServerUrl.trim() || !streamKey.trim()}>
-            <PlatformLogo platform="twitch" /> {busy ? 'Connecting…' : 'Connect'}
+            {busy ? <BirdBusy /> : <PlatformLogo platform="twitch" />} Connect
           </button>
         </form>
       </section>

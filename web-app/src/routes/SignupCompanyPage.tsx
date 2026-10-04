@@ -4,6 +4,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as authApi from '../api/auth';
 import { ApiError } from '../api/client';
+import { BirdBusy } from '../components/BirdBusy';
 
 /**
  * Distinct sign-up path for a brand-new company (vs. the plain magic-code
@@ -89,7 +90,7 @@ export function SignupCompanyPage() {
             />
             {error && <p className="error">{error}</p>}
             <button type="submit" disabled={busy || !companyName.trim() || !email.trim()}>
-              {busy ? 'Sending…' : 'Send verification code'}
+              {busy && <BirdBusy />} Send verification code
             </button>
           </form>
         )}
@@ -113,7 +114,7 @@ export function SignupCompanyPage() {
             />
             {error && <p className="error">{error}</p>}
             <button type="submit" disabled={busy || code.length !== 6}>
-              {busy ? 'Creating…' : 'Create company account'}
+              {busy && <BirdBusy />} Create company account
             </button>
           </form>
         )}

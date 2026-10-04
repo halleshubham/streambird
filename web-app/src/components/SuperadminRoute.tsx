@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { BirdLoader } from './BirdLoader';
 
 /**
  * Deliberately separate from ProtectedRoute/AppShell -- this is a wholly
@@ -13,7 +14,9 @@ export function SuperadminRoute() {
   const { status, user } = useAuth();
 
   if (status === 'loading') {
-    return <div className="page-loading">Loading…</div>;
+    return <div className="page-loading">
+        <BirdLoader loading compact />
+      </div>;
   }
 
   if (status === 'anonymous' || user?.role !== 'superadmin') {

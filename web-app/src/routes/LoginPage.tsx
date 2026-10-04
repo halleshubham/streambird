@@ -4,6 +4,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as authApi from '../api/auth';
 import { ApiError } from '../api/client';
+import { BirdBusy } from '../components/BirdBusy';
 
 const GOOGLE_OAUTH_ERRORS: Record<string, string> = {
   google_oauth_failed: 'Google sign-in failed. Please try again.',
@@ -77,7 +78,7 @@ export function LoginPage() {
               />
               {error && <p className="error">{error}</p>}
               <button type="submit" disabled={busy || !email.trim()}>
-                {busy ? 'Sending…' : 'Send login code'}
+                {busy && <BirdBusy />} Send login code
               </button>
             </form>
 
@@ -112,7 +113,7 @@ export function LoginPage() {
             />
             {error && <p className="error">{error}</p>}
             <button type="submit" disabled={busy || code.length !== 6}>
-              {busy ? 'Verifying…' : 'Log in'}
+              {busy && <BirdBusy />} Log in
             </button>
             <button
               type="button"
