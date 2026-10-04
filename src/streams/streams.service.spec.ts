@@ -274,6 +274,36 @@ describe('StreamsService', () => {
     expect(status.destinations[0].watchUrl).toBe('https://watch.example/youtube-broadcast-1');
   });
 
+  it('getStatus reads a metered provider (statusMinIntervalMs) at most once per interval, however many polls', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    (youtube as any).statusMinIntervalMs = 90_000;
+    (youtube as any).getBroadcastStatus = jest.fn(async () => 'live');
+    (youtube as any).getViewerCount = jest.fn(async () => 7);
+    const { service, connectionRepo } = await build([youtube]);
+    const conn = makeConnection('c1', Platform.YOUTUBE);
+    connectionRepo.rows.set(conn.id, conn);
+    const stream = await service.create('acc_1', { title: 'Quota test', destinationConnectionIds: ['c1'] });
+
+    const now = jest.spyOn(Date, 'now');
+    const t0 = 1_000_000;
+    now.mockReturnValue(t0);
+    const first = await service.getStatus(stream.id, 'acc_1');
+    now.mockReturnValue(t0 + 10_000);
+    const second = await service.getStatus(stream.id, 'acc_1');
+    now.mockReturnValue(t0 + 80_000);
+    await service.getStatus(stream.id, 'acc_1');
+
+    expect(youtube.getBroadcastStatus).toHaveBeenCalledTimes(1);
+    expect((youtube as any).getViewerCount).toHaveBeenCalledTimes(1);
+    expect(first.destinations[0].platformStatus).toBe('live');
+    expect(second.destinations[0].platformStatus).toBe('live'); // served from the last read
+
+    now.mockReturnValue(t0 + 91_000);
+    await service.getStatus(stream.id, 'acc_1');
+    expect(youtube.getBroadcastStatus).toHaveBeenCalledTimes(2);
+    now.mockRestore();
+  });
+
   it("getStatus leaves platformStatus null when the provider doesn't support reading it (e.g. Twitch)", async () => {
     const twitch = fakeProvider(Platform.TWITCH, 'succeed');
     const { service, connectionRepo } = await build([twitch]);

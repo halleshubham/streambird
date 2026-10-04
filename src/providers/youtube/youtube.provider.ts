@@ -37,6 +37,14 @@ const REFRESH_SKEW_MS = 60_000;
 export class YouTubeProvider implements StreamProvider {
   readonly identifier = Platform.YOUTUBE;
   readonly canPrescheduleBroadcast = true;
+
+  /**
+   * The live status and viewer count are display-only ("platform reports:
+   * live", the viewer number); nothing else depends on them. But they cost
+   * 2 quota units per read and the daily project quota is only 10,000, so
+   * they're read at most once per 90s per broadcast however many tabs poll.
+   */
+  readonly statusMinIntervalMs = 90_000;
   readonly thumbnailAppliesWhenLive = true;
 
   constructor(

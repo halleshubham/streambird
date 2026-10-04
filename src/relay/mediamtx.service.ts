@@ -84,7 +84,7 @@ export class MediaMtxService {
    * MediaMTX's native `forward`. Returns null if no destination has a
    * scheme we're willing to hand to a shell command at all.
    */
-  private buildRunOnReady(rtmpDests: string[]): string | null {
+  buildRunOnReady(rtmpDests: string[]): string | null {
     const validDests = rtmpDests.filter((dest) => /^rtmps?:\/\//i.test(dest));
     if (validDests.length !== rtmpDests.length) {
       this.logger.warn(
@@ -144,9 +144,17 @@ export class MediaMtxService {
    * looped still image + silent audio, libx264/aac encoded and teed to the
    * same RTMP destinations the real forward uses, so every platform keeps
    * receiving data (and the broadcast stays up) while the host's publisher
-   * is gone. Encoded rather than `-c copy` because there's no source
-   * bitstream to copy; a 720p still at veryfast costs very little CPU.
-   * The image is fetched over HTTP(S) from this app's own public URL
+   * is gone.
+   *
+   * Two modes by file type. The default is a pre-encoded 10s H.264 loop
+   * (glitch-slate.mp4: 720p30, keyframe every 2s, a whole number of GOPs so
+   * it loops cleanly) that is simply copied: ~3% of a core per slate, which
+   * matters because a network blip drops many streams to the slate at once.
+   * `-tag:v 7` is needed because the tee muxer, unlike a plain ffmpeg
+   * output, doesn't remap MP4's 'avc1' tag for FLV. A still image (.png/
+   * .jpg, e.g. an old GLITCH_SLATE_URL override) falls back to encoding it
+   * with libx264, which measured ~45% of a core each.
+   * The file is fetched over HTTP(S) from this app's own public URL
    * (see slateUrl) -- the MediaMTX container has no fonts for ffmpeg's
    * drawtext and no volume we control, but it can always reach the public
    * internet (it already pushes RTMPS out).
@@ -156,12 +164,17 @@ export class MediaMtxService {
     if (validDests.length === 0 || !/^https?:\/\//i.test(slateUrl)) return null;
 
     const teeTargets = validDests.map((dest) => `[f=flv]${dest}`).join('|');
+    const isStillImage = /\.(png|jpe?g)(\?|$)/i.test(slateUrl);
     return [
       'ffmpeg -nostdin -loglevel warning',
-      `-re -loop 1 -framerate 30 -i ${this.shQuote(slateUrl)}`,
+      isStillImage
+        ? `-re -loop 1 -framerate 30 -i ${this.shQuote(slateUrl)}`
+        : `-re -stream_loop -1 -i ${this.shQuote(slateUrl)}`,
       '-f lavfi -i anullsrc=r=48000:cl=stereo',
       '-map 0:v:0 -map 1:a:0',
-      '-c:v libx264 -preset veryfast -tune stillimage -pix_fmt yuv420p -r 30 -g 60 -b:v 1500k -maxrate 1500k -bufsize 3000k',
+      isStillImage
+        ? '-c:v libx264 -preset veryfast -tune stillimage -pix_fmt yuv420p -r 30 -g 60 -b:v 1500k -maxrate 1500k -bufsize 3000k'
+        : '-c:v copy -tag:v 7',
       '-c:a aac -b:a 64k',
       `-f tee ${this.shQuote(teeTargets)}`,
     ].join(' ');
@@ -171,7 +184,7 @@ export class MediaMtxService {
     const override = this.config.get<string>('mediamtx.slateUrl');
     if (override) return override;
     const base = (this.config.get<string>('publicBaseUrl') ?? '').replace(/\/$/, '');
-    return `${base}/glitch-slate.png`;
+    return `${base}/glitch-slate.mp4`;
   }
 
   /**

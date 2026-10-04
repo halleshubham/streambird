@@ -24,6 +24,8 @@ import { AccountsService } from '../accounts/accounts.service';
 @Injectable()
 export class StreamsService {
   private readonly logger = new Logger(StreamsService.name);
+  // Last successful platform status read per destination id -- see getStatus.
+  private readonly platformReadCache = new Map<string, { at: number; status: string | null | undefined }>();
 
   constructor(
     @InjectRepository(LiveStream)
@@ -386,6 +388,17 @@ export class StreamsService {
     return { items, total };
   }
 
+  private rememberPlatformRead(destinationId: string, status: string | null | undefined): void {
+    const now = Date.now();
+    this.platformReadCache.set(destinationId, { at: now, status });
+    if (this.platformReadCache.size > 500) {
+      // Entries for finished streams are never read again; drop the stale ones.
+      for (const [key, entry] of this.platformReadCache) {
+        if (now - entry.at > 10 * 60_000) this.platformReadCache.delete(key);
+      }
+    }
+  }
+
   async getStatus(id: string, accountId: string) {
     const stream = await this.findByIdOrThrow(id, accountId);
 
@@ -407,14 +420,28 @@ export class StreamsService {
           const provider = this.resolveProvider(conn);
           if (!d.platformBroadcastId) return;
 
+          // Metered platforms (YouTube) are read at most once per
+          // statusMinIntervalMs per destination, however many pages poll;
+          // in between, the last read is served as-is (and the stored
+          // viewerCount is left untouched).
+          const minInterval = provider.statusMinIntervalMs ?? 0;
+          const cached = this.platformReadCache.get(d.id);
+          if (minInterval > 0 && cached && Date.now() - cached.at < minInterval) {
+            if (cached.status !== undefined) platformStatuses.set(d.id, cached.status);
+            return;
+          }
+
           if (provider.getViewerCount) {
             const count = await provider.getViewerCount(conn, d.platformBroadcastId);
             d.viewerCount = count;
             await this.destinations.save(d);
           }
+          let status: string | null | undefined;
           if (provider.getBroadcastStatus) {
-            platformStatuses.set(d.id, await provider.getBroadcastStatus(conn, d.platformBroadcastId));
+            status = await provider.getBroadcastStatus(conn, d.platformBroadcastId);
+            platformStatuses.set(d.id, status);
           }
+          if (minInterval > 0) this.rememberPlatformRead(d.id, status);
         }),
     );
 
