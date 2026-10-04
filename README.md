@@ -141,24 +141,18 @@ While the old host is listed in `LEGACY_HOSTS`: page visits on it 301-redirect t
 
 ## Testing
 
-```bash
-npm test
-```
+Four layers, all run by CI (`.github/workflows/ci.yml`) on every pull request, and the image is only built and published from a `main` commit that passes them (`docker-publish.yml` calls the same workflow first):
 
-Every `StreamProvider` and the `CloudflareRelayService` are tested against
-mocked HTTP calls — no live credentials needed. `StreamsService`'s
-orchestration (including the partial-failure fan-out) and
-`StudioSessionsService` (invite issuance/expiry/single-use consumption)
-are tested against fakes, no real Postgres or Cloudflare required.
+| Layer | Command | What it covers |
+|---|---|---|
+| Typecheck | `npm run typecheck` | backend, tests and the web app |
+| Unit | `npm test` | services in isolation with fakes (plans, billing/autopay, scheduling, slate command, ...) |
+| End-to-end | `npm run test:e2e` | the real app (same `configureApp` pipeline as production) on a **real Postgres**, with a captured mailbox and a stateful mock Razorpay: plan enforcement, one-time payments, autopay lifecycle (duplicates, wrong amounts, cancel, halted, upgrade), migrations applied on top of existing rows, and the slate command looping through a real ffmpeg RTMP sink |
+| Browser | `npm run test:ui` | Playwright smoke tests of the built SPA: sign-in, pricing, billing, admin plans/billing, host studio without a camera, quality cap |
 
-Manually verified against a real local Postgres and a running server in
-this session: migrations apply cleanly, the app boots with no DI wiring
-errors, and the full account → platform-connection → stream-create →
-studio-session → invite-issuance → public-token-resolution chain works
-end-to-end. It only fails at the genuinely external dependency — a real
-Cloudflare API call, which 404s with no live account configured. What
-still needs real credentials: the Cloudflare billing/`whipUrl` empirical
-spike, and a real browser-to-browser WHIP→Cloudflare→platform smoke test.
+**Running the e2e and browser tests locally** needs a Postgres and ffmpeg: create an empty database (the tests migrate it; they are re-runnable on the same database and use unique ids per run) and `export E2E_DATABASE_URL=postgres://user:pass@localhost:5432/streambird_e2e`. Without that variable the e2e specs are skipped, so `npm test` works on a fresh checkout. For the browser tests also build the SPA first (`npm run build --prefix web-app`, which writes `dist-web/`) and install a browser once (`npx playwright install chromium`; or point `PW_CHROMIUM` at an existing Chromium). `test/ui/fixture-server.ts` boots the app for them with test-only helpers (read the "emailed" login code, approve a user) on a second port; none of it ships in the product.
+
+When you add a payment or plan rule, add it to `test/e2e/` (the Razorpay mock in `test/e2e/mock-razorpay.ts` records every call and builds the signatures Razorpay would send); when you add a migration, extend `test/e2e/migrations.e2e-spec.ts` with the existing-data case.
 
 ## License
 

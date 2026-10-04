@@ -10,7 +10,12 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Nothing is published unless the full suite (typecheck, unit, end-to-end, browser) passes on this commit.
+  test:
+    uses: ./.github/workflows/ci.yml
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
