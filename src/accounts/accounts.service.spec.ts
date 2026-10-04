@@ -5,6 +5,23 @@ import { Repository } from 'typeorm';
 import { AccountsService } from './accounts.service';
 import { Account } from './entities/account.entity';
 import { PlanTier } from '../common/enums/plan-tier.enum';
+import { PlansService } from '../plans/plans.service';
+import { Plan } from '../plans/entities/plan.entity';
+
+function plan(over: Partial<Plan>): Plan {
+  return {
+    key: 'free', name: 'Free', kind: 'monthly', includedHoursPerMonth: '2', graceMultiplier: '1',
+    maxDestinations: 1, maxGuests: 2, maxResolution: 'fhd', maxSessionHours: null, validityHours: null,
+    priceInr: 0, priceUsd: '0', isPublic: true, isActive: true, sortOrder: 0, ...over,
+  } as Plan;
+}
+const SEED: Plan[] = [
+  plan({}),
+  plan({ key: 'pro', name: 'Pro', includedHoursPerMonth: '30', graceMultiplier: '1.2', maxDestinations: 4, maxGuests: 6 }),
+  plan({ key: 'unlimited', name: 'Unlimited', includedHoursPerMonth: null, graceMultiplier: '1', maxDestinations: 6, maxGuests: 10 }),
+  plan({ key: 'day_pass', name: 'Day Pass', kind: 'day_pass', includedHoursPerMonth: null, maxDestinations: 4, maxGuests: 10, maxResolution: 'hd', maxSessionHours: '12', validityHours: 24 }),
+];
+const planRepo = { findOne: jest.fn(async ({ where }: any) => SEED.find((p) => p.key === where.key) ?? null) };
 
 describe('AccountsService', () => {
   let service: AccountsService;
@@ -14,6 +31,7 @@ describe('AccountsService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccountsService,
+        { provide: PlansService, useValue: new PlansService(planRepo as any) },
         {
           provide: getRepositoryToken(Account),
           useValue: {
@@ -66,6 +84,12 @@ describe('AccountsService', () => {
       return {
         id: 'acc_1',
         currentTier: PlanTier.FREE,
+        planKey: 'free',
+        includedHoursOverride: null,
+        maxDestinationsOverride: null,
+        maxGuestsOverride: null,
+        dayPassPlanKey: null,
+        dayPassExpiresAt: null,
         includedHoursPerMonth: '2',
         streamHourUsageCurrentPeriod: '0',
         billingPeriodStart: new Date().toISOString().slice(0, 10),
@@ -87,7 +111,7 @@ describe('AccountsService', () => {
 
     it('assertCanStartStream gives a paid tier 20% grace beyond its included hours', async () => {
       (repo.findOne as jest.Mock).mockResolvedValue(
-        fakeAccount({ currentTier: PlanTier.PRO, includedHoursPerMonth: '30', streamHourUsageCurrentPeriod: '35' }),
+        fakeAccount({ currentTier: PlanTier.PRO, planKey: 'pro', streamHourUsageCurrentPeriod: '35' }),
       );
       // 35 < 30 * 1.2 (36) -- still inside the grace window.
       await expect(service.assertCanStartStream('acc_1')).resolves.toBeUndefined();
@@ -95,7 +119,7 @@ describe('AccountsService', () => {
 
     it('assertCanStartStream blocks a paid tier once it exceeds its grace window', async () => {
       (repo.findOne as jest.Mock).mockResolvedValue(
-        fakeAccount({ currentTier: PlanTier.PRO, includedHoursPerMonth: '30', streamHourUsageCurrentPeriod: '36' }),
+        fakeAccount({ currentTier: PlanTier.PRO, planKey: 'pro', streamHourUsageCurrentPeriod: '36' }),
       );
       await expect(service.assertCanStartStream('acc_1')).rejects.toBeInstanceOf(ForbiddenException);
     });
@@ -111,6 +135,47 @@ describe('AccountsService', () => {
       const savedForRollover = (repo.save as jest.Mock).mock.calls[0][0];
       expect(savedForRollover.streamHourUsageCurrentPeriod).toBe('0');
       expect(savedForRollover.billingPeriodStart).toBe(new Date().toISOString().slice(0, 10));
+    });
+
+    it('an unlimited plan (null hours) never blocks on hours', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ planKey: 'unlimited', streamHourUsageCurrentPeriod: '5000' }));
+      await expect(service.assertCanStartStream('acc_1')).resolves.toBeUndefined();
+    });
+
+    it('a per-account hours override replaces the plan value', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ includedHoursOverride: '50', streamHourUsageCurrentPeriod: '10' }));
+      await expect(service.assertCanStartStream('acc_1')).resolves.toBeUndefined(); // 10 < 50, though Free is 2h
+    });
+
+    it('assertDestinationCount enforces the plan cap and says what to do', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount());
+      await expect(service.assertDestinationCount('acc_1', 1)).resolves.toBeUndefined();
+      await expect(service.assertDestinationCount('acc_1', 2)).rejects.toThrow(/Free plan allows up to 1 destination/);
+    });
+
+    it('a per-account destination override beats the plan, and an active day pass raises the cap', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ maxDestinationsOverride: 3 }));
+      await expect(service.assertDestinationCount('acc_1', 3)).resolves.toBeUndefined();
+
+      (repo.findOne as jest.Mock).mockResolvedValue(
+        fakeAccount({ dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(Date.now() + 3_600_000) }),
+      );
+      await expect(service.assertDestinationCount('acc_1', 4)).resolves.toBeUndefined();
+    });
+
+    it('an expired day pass no longer lifts anything', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(
+        fakeAccount({ dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(Date.now() - 1000) }),
+      );
+      await expect(service.assertDestinationCount('acc_1', 2)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('grantDayPass sets an expiry validityHours from now', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount());
+      const before = Date.now();
+      const saved = await service.grantDayPass('acc_1');
+      expect(saved.dayPassPlanKey).toBe('day_pass');
+      expect(saved.dayPassExpiresAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * 3_600_000 - 1000);
     });
 
     it('recordStreamUsage adds the given hours to the running total', async () => {

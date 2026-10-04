@@ -1,3 +1,4 @@
+import { Plan } from '../plans/entities/plan.entity';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -27,6 +28,7 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
         url: config.get<string>('databaseUrl'),
         entities: [
           Account,
+          Plan,
           PlatformConnection,
           LiveStream,
           LiveStreamDestination,

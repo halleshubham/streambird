@@ -13,6 +13,7 @@ import { StudioSessionsService } from './studio-sessions.service';
 import { StreamsService } from '../streams/streams.service';
 import { GlitchRecoveryService } from '../streams/glitch-recovery.service';
 import { StreamStatus } from '../common/enums/stream-status.enum';
+import { AccountsService } from '../accounts/accounts.service';
 
 interface SocketState {
   sessionId: string;
@@ -65,6 +66,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     private readonly streamsService: StreamsService,
     @Inject(forwardRef(() => GlitchRecoveryService))
     private readonly glitchRecovery: GlitchRecoveryService,
+    private readonly accountsService: AccountsService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -154,6 +156,12 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       throw new Error('guest connections require an invite token');
     }
 
+    // Plan guest cap: the number of guests in the studio at once. Checked
+    // before the join is recorded so a refused guest leaves no participant row.
+    // An unknown/expired token falls through to joinAsGuest's own clear error.
+    const invite = await this.studioSessionsService.resolveInviteToken(token);
+    await this.assertGuestCapacity(invite.studioSessionId);
+
     // Throws (caught by handleConnection, which disconnects the socket with
     // a clear error message) if the token is unknown/revoked/expired, or if
     // the invite requires a password and none/the wrong one was supplied.
@@ -184,6 +192,29 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       role: 'guest',
       displayName: displayName || 'Guest',
     });
+  }
+
+  /** Throws when the session's account plan caps simultaneous guests and the studio is already full. Fails open if limits can't be read. */
+  private async assertGuestCapacity(sessionId: string): Promise<void> {
+    let maxGuests: number;
+    let planName: string;
+    try {
+      const session = await this.studioSessionsService.findByIdWithLiveStream(sessionId);
+      if (!session) return;
+      const limits = await this.accountsService.getLimits(session.liveStream.accountId);
+      maxGuests = limits.maxGuests;
+      planName = limits.planName;
+    } catch (err) {
+      this.logger.warn(`Could not read plan limits for session ${sessionId}; allowing guest: ${(err as Error).message}`);
+      return;
+    }
+    let current = 0;
+    for (const state of this.socketState.values()) {
+      if (state.sessionId === sessionId && state.role === 'guest') current++;
+    }
+    if (current >= maxGuests) {
+      throw new Error(`This studio is full: the host's ${planName} plan allows ${maxGuests} guest${maxGuests === 1 ? '' : 's'} at a time.`);
+    }
   }
 
   async handleDisconnect(client: Socket) {

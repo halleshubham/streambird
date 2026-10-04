@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { getMyLimits } from '../api/plans';
 import { getStream, getStreamStatus, startStream } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
@@ -26,6 +27,7 @@ const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, auto
 export type LayoutMode = 'grid' | 'spotlight';
 
 export type StreamResolution = 'sd' | 'hd' | 'fhd';
+const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd'];
 
 /** Compositing canvas size + the encoder bitrate cap that goes with it --
  * one shared encode fans out via MediaMTX to every destination at once
@@ -168,7 +170,14 @@ export function useHostStudio(streamId: string | undefined) {
   const [inviteMessage, setInviteMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [participantsView, setParticipantsView] = useState<ParticipantView[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
-  const [resolution, setResolution] = useState<StreamResolution>('hd');
+  const [resolution, setResolutionState] = useState<StreamResolution>('hd');
+  // The best quality the host's plan allows (GET /plans/me); until it loads, nothing is restricted.
+  const [maxResolution, setMaxResolution] = useState<StreamResolution>('fhd');
+  const clampResolution = useCallback(
+    (r: StreamResolution) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(maxResolution) ? maxResolution : r),
+    [maxResolution],
+  );
+  const setResolution = useCallback((r: StreamResolution) => setResolutionState(clampResolution(r)), [clampResolution]);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
@@ -852,7 +861,7 @@ export function useHostStudio(streamId: string | undefined) {
           layoutModeRef.current = saved.layoutMode;
           setLayoutMode(saved.layoutMode);
         }
-        if (saved.resolution && saved.resolution in RESOLUTIONS) setResolution(saved.resolution);
+        if (saved.resolution && saved.resolution in RESOLUTIONS) setResolutionState(saved.resolution);
         if (saved.branding) {
           Object.assign(brandingRef.current, saved.branding);
           setBranding({ ...saved.branding });
@@ -937,6 +946,16 @@ export function useHostStudio(streamId: string | undefined) {
     if (!stream) return;
     savePersisted(stream.id, { layoutMode, resolution, branding, scenes });
   }, [stream, layoutMode, resolution, branding, scenes]);
+
+  // Plan quality cap: fetch once, and pull a saved/default resolution down to it.
+  useEffect(() => {
+    getMyLimits()
+      .then((l) => {
+        setMaxResolution(l.maxResolution);
+        setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
+      })
+      .catch(() => {});
+  }, []);
 
   // ---- 2. Actions exposed to the page ----------------------------------
 
@@ -1484,6 +1503,7 @@ export function useHostStudio(streamId: string | undefined) {
     participants: participantsView,
     layoutMode,
     resolution,
+    maxResolution,
     cameraStarting,
     cameraStarted,
     isLive,

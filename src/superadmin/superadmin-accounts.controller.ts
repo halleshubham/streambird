@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountGuard } from '../common/guards/account.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -38,6 +38,21 @@ export class SuperadminAccountsController {
     @Body() dto: UpdateSubscriptionDto,
   ) {
     return this.accountsService.updateSubscription(id, admin, dto);
+  }
+
+  @Post(':id/day-pass')
+  @HttpCode(200)
+  async grantDayPass(
+    @CurrentUser() admin: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('planKey') planKey?: string,
+  ) {
+    return this.accountsService.grantDayPass(id, admin, planKey);
+  }
+
+  @Delete(':id/day-pass')
+  async revokeDayPass(@CurrentUser() admin: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.accountsService.revokeDayPass(id, admin);
   }
 
   @Post(':id/suspend')

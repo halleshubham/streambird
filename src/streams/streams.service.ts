@@ -62,6 +62,7 @@ export class StreamsService {
     // provider's API. Never blocks a stream that's already running (see
     // AccountsService.assertCanStartStream's docstring).
     await this.accountsService.assertCanStartStream(accountId);
+    await this.accountsService.assertDestinationCount(accountId, new Set(dto.destinationConnectionIds).size);
 
     const connections = await this.platformConnections.find({
       where: { id: In(dto.destinationConnectionIds), accountId },
@@ -223,6 +224,7 @@ export class StreamsService {
     }
 
     await this.accountsService.assertCanStartStream(accountId);
+    await this.accountsService.assertDestinationCount(accountId, stream.destinations.length);
 
     const connectionIds = stream.destinations.map((d) => d.platformConnectionId);
     const connections = await this.platformConnections.find({ where: { id: In(connectionIds), accountId } });
@@ -397,6 +399,11 @@ export class StreamsService {
         if (now - entry.at > 10 * 60_000) this.platformReadCache.delete(key);
       }
     }
+  }
+
+  /** Used by StreamSchedulingService: scheduled streams are held to the same destination cap as live ones. */
+  assertDestinationCount(accountId: string, count: number): Promise<void> {
+    return this.accountsService.assertDestinationCount(accountId, count);
   }
 
   async getStatus(id: string, accountId: string) {

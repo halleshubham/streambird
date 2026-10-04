@@ -4,12 +4,13 @@ import { Account } from './entities/account.entity';
 import { AccountsService } from './accounts.service';
 import { AccountsController } from './accounts.controller';
 import { CommonModule } from '../common/common.module';
+import { PlansModule } from '../plans/plans.module';
 
 @Module({
   // forwardRef: CommonModule needs AccountsService to build AccountGuard/
   // ApiKeyGuard, and AccountsController needs AccountGuard for /accounts/me
   // -- a genuine two-way dependency, not an accidental one.
-  imports: [TypeOrmModule.forFeature([Account]), forwardRef(() => CommonModule)],
+  imports: [TypeOrmModule.forFeature([Account]), forwardRef(() => CommonModule), forwardRef(() => PlansModule)],
   providers: [AccountsService],
   controllers: [AccountsController],
   exports: [AccountsService],

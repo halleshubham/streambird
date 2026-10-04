@@ -5,10 +5,8 @@ import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
-import type { AccountDetail, PlanTier } from '../../types/api';
+import type { AccountDetail, AdminPlan } from '../../types/api';
 import { BirdBusy } from '../../components/BirdBusy';
-
-const PLAN_TIERS: PlanTier[] = ['free', 'starter', 'pro', 'enterprise'];
 
 /** Full detail for one Account: editable subscription fields, suspend/
  * reactivate, and its users / stream history / platform connections.
@@ -20,8 +18,13 @@ export function AdminAccountDetailPage() {
   const [saving, setSaving] = useState(false);
   const [suspending, setSuspending] = useState(false);
 
-  const [tier, setTier] = useState<PlanTier>('free');
-  const [includedHours, setIncludedHours] = useState('');
+  const [plans, setPlans] = useState<AdminPlan[]>([]);
+  const [planKey, setPlanKey] = useState('free');
+  // Blank = no override (use the plan's value).
+  const [hoursOverride, setHoursOverride] = useState('');
+  const [destinationsOverride, setDestinationsOverride] = useState('');
+  const [guestsOverride, setGuestsOverride] = useState('');
+  const [passBusy, setPassBusy] = useState(false);
   const [billingPeriodStart, setBillingPeriodStart] = useState('');
 
   async function load() {
@@ -29,8 +32,10 @@ export function AdminAccountDetailPage() {
     try {
       const detail = await superadminApi.getAccountDetail(id);
       setAccount(detail);
-      setTier(detail.currentTier);
-      setIncludedHours(detail.includedHoursPerMonth);
+      setPlanKey(detail.planKey);
+      setHoursOverride(detail.includedHoursOverride ?? '');
+      setDestinationsOverride(detail.maxDestinationsOverride === null ? '' : String(detail.maxDestinationsOverride));
+      setGuestsOverride(detail.maxGuestsOverride === null ? '' : String(detail.maxGuestsOverride));
       setBillingPeriodStart(detail.billingPeriodStart ? detail.billingPeriodStart.slice(0, 10) : '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load account.');
@@ -39,8 +44,24 @@ export function AdminAccountDetailPage() {
 
   useEffect(() => {
     void load();
+    superadminApi.listPlans().then(setPlans).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function handlePass(grant: boolean) {
+    if (!id) return;
+    setPassBusy(true);
+    setError(null);
+    try {
+      if (grant) await superadminApi.grantDayPass(id);
+      else await superadminApi.revokeDayPass(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update the day pass.');
+    } finally {
+      setPassBusy(false);
+    }
+  }
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -49,8 +70,10 @@ export function AdminAccountDetailPage() {
     setError(null);
     try {
       await superadminApi.updateAccountSubscription(id, {
-        currentTier: tier,
-        includedHoursPerMonth: includedHours,
+        planKey,
+        includedHoursOverride: hoursOverride.trim() === '' ? null : Number(hoursOverride),
+        maxDestinationsOverride: destinationsOverride.trim() === '' ? null : Number(destinationsOverride),
+        maxGuestsOverride: guestsOverride.trim() === '' ? null : Number(guestsOverride),
         billingPeriodStart: billingPeriodStart === '' ? null : billingPeriodStart,
       });
       await load();
@@ -112,23 +135,29 @@ export function AdminAccountDetailPage() {
       <h2>Subscription</h2>
       <form className="inline-form" onSubmit={(e) => void handleSave(e)}>
         <label>
-          Tier
-          <select value={tier} onChange={(e) => setTier(e.target.value as PlanTier)}>
-            {PLAN_TIERS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
+          Plan
+          <select value={planKey} onChange={(e) => setPlanKey(e.target.value)}>
+            {plans
+              .filter((p) => p.kind === 'monthly' && (p.isActive || p.key === planKey))
+              .map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.name}
+                </option>
+              ))}
+            {!plans.some((p) => p.key === planKey) && <option value={planKey}>{planKey}</option>}
           </select>
         </label>
         <label>
-          Included hours / month
-          <input
-            type="text"
-            value={includedHours}
-            onChange={(e) => setIncludedHours(e.target.value)}
-            placeholder="0.00"
-          />
+          Hours / month override
+          <input type="number" min="0" step="0.5" value={hoursOverride} onChange={(e) => setHoursOverride(e.target.value)} placeholder="plan default" />
+        </label>
+        <label>
+          Max destinations override
+          <input type="number" min="1" max="50" value={destinationsOverride} onChange={(e) => setDestinationsOverride(e.target.value)} placeholder="plan default" />
+        </label>
+        <label>
+          Max guests override
+          <input type="number" min="0" max="50" value={guestsOverride} onChange={(e) => setGuestsOverride(e.target.value)} placeholder="plan default" />
         </label>
         <label>
           Billing period start
@@ -142,6 +171,25 @@ export function AdminAccountDetailPage() {
           {saving && <BirdBusy />} Save
         </button>
       </form>
+      <p className="docs-hint">
+        Leave an override blank to follow the plan. Plan limits are edited on the <Link to="/admin/plans">Plans</Link> page.
+      </p>
+      <h3>Day pass</h3>
+      {account.dayPassExpiresAt && new Date(account.dayPassExpiresAt) > new Date() ? (
+        <p>
+          Active until {new Date(account.dayPassExpiresAt).toLocaleString()}.{' '}
+          <button type="button" className="link-button" disabled={passBusy} onClick={() => void handlePass(false)}>
+            Revoke
+          </button>
+        </p>
+      ) : (
+        <p>
+          No active pass.{' '}
+          <button type="button" disabled={passBusy} onClick={() => void handlePass(true)}>
+            {passBusy && <BirdBusy />} Grant day pass
+          </button>
+        </p>
+      )}
       <p>Usage this period:</p>
       <UsageBar
         used={Number(account.streamHourUsageCurrentPeriod)}
