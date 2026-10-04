@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { LoginCode } from './entities/login-code.entity';
@@ -246,21 +246,37 @@ describe('AuthService', () => {
     });
   });
 
-  describe('superadminLogin', () => {
-    it('logs in a seeded superadmin with the correct password', async () => {
-      const { service, usersByEmail } = await build();
-      const passwordHash = hashPassword('correct-horse-battery-staple');
+  describe('superadmin login (password, then emailed code)', () => {
+    const seed = (usersByEmail: Map<string, any>, password = 'correct-horse-battery-staple') =>
       usersByEmail.set('root@streambird.dev', {
         id: 'root_1',
         email: 'root@streambird.dev',
         role: Role.SUPERADMIN,
-        passwordHash,
+        passwordHash: hashPassword(password),
         account: { id: 'acc_root' },
       });
+    const emailedCode = (emailService: any) => emailService.sendLoginCode.mock.calls.at(-1)![1] as string;
 
-      const result = await service.superadminLogin(
+    it('emails a code after a correct password, but issues no session yet', async () => {
+      const { service, usersByEmail, emailService, sessions } = await build();
+      seed(usersByEmail);
+
+      await service.superadminLogin('root@streambird.dev', 'correct-horse-battery-staple');
+
+      expect(emailService.sendLoginCode).toHaveBeenCalledTimes(1);
+      expect(emailService.sendLoginCode.mock.calls[0][0]).toBe('root@streambird.dev');
+      expect(sessions.rows.size).toBe(0);
+    });
+
+    it('signs in with the correct password and the emailed code', async () => {
+      const { service, usersByEmail, emailService } = await build();
+      seed(usersByEmail);
+      await service.superadminLogin('root@streambird.dev', 'correct-horse-battery-staple');
+
+      const result = await service.superadminVerify(
         'root@streambird.dev',
         'correct-horse-battery-staple',
+        emailedCode(emailService),
         {},
       );
 
@@ -268,23 +284,39 @@ describe('AuthService', () => {
       expect(result.token).toHaveLength(43);
     });
 
-    it('rejects a wrong password', async () => {
-      const { service, usersByEmail } = await build();
-      usersByEmail.set('root@streambird.dev', {
-        id: 'root_1',
-        email: 'root@streambird.dev',
-        role: Role.SUPERADMIN,
-        passwordHash: hashPassword('correct-password'),
-        account: { id: 'acc_root' },
-      });
+    it('a wrong password sends no email and gets no code', async () => {
+      const { service, usersByEmail, emailService } = await build();
+      seed(usersByEmail, 'correct-password');
+
+      await expect(service.superadminLogin('root@streambird.dev', 'wrong-password')).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(emailService.sendLoginCode).not.toHaveBeenCalled();
+    });
+
+    it('the code alone is not enough: a wrong password at step 2 is refused', async () => {
+      const { service, usersByEmail, emailService, sessions } = await build();
+      seed(usersByEmail);
+      await service.superadminLogin('root@streambird.dev', 'correct-horse-battery-staple');
 
       await expect(
-        service.superadminLogin('root@streambird.dev', 'wrong-password', {}),
+        service.superadminVerify('root@streambird.dev', 'wrong', emailedCode(emailService), {}),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(sessions.rows.size).toBe(0);
+    });
+
+    it('the right password with a wrong code is refused', async () => {
+      const { service, usersByEmail, emailService } = await build();
+      seed(usersByEmail);
+      await service.superadminLogin('root@streambird.dev', 'correct-horse-battery-staple');
+      const real = emailedCode(emailService);
+      const wrong = real === '000000' ? '111111' : '000000';
+
+      await expect(
+        service.superadminVerify('root@streambird.dev', 'correct-horse-battery-staple', wrong, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects a non-superadmin user even with a set password hash -- role is checked, not just the password', async () => {
-      const { service, usersByEmail } = await build();
+      const { service, usersByEmail, emailService } = await build();
       usersByEmail.set('notadmin@example.com', {
         id: 'u1',
         email: 'notadmin@example.com',
@@ -293,16 +325,24 @@ describe('AuthService', () => {
         account: { id: 'acc_1' },
       });
 
-      await expect(
-        service.superadminLogin('notadmin@example.com', 'whatever', {}),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.superadminLogin('notadmin@example.com', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(emailService.sendLoginCode).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown email', async () => {
       const { service } = await build();
-      await expect(
-        service.superadminLogin('nobody@example.com', 'whatever', {}),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.superadminLogin('nobody@example.com', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('the email-only paths (code, Google, Facebook) refuse a superadmin', async () => {
+      const { service, usersService } = await build();
+      usersService.findOrCreateForEmail.mockResolvedValue({
+        user: { id: 'root_1', email: 'root@streambird.dev', role: Role.SUPERADMIN },
+        account: { id: 'acc_root' },
+      } as any);
+
+      await expect(service.loginWithGoogleProfile('root@streambird.dev', {})).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.loginWithFacebookProfile('root@streambird.dev', {})).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

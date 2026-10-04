@@ -13,6 +13,8 @@ import { bootApp } from '../e2e/harness';
 const APP_PORT = Number(process.env.UI_APP_PORT ?? 4310);
 const CONTROL_PORT = Number(process.env.UI_CONTROL_PORT ?? 4311);
 
+import { hashPassword } from '../../src/auth/password.util';
+
 async function main() {
   const h = await bootApp({ razorpay: true, mediamtx: true, port: APP_PORT });
 
@@ -29,6 +31,10 @@ async function main() {
       if (url.pathname === '/approve' && req.method === 'POST') {
         const role = url.searchParams.get('superadmin') ? ", role = 'superadmin'" : '';
         const r = await h.db.query(`UPDATE users SET approved_at = now()${role} WHERE email = $1`, [email]);
+        return send(200, { updated: r.rowCount });
+      }
+      if (url.pathname === '/make-superadmin' && req.method === 'POST') {
+        const r = await h.db.query(`UPDATE users SET role = 'superadmin', approved_at = now(), password_hash = $2 WHERE email = $1`, [email, hashPassword(url.searchParams.get('password') ?? '')]);
         return send(200, { updated: r.rowCount });
       }
       send(404, { error: 'not found' });

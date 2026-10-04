@@ -89,6 +89,27 @@ test.describe('signed-in user', () => {
   });
 });
 
+test.describe('admin login', () => {
+  test('password first, then the emailed code', async ({ page, context }) => {
+    // A user who becomes the superadmin (as the seed service would create one).
+    const { email } = await signIn(context);
+    await context.request.post(`${CONTROL}/make-superadmin?email=${email}&password=correct-horse`);
+    await context.clearCookies();
+
+    await page.goto('/admin/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('correct-horse');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByText(/We emailed a 6-digit code/)).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/login/); // not signed in yet
+
+    const { code } = await (await context.request.get(`${CONTROL}/code?email=${email}`)).json();
+    await page.getByLabel('Code').fill(code);
+    await page.getByRole('button', { name: 'Verify and log in' }).click();
+    await expect(page).toHaveURL(/\/admin$/);
+  });
+});
+
 test.describe('admin', () => {
   test('Plans page: lists plans and an edit is saved and shown', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
