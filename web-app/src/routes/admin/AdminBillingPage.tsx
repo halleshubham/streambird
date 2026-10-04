@@ -82,6 +82,31 @@ export function AdminBillingPage() {
         </tbody>
       </table>
 
+      <h2>Autopay subscriptions</h2>
+      {data.subscriptions.length === 0 ? (
+        <p className="empty-state">No subscriptions yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr><th>Company</th><th>Plan</th><th>₹ / month</th><th>Status</th><th>Next renewal / ends</th><th>Charges</th></tr>
+            </thead>
+            <tbody>
+              {data.subscriptions.map((sub) => (
+                <tr key={sub.id}>
+                  <td>{sub.accountName ?? '—'}</td>
+                  <td>{sub.planKey}</td>
+                  <td>{sub.amountInr}</td>
+                  <td>{sub.status}{sub.cancelAtCycleEnd ? ' (cancelling)' : ''}</td>
+                  <td>{dt(sub.currentEnd)}</td>
+                  <td>{sub.paidCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <h2>Recent payments</h2>
       {data.payments.length === 0 ? (
         <p className="empty-state">No payments yet.</p>

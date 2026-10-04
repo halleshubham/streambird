@@ -26,4 +26,8 @@ export class FakeEmailService implements EmailService {
   async sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void> {
     this.logger.log(`[fake email] receipt to ${to}: ${data.planName} Rs${data.amountInr}, valid until ${data.validUntil.toISOString()}`);
   }
+
+  async sendBillingNotice(to: string, subject: string): Promise<void> {
+    this.logger.log(`[fake email] billing notice to ${to}: ${subject}`);
+  }
 }

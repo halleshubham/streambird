@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Post, RawBodyRequest, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { BillingService } from './billing.service';
-import { CreateOrderDto, VerifyPaymentDto } from './dto/billing.dto';
+import { CreateOrderDto, VerifyPaymentDto, VerifySubscriptionDto } from './dto/billing.dto';
 import { AccountGuard } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -33,6 +33,37 @@ export class BillingController {
       paymentId: dto.razorpay_payment_id,
       signature: dto.razorpay_signature,
     });
+  }
+
+  // ---- autopay ----
+  @Post('subscriptions')
+  @UseGuards(AccountGuard)
+  createSubscription(@CurrentAccount() account: Account, @CurrentUser() user: User | undefined, @Body() dto: CreateOrderDto) {
+    return this.billing.createSubscription(account, user, dto.planKey);
+  }
+
+  @Post('subscriptions/verify')
+  @HttpCode(200)
+  @UseGuards(AccountGuard)
+  verifySubscription(@CurrentAccount() account: Account, @Body() dto: VerifySubscriptionDto) {
+    return this.billing.verifySubscriptionCheckout(account.id, {
+      subscriptionId: dto.razorpay_subscription_id,
+      paymentId: dto.razorpay_payment_id,
+      signature: dto.razorpay_signature,
+    });
+  }
+
+  @Get('subscription')
+  @UseGuards(AccountGuard)
+  mySubscription(@CurrentAccount() account: Account) {
+    return this.billing.mySubscription(account.id);
+  }
+
+  @Post('subscription/cancel')
+  @HttpCode(200)
+  @UseGuards(AccountGuard)
+  cancelSubscription(@CurrentAccount() account: Account) {
+    return this.billing.cancelMySubscription(account.id);
   }
 
   @Get('payments')

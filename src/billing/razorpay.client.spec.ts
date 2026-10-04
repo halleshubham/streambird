@@ -63,6 +63,31 @@ describe('RazorpayClient', () => {
     );
   });
 
+  it('verifies the SUBSCRIPTION signature = HMAC-SHA256("payment|subscription") -- reverse id order from Orders', () => {
+    const c = new RazorpayClient(cfg());
+    const good = hmac('secret123', 'pay_1|sub_1');
+    expect(c.verifySubscriptionSignature('pay_1', 'sub_1', good)).toBe(true);
+    expect(c.verifySubscriptionSignature('sub_1', 'pay_1', good)).toBe(false);
+    expect(c.verifySubscriptionSignature('pay_1', 'sub_1', hmac('secret123', 'sub_1|pay_1'))).toBe(false); // the Orders ordering is not valid here
+    expect(c.verifySubscriptionSignature('pay_1', 'sub_1', '')).toBe(false);
+  });
+
+  it('creates a monthly plan, a subscription, fetches and cancels (at cycle end or now)', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ id: 'x' }) } as Response);
+    const c = new RazorpayClient(cfg());
+    await c.createPlan({ name: 'StreamBird Pro', amountPaise: 199900, description: 'd' });
+    await c.createSubscription({ planId: 'plan_1', totalCount: 120, notes: { accountId: 'a' } });
+    await c.fetchSubscription('sub_1');
+    await c.cancelSubscription('sub_1', true);
+    await c.cancelSubscription('sub_1', false);
+    const calls = fetchMock.mock.calls.map(([url, init]) => [init!.method, url, init!.body ? JSON.parse(init!.body as string) : undefined]);
+    expect(calls[0]).toEqual(['POST', 'https://rzp.test/v1/plans', { period: 'monthly', interval: 1, item: { name: 'StreamBird Pro', amount: 199900, currency: 'INR', description: 'd' } }]);
+    expect(calls[1]).toEqual(['POST', 'https://rzp.test/v1/subscriptions', { plan_id: 'plan_1', total_count: 120, quantity: 1, customer_notify: 1, notes: { accountId: 'a' } }]);
+    expect(calls[2]).toEqual(['GET', 'https://rzp.test/v1/subscriptions/sub_1', undefined]);
+    expect(calls[3]).toEqual(['POST', 'https://rzp.test/v1/subscriptions/sub_1/cancel', { cancel_at_cycle_end: 1 }]);
+    expect(calls[4][2]).toEqual({ cancel_at_cycle_end: 0 });
+  });
+
   it('safeEqualHex rejects mismatched lengths and empty input', () => {
     expect(safeEqualHex('ab', 'abcd')).toBe(false);
     expect(safeEqualHex('', '')).toBe(false);

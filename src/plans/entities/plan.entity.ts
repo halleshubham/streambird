@@ -43,6 +43,13 @@ export class Plan {
   @Column({ type: 'numeric', precision: 8, scale: 2, nullable: true })
   priceUsd!: string | null;
 
+  /** The Razorpay Plan (plan_...) mirroring this plan for autopay, and the price it was created at. */
+  @Column({ type: 'text', nullable: true })
+  razorpayPlanId!: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  razorpayPlanAmountPaise!: number | null;
+
   @Column({ default: true })
   isPublic!: boolean;
 

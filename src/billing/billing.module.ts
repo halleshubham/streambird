@@ -1,3 +1,5 @@
+import { Subscription } from './entities/subscription.entity';
+import { Plan } from '../plans/entities/plan.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Payment } from './entities/payment.entity';
@@ -16,7 +18,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment, AppSetting, Account, User]),
+    TypeOrmModule.forFeature([Payment, AppSetting, Account, User, Subscription, Plan]),
     PlansModule,
     AccountsModule,
     CommonModule,
