@@ -261,6 +261,17 @@ export function useHostStudio(streamId: string | undefined) {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext();
       audioDestinationRef.current = audioContextRef.current.createMediaStreamDestination();
+      // A destination with nothing connected to it produces no audio at all:
+      // Chrome sends zero RTP packets, so a camera-less publish arrived with
+      // video only, and the relay's ffmpeg (which maps an audio stream) never
+      // started -- nothing reached Facebook/YouTube. A constant zero source
+      // keeps real (silent) Opus packets flowing; a mic connected later just
+      // mixes in alongside it. Verified in Chromium: 0 packets without it,
+      // ~50 packets/s with it.
+      const silence = audioContextRef.current.createConstantSource();
+      silence.offset.value = 0;
+      silence.connect(audioDestinationRef.current);
+      silence.start();
     }
   }
 
