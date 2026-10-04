@@ -19,6 +19,7 @@ import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
 import { SignupCompanyDto } from './dto/signup-company.dto';
 import { SuperadminLoginDto } from './dto/superadmin-login.dto';
+import { SuperadminVerifyDto } from './dto/superadmin-verify.dto';
 import { SessionGuard, SessionRequest } from '../common/guards/session.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
@@ -119,21 +120,28 @@ export class AuthController {
   }
 
   /**
-   * Real password login for the fixed Superadmin identity/identities
-   * seeded from SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD (see
-   * SuperadminSeedService) -- the only role that ever authenticates with
-   * a password instead of magic-code/Google. Issues the same session
-   * cookie as every other login path.
+   * Superadmin login (SUPERADMIN_EMAIL/SUPERADMIN_PASSWORD, see
+   * SuperadminSeedService) is two steps: the password here, which emails a
+   * one-time code, then POST /auth/superadmin-verify with password + code,
+   * which issues the same session cookie as every other login path.
    */
   @Post('superadmin-login')
+  @HttpCode(202)
+  async superadminLogin(@Body() dto: SuperadminLoginDto): Promise<{ otpRequired: true }> {
+    await this.authService.superadminLogin(dto.email, dto.password);
+    return { otpRequired: true };
+  }
+
+  @Post('superadmin-verify')
   @HttpCode(200)
-  async superadminLogin(
-    @Body() dto: SuperadminLoginDto,
+  async superadminVerify(
+    @Body() dto: SuperadminVerifyDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
-    const { user, account, token, expiresAt } = await this.authService.superadminLogin(
+    const { user, account, token, expiresAt } = await this.authService.superadminVerify(
       dto.email,
       dto.password,
+      dto.code,
       {},
     );
 

@@ -19,8 +19,14 @@ export function signupCompany(
   return api.post('/auth/signup-company', { companyName, email, code });
 }
 
-export function superadminLogin(email: string, password: string): Promise<MeResponse> {
+/** Step 1: checks the password and emails a one-time code. */
+export function superadminLogin(email: string, password: string): Promise<{ otpRequired: true }> {
   return api.post('/auth/superadmin-login', { email, password });
+}
+
+/** Step 2: password again plus the emailed code; this one signs in. */
+export function superadminVerify(email: string, password: string, code: string): Promise<MeResponse> {
+  return api.post('/auth/superadmin-verify', { email, password, code });
 }
 
 export function logout(): Promise<void> {

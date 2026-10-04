@@ -105,6 +105,8 @@ API: `POST /streams/schedule`, `GET|PATCH /streams/:id/schedule`, `POST /streams
 
 ## Plans and limits (admin-configurable)
 
+The superadmin signs in at `/admin/login` with the seeded password **and** a 6-digit code emailed after the password checks out (`POST /auth/superadmin-login`, then `/auth/superadmin-verify`). The email-code, Google and Facebook sign-in paths refuse a superadmin, so the password can't be bypassed through the inbox alone.
+
 Every limit lives in the `plans` table (migration `0012`), edited by a superadmin at **Admin → Plans** (`/admin/plans`): included hours (or unlimited), grace multiplier, max destinations, max simultaneous guests, max quality (SD/HD/Full HD), max session length, prices and visibility. Accounts sit on a plan (`accounts.plan_key`) and may carry per-account overrides for hours, destinations and guests (company page in admin). A **day pass** is a plan of type `day_pass` granted to an account for its validity window (`day_pass_expires_at`); while active it can only raise limits.
 
 Where each limit is enforced (all through `PlansService.effectiveLimits` = plan + overrides + active day pass):

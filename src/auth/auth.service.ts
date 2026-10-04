@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
@@ -117,6 +118,7 @@ export class AuthService {
     await this.consumeLoginCode(email, code);
 
     const { user, account } = await this.usersService.findOrCreateForEmail(email);
+    this.rejectSuperadmin(user);
     const { token, expiresAt } = await this.mintSession(user.id, meta);
 
     return { user, account, token, expiresAt };
@@ -148,17 +150,7 @@ export class AuthService {
     return { user, account, company, token, expiresAt };
   }
 
-  /**
-   * Superadmin real password login (distinct from magic-code -- see
-   * SuperadminSeedService for how the Superadmin identity itself is
-   * seeded). Issues the exact same kind of session/cookie as every other
-   * login path.
-   */
-  async superadminLogin(
-    rawEmail: string,
-    password: string,
-    meta: SessionMeta,
-  ): Promise<{ user: User; account: Account; token: string; expiresAt: Date }> {
+  private async checkSuperadminPassword(rawEmail: string, password: string): Promise<User> {
     const email = this.normalizeEmail(rawEmail);
     const user = await this.usersService.findByEmail(email);
 
@@ -170,9 +162,45 @@ export class AuthService {
     ) {
       throw new UnauthorizedException('Invalid email or password.');
     }
+    return user;
+  }
+
+  /**
+   * Superadmin login, step 1 of 2: the password is checked first, and only
+   * then is a one-time code emailed (a wrong password never triggers an
+   * email). No session is issued until superadminVerify.
+   */
+  async superadminLogin(rawEmail: string, password: string): Promise<void> {
+    const user = await this.checkSuperadminPassword(rawEmail, password);
+    await this.requestCode(user.email);
+  }
+
+  /**
+   * Step 2 of 2: the password is re-checked (so the code alone is never
+   * enough) and the emailed code consumed, then the same kind of
+   * session/cookie as every other login path is issued.
+   */
+  async superadminVerify(
+    rawEmail: string,
+    password: string,
+    code: string,
+    meta: SessionMeta,
+  ): Promise<{ user: User; account: Account; token: string; expiresAt: Date }> {
+    const user = await this.checkSuperadminPassword(rawEmail, password);
+    await this.consumeLoginCode(this.normalizeEmail(rawEmail), code);
 
     const { token, expiresAt } = await this.mintSession(user.id, meta);
     return { user, account: user.account, token, expiresAt };
+  }
+
+  /**
+   * The superadmin must go through password + emailed code. Email-only paths
+   * (magic code, Google, Facebook) would otherwise be a way around both.
+   */
+  private rejectSuperadmin(user: User): void {
+    if (user.role === Role.SUPERADMIN) {
+      throw new ForbiddenException('Administrators sign in at /admin/login with a password and an emailed code.');
+    }
   }
 
   /**
@@ -192,6 +220,7 @@ export class AuthService {
   ): Promise<{ user: User; account: Account; token: string; expiresAt: Date }> {
     const email = this.normalizeEmail(rawEmail);
     const { user, account } = await this.usersService.findOrCreateForEmail(email);
+    this.rejectSuperadmin(user);
     const { token, expiresAt } = await this.mintSession(user.id, meta);
     return { user, account, token, expiresAt };
   }
