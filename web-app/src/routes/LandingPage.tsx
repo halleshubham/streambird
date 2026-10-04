@@ -88,7 +88,7 @@ const TIERS: {
   {
     name: 'Starter',
     price: { USD: '$19', INR: '₹999' },
-    hours: '10 stream-hours/mo',
+    hours: '20 stream-hours/mo',
     destinations: '2 destinations',
     guests: '4 studio guests',
     highlight: false,
@@ -96,17 +96,17 @@ const TIERS: {
   {
     name: 'Pro',
     price: { USD: '$39', INR: '₹1,999' },
-    hours: '30 stream-hours/mo',
+    hours: 'Unlimited streaming (fair use)',
     destinations: '4 destinations',
-    guests: '6 studio guests',
+    guests: '8 studio guests',
     highlight: true,
   },
   {
-    name: 'Enterprise',
-    price: { USD: '$129', INR: '₹6,999' },
-    hours: '100 stream-hours/mo',
-    destinations: '6 destinations',
-    guests: '8 studio guests',
+    name: 'Business',
+    price: { USD: '$59', INR: '₹4,999' },
+    hours: 'Unlimited streaming (fair use)',
+    destinations: '8 destinations',
+    guests: '10 studio guests',
     highlight: false,
   },
 ];
@@ -278,8 +278,9 @@ export function LandingPage() {
       <section id="pricing" className="landing-section landing-section--alt">
         <h2>Pricing</h2>
         <p className="landing-section-sub">
-          Billing is handled outside StreamBird for now -- these are the plans, reach out to get
-          set up.
+          {paymentsOn
+            ? 'Pay online by UPI, card or netbanking. Monthly plans renew by autopay and you can cancel any time.'
+            : 'Billing is handled outside StreamBird for now -- these are the plans, reach out to get set up.'}
         </p>
         <div className="landing-currency-toggle" role="group" aria-label="Currency">
           <button
@@ -320,7 +321,7 @@ export function LandingPage() {
           ))}
         </div>
         <p className="landing-custom-pricing">
-          Need more guests, more hours or a different mix? <strong>Customised pricing</strong> is available -- email{' '}
+          Need more guests, a team or enterprise set-up, or a different mix? <strong>Custom / enterprise pricing</strong> is available -- email{' '}
           <a href="mailto:support@shackyapps.in?subject=StreamBird%20customised%20pricing&body=Hi%2C%20I%27d%20like%20a%20quote%20for%20StreamBird.%0A%0AHow%20many%20hours%20a%20month%3A%20%0AGuests%20at%20once%3A%20%0ADestinations%3A%20%0AAnything%20else%3A%20">
             support@shackyapps.in
           </a>{' '}
