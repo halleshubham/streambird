@@ -39,7 +39,7 @@ describe('FacebookProvider', () => {
       ingestUrl: 'rtmps://rtmp-api.facebook.com:443/rtmp',
       streamKey: 'abcd-1234',
       platformBroadcastId: 'video_1',
-      watchUrl: 'https://www.facebook.com/video_1',
+      watchUrl: 'https://www.facebook.com/page_1/videos/video_1',
     });
     expect(fetchMock.mock.calls[0][0]).toContain('/page_1/live_videos');
     expect(fetchMock.mock.calls[0][1].method).toBe('POST');
