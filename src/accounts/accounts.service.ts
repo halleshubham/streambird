@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { Account } from './entities/account.entity';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { PlanTier } from '../common/enums/plan-tier.enum';
+import { PlansService, EffectiveLimits } from '../plans/plans.service';
 
 const API_KEY_PREFIX = 'sb_';
 
@@ -19,19 +20,6 @@ const DEFAULT_INCLUDED_HOURS_BY_TIER: Record<PlanTier, number> = {
   [PlanTier.ENTERPRISE]: 100,
 };
 
-/** Paid tiers get a 20% grace buffer before StreamsService.create() blocks
- * a new stream -- overage is billed manually/externally (see PRICING.md
- * section 4, "meter and bill overage after the fact"), not auto-metered,
- * so the app's only job is capping exposure, not stopping at the exact
- * cent. Free tier is a hard stop at exactly its included hours -- there's
- * no payment method on file at $0 to bill any overage against. */
-const GRACE_MULTIPLIER_BY_TIER: Record<PlanTier, number> = {
-  [PlanTier.FREE]: 1.0,
-  [PlanTier.STARTER]: 1.2,
-  [PlanTier.PRO]: 1.2,
-  [PlanTier.ENTERPRISE]: 1.2,
-};
-
 const BILLING_PERIOD_DAYS = 30;
 
 @Injectable()
@@ -39,6 +27,7 @@ export class AccountsService {
   constructor(
     @InjectRepository(Account)
     private readonly accounts: Repository<Account>,
+    private readonly plans: PlansService,
   ) {}
 
   /**
@@ -127,27 +116,53 @@ export class AccountsService {
     return this.accounts.save(account);
   }
 
+  /** Effective limits (plan + per-account overrides + any active day pass). */
+  async getLimits(accountId: string): Promise<EffectiveLimits> {
+    return this.plans.effectiveLimits(await this.findByIdOrThrow(accountId));
+  }
+
   /**
-   * Called by StreamsService.create() before doing anything else -- throws
-   * if the account has used up its included hours (plus the paid-tier
-   * grace buffer, see GRACE_MULTIPLIER_BY_TIER). Never blocks a stream
-   * that's already running (see StreamsService, which only calls this at
-   * creation time, matching PRICING.md's "never hard-cut a live stream"
-   * recommendation).
+   * Called by StreamsService.create()/start() before doing anything else --
+   * throws if the account has used up its included hours (plus the plan's
+   * grace buffer). Unlimited plans (null hours) never block here. Never
+   * blocks a stream that's already running: only checked at creation/start,
+   * matching PRICING.md's "never hard-cut a live stream" recommendation.
    */
   async assertCanStartStream(accountId: string): Promise<void> {
     const account = await this.rolloverIfNeeded(await this.findByIdOrThrow(accountId));
-    const included = Number(account.includedHoursPerMonth);
-    const used = Number(account.streamHourUsageCurrentPeriod);
-    const limit = included * GRACE_MULTIPLIER_BY_TIER[account.currentTier];
+    const limits = await this.plans.effectiveLimits(account);
+    if (limits.includedHours === null) return;
 
-    if (used >= limit) {
+    const used = Number(account.streamHourUsageCurrentPeriod);
+    if (used >= limits.includedHours * limits.graceMultiplier) {
       throw new ForbiddenException(
-        account.currentTier === PlanTier.FREE
-          ? "You've used all your included stream hours for this billing period. Upgrade your plan to keep streaming."
-          : "You've used your included stream hours (plus grace) for this billing period. Contact us to arrange overage or upgrade your plan.",
+        limits.graceMultiplier <= 1
+          ? `You've used all the stream hours included in your ${limits.planName} plan for this billing period. Upgrade your plan to keep streaming.`
+          : `You've used the stream hours included in your ${limits.planName} plan (plus grace) for this billing period. Contact us to arrange more hours or upgrade your plan.`,
       );
     }
+  }
+
+  /** Refuses a stream that targets more destinations than the plan allows. */
+  async assertDestinationCount(accountId: string, count: number): Promise<void> {
+    const limits = await this.getLimits(accountId);
+    if (count > limits.maxDestinations) {
+      throw new ForbiddenException(
+        `Your ${limits.planName} plan allows up to ${limits.maxDestinations} destination${limits.maxDestinations === 1 ? '' : 's'} per stream, but ${count} were selected. Remove some or upgrade your plan.`,
+      );
+    }
+  }
+
+  /** Grants (or extends from now) a day pass. Used by the superadmin today; a payment webhook later. */
+  async grantDayPass(accountId: string, planKey = 'day_pass'): Promise<Account> {
+    const pass = await this.plans.findByKeyOrThrow(planKey);
+    if (pass.kind !== 'day_pass' || !pass.validityHours) {
+      throw new ForbiddenException(`Plan '${planKey}' is not a day pass`);
+    }
+    const account = await this.findByIdOrThrow(accountId);
+    account.dayPassPlanKey = pass.key;
+    account.dayPassExpiresAt = new Date(Date.now() + pass.validityHours * 3_600_000);
+    return this.accounts.save(account);
   }
 
   /** Called by StreamsService.end() with the stream's actual duration. A

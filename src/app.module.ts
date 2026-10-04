@@ -1,3 +1,4 @@
+import { PlansModule } from './plans/plans.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
@@ -38,6 +39,7 @@ import { AppController } from './app.controller';
     DatabaseModule,
     CommonModule,
     AccountsModule,
+    PlansModule,
     PlatformConnectionsModule,
     StreamsModule,
     StudioModule,

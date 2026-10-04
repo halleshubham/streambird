@@ -1,6 +1,8 @@
 import { api } from './client';
 import type {
   AccountDetail,
+  AdminPlan,
+  PlanPayload,
   AccountListResponse,
   AccountSummary,
   AnalyticsOverview,
@@ -77,4 +79,24 @@ export function suspendAccount(id: string): Promise<AccountSummary> {
 
 export function reactivateAccount(id: string): Promise<AccountSummary> {
   return api.post(`/superadmin/accounts/${id}/reactivate`);
+}
+
+export function listPlans(): Promise<AdminPlan[]> {
+  return api.get('/superadmin/plans');
+}
+
+export function createPlan(payload: PlanPayload): Promise<AdminPlan> {
+  return api.post('/superadmin/plans', payload);
+}
+
+export function updatePlan(key: string, payload: PlanPayload): Promise<AdminPlan> {
+  return api.patch(`/superadmin/plans/${key}`, payload);
+}
+
+export function grantDayPass(id: string, planKey?: string): Promise<AccountSummary> {
+  return api.post(`/superadmin/accounts/${id}/day-pass`, planKey ? { planKey } : {});
+}
+
+export function revokeDayPass(id: string): Promise<AccountSummary> {
+  return api.delete(`/superadmin/accounts/${id}/day-pass`);
 }

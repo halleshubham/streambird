@@ -18,6 +18,8 @@ import { SuperadminAccountsController } from './superadmin-accounts.controller';
 import { SuperadminAccountsService } from './superadmin-accounts.service';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { StreamsModule } from '../streams/streams.module';
+import { PlansModule } from '../plans/plans.module';
+import { SuperadminPlansController } from './superadmin-plans.controller';
 
 @Module({
   imports: [
@@ -27,12 +29,14 @@ import { StreamsModule } from '../streams/streams.module';
     CommonModule,
     AuditLogModule,
     StreamsModule,
+    PlansModule,
   ],
   controllers: [
     SuperadminController,
     SuperadminAnalyticsController,
     SuperadminUsersController,
     SuperadminAccountsController,
+    SuperadminPlansController,
   ],
   providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService],
 })

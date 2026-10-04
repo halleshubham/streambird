@@ -33,6 +33,8 @@ import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
+const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd'];
+
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
   const [requireInvitePassword, setRequireInvitePassword] = useState(false);
@@ -49,6 +51,7 @@ export function HostStudioPage() {
     participants,
     layoutMode,
     resolution,
+    maxResolution,
     cameraStarting,
     cameraStarted,
     isLive,
@@ -165,11 +168,13 @@ export function HostStudioPage() {
                 disabled={isLive}
                 onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
               >
-                {Object.entries(RESOLUTIONS).map(([value, r]) => (
-                  <option key={value} value={value}>
-                    {r.label}
-                  </option>
-                ))}
+                {Object.entries(RESOLUTIONS)
+                  .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
+                  .map(([value, r]) => (
+                    <option key={value} value={value}>
+                      {r.label}
+                    </option>
+                  ))}
               </select>
             </label>
           </div>

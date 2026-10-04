@@ -21,6 +21,7 @@ import { AdminAuditLogPage } from './routes/admin/AdminAuditLogPage';
 import { AdminAnalyticsPage } from './routes/admin/AdminAnalyticsPage';
 import { AdminAccountsPage } from './routes/admin/AdminAccountsPage';
 import { AdminAccountDetailPage } from './routes/admin/AdminAccountDetailPage';
+import { AdminPlansPage } from './routes/admin/AdminPlansPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -56,6 +57,7 @@ export function App() {
           <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/accounts" element={<AdminAccountsPage />} />
+          <Route path="/admin/plans" element={<AdminPlansPage />} />
           <Route path="/admin/accounts/:id" element={<AdminAccountDetailPage />} />
           <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
         </Route>

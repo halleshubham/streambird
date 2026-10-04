@@ -1,3 +1,4 @@
+import { PlansService } from '../plans/plans.service';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
@@ -67,6 +68,7 @@ describe('SuperadminAccountsService', () => {
         { provide: getRepositoryToken(LiveStream), useValue: streamsRepo },
         { provide: getRepositoryToken(PlatformConnection), useValue: platformConnectionsRepo },
         { provide: AuditLogService, useValue: auditLog },
+        { provide: PlansService, useValue: { findByKeyOrThrow: jest.fn(async (key: string) => ({ key, kind: key === 'day_pass' ? 'day_pass' : 'monthly', validityHours: key === 'day_pass' ? 24 : null, includedHoursPerMonth: ({ free: '2', pro: '30', enterprise: '100' } as Record<string, string>)[key] ?? null })) } },
       ],
     }).compile();
 
@@ -178,15 +180,55 @@ describe('SuperadminAccountsService', () => {
       const result = await service.updateSubscription('acc_1', admin, { currentTier: PlanTier.PRO });
 
       expect(result.currentTier).toBe(PlanTier.PRO);
-      // includedHoursPerMonth untouched since it wasn't in the DTO.
-      expect(result.includedHoursPerMonth).toBe('10.00');
+      // The hours mirror follows the new plan (Pro = 30h), unless an override is set.
+      expect(result.includedHoursPerMonth).toBe('30');
       expect(accountsRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ currentTier: PlanTier.PRO, includedHoursPerMonth: '10.00' }),
+        expect.objectContaining({ currentTier: PlanTier.PRO, includedHoursPerMonth: '30' }),
       );
       expect(auditLog.log).toHaveBeenCalledWith(admin, 'update_subscription', 'account', 'acc_1', {
-        before: { currentTier: PlanTier.FREE, includedHoursPerMonth: '10.00', billingPeriodStart: '2026-01-01' },
-        after: { currentTier: PlanTier.PRO, includedHoursPerMonth: '10.00', billingPeriodStart: '2026-01-01' },
+        before: expect.objectContaining({ currentTier: PlanTier.FREE, includedHoursPerMonth: '10.00', billingPeriodStart: '2026-01-01' }),
+        after: expect.objectContaining({ currentTier: PlanTier.PRO, planKey: 'pro', includedHoursPerMonth: '30', billingPeriodStart: '2026-01-01' }),
       });
+    });
+
+    it('moves the account to a configurable plan, syncing currentTier for built-in keys only', async () => {
+      accountsRepo.findOne.mockResolvedValue(account({ currentTier: PlanTier.FREE }));
+      companiesRepo.findOne.mockResolvedValue(null);
+      const admin = { id: 'admin_1' } as User;
+
+      await service.updateSubscription('acc_1', admin, { planKey: 'pro' });
+      expect(accountsRepo.save).toHaveBeenLastCalledWith(expect.objectContaining({ planKey: 'pro', currentTier: PlanTier.PRO }));
+
+      accountsRepo.findOne.mockResolvedValue(account({ currentTier: PlanTier.FREE }));
+      await service.updateSubscription('acc_1', admin, { planKey: 'creator_custom' });
+      expect(accountsRepo.save).toHaveBeenLastCalledWith(expect.objectContaining({ planKey: 'creator_custom', currentTier: PlanTier.FREE }));
+    });
+
+    it('sets and clears per-account overrides; refuses a day pass as the account plan', async () => {
+      accountsRepo.findOne.mockResolvedValue(account());
+      companiesRepo.findOne.mockResolvedValue(null);
+      const admin = { id: 'admin_1' } as User;
+
+      await service.updateSubscription('acc_1', admin, { includedHoursOverride: 50, maxDestinationsOverride: 3, maxGuestsOverride: null });
+      expect(accountsRepo.save).toHaveBeenLastCalledWith(
+        expect.objectContaining({ includedHoursOverride: '50', maxDestinationsOverride: 3, maxGuestsOverride: null }),
+      );
+      await expect(service.updateSubscription('acc_1', admin, { planKey: 'day_pass' })).rejects.toThrow(/granted separately/);
+    });
+
+    it('grants a day pass for its validity window and can revoke it', async () => {
+      accountsRepo.findOne.mockResolvedValue(account());
+      companiesRepo.findOne.mockResolvedValue(null);
+      const admin = { id: 'admin_1' } as User;
+      const before = Date.now();
+
+      const granted = await service.grantDayPass('acc_1', admin);
+      expect(granted.dayPassPlanKey).toBe('day_pass');
+      expect(granted.dayPassExpiresAt!.getTime()).toBeGreaterThanOrEqual(before + 24 * 3_600_000 - 1000);
+      expect(auditLog.log).toHaveBeenCalledWith(admin, 'grant_day_pass', 'account', 'acc_1', expect.any(Object));
+
+      const revoked = await service.revokeDayPass('acc_1', admin);
+      expect(revoked.dayPassExpiresAt).toBeNull();
     });
 
     it('applies all three fields when all are provided, including clearing billingPeriodStart to null', async () => {

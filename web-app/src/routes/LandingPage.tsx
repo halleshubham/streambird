@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Radio,
@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import * as authApi from '../api/auth';
 import { docsUrl } from '../docs';
+import { getPublicPlans } from '../api/plans';
+import type { PublicPlan } from '../types/api';
 import { FacebookLogo, GoogleLogo } from '../components/AuthLogos';
 import { PlatformBadge } from '../components/PlatformBadge';
 
@@ -121,6 +123,28 @@ function detectDefaultCurrency(): Currency {
   return 'USD';
 }
 
+/** Formats one plan row from GET /plans/public like the static TIERS cards, so admin edits show up on the page. */
+function planToTier(p: PublicPlan): (typeof TIERS)[number] & { perDay: boolean } {
+  const money = (inr: number | null, usd: number | null) => ({
+    USD: usd === null ? '—' : `$${usd}`,
+    INR: inr === null ? '—' : `₹${inr.toLocaleString('en-IN')}`,
+  });
+  const dayPass = p.kind === 'day_pass';
+  return {
+    name: p.name,
+    price: money(p.priceInr, p.priceUsd),
+    hours: dayPass
+      ? `${p.maxSessionHours ? `Up to ${p.maxSessionHours} h per stream` : 'Unlimited streams'} for ${p.validityHours === 24 ? 'one day' : `${p.validityHours} h`}`
+      : p.includedHoursPerMonth === null
+        ? 'Unlimited streaming (fair use)'
+        : `${p.includedHoursPerMonth} stream-hours/mo`,
+    destinations: `${p.maxDestinations} destination${p.maxDestinations === 1 ? '' : 's'}`,
+    guests: `${p.maxGuests} studio guests`,
+    highlight: p.key === 'pro',
+    perDay: dayPass,
+  };
+}
+
 const FAQ = [
   {
     q: 'Do I need to install anything?',
@@ -150,6 +174,12 @@ const FAQ = [
 
 export function LandingPage() {
   const [currency, setCurrency] = useState<Currency>(detectDefaultCurrency);
+  // Pricing comes from the admin-managed plans; the static TIERS are the fallback if that request fails.
+  const [livePlans, setLivePlans] = useState<PublicPlan[] | null>(null);
+  useEffect(() => {
+    getPublicPlans().then(setLivePlans).catch(() => {});
+  }, []);
+  const tiers = livePlans && livePlans.length > 0 ? livePlans.map(planToTier) : TIERS;
 
   return (
     <div className="landing-page">
@@ -258,12 +288,12 @@ export function LandingPage() {
           </button>
         </div>
         <div className="landing-pricing-grid">
-          {TIERS.map((t) => (
+          {tiers.map((t) => (
             <div key={t.name} className={`landing-price-card${t.highlight ? ' landing-price-card--highlight' : ''}`}>
               <h3>{t.name}</h3>
               <p className="landing-price">
                 {t.price[currency]}
-                <span>/mo</span>
+                <span>{'perDay' in t && t.perDay ? '/day' : '/mo'}</span>
               </p>
               <ul>
                 <li><CheckCircle2 size={14} /> {t.hours}</li>

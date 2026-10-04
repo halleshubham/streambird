@@ -103,6 +103,22 @@ A stream can be planned ahead of time ("Schedule for later" on the create page):
 
 API: `POST /streams/schedule`, `GET|PATCH /streams/:id/schedule`, `POST /streams/:id/schedule/guests`, `DELETE .../guests/:inviteId`, `POST .../guests/:inviteId/resend`, `POST /streams/:id/schedule/cancel`, `GET /streams?view=upcoming`. Migration: `0010_scheduled_streams.sql` (applied automatically on container start).
 
+## Plans and limits (admin-configurable)
+
+Every limit lives in the `plans` table (migration `0012`), edited by a superadmin at **Admin → Plans** (`/admin/plans`): included hours (or unlimited), grace multiplier, max destinations, max simultaneous guests, max quality (SD/HD/Full HD), max session length, prices and visibility. Accounts sit on a plan (`accounts.plan_key`) and may carry per-account overrides for hours, destinations and guests (company page in admin). A **day pass** is a plan of type `day_pass` granted to an account for its validity window (`day_pass_expires_at`); while active it can only raise limits.
+
+Where each limit is enforced (all through `PlansService.effectiveLimits` = plan + overrides + active day pass):
+
+| Limit | Enforced |
+|---|---|
+| Hours | `AccountsService.assertCanStartStream` when a stream is created/started (never cuts a live stream) |
+| Destinations | `StreamsService.create/start`, `StreamSchedulingService.schedule/update` |
+| Guests (at once) | `StudioSignalingGateway` before a guest's join is recorded; the guest sees "This studio is full" |
+| Quality | Host studio's quality menu (client-side: the browser encodes the video) |
+| Session length | `SessionLimitService` ends a live stream past its cap (checked every minute) |
+
+`accounts.included_hours_per_month` is kept as a mirror of the effective monthly hours so the usage meters and analytics keep working; enforcement never reads it. Public pricing (`GET /api/plans/public`) feeds the home page. Plans are assigned and day passes granted by hand in admin for now; a payment gateway would call the same code.
+
 ## Moving to a new domain
 
 1. Point DNS at the server and add the new domain to the app in Coolify (keep the old one).

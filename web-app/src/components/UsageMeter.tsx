@@ -1,4 +1,6 @@
-import type { Account } from '../types/api';
+import { useEffect, useState } from 'react';
+import type { Account, EffectiveLimits } from '../types/api';
+import { getMyLimits } from '../api/plans';
 
 /** Compact, color-coded usage bar (green/warning/danger by threshold) for
  * anywhere a numeric used/included pair needs to be scannable at a glance
@@ -27,8 +29,14 @@ export function UsageBar({ used, included, compact = false }: { used: number; in
 }
 
 export function UsageMeter({ account }: { account: Account }) {
+  const [limits, setLimits] = useState<EffectiveLimits | null>(null);
+  useEffect(() => {
+    getMyLimits().then(setLimits).catch(() => {});
+  }, []);
+
   const used = Number(account.streamHourUsageCurrentPeriod);
-  const included = Number(account.includedHoursPerMonth);
+  const unlimited = limits ? limits.includedHours === null : false;
+  const included = limits && limits.includedHours !== null ? limits.includedHours : Number(account.includedHoursPerMonth);
   const pct = included > 0 ? Math.min(100, (used / included) * 100) : 0;
 
   return (
@@ -36,13 +44,22 @@ export function UsageMeter({ account }: { account: Account }) {
       <div className="usage-meter-header">
         <span>Stream hours this period</span>
         <span>
-          {used.toFixed(1)} / {included.toFixed(1)} hrs
+          {unlimited ? `${used.toFixed(1)} hrs · unlimited` : `${used.toFixed(1)} / ${included.toFixed(1)} hrs`}
         </span>
       </div>
       <div className="usage-meter-track">
-        <div className="usage-meter-fill" style={{ width: `${pct}%` }} />
+        <div className="usage-meter-fill" style={{ width: `${unlimited ? 0 : pct}%` }} />
       </div>
-      <p className="usage-meter-tier">{account.currentTier} plan</p>
+      <p className="usage-meter-tier">
+        {limits ? limits.planName : account.currentTier} plan
+        {limits && (
+          <>
+            {' '}· up to {limits.maxDestinations} destination{limits.maxDestinations === 1 ? '' : 's'} · {limits.maxGuests} guest
+            {limits.maxGuests === 1 ? '' : 's'}
+            {limits.dayPass && <> · {limits.dayPass.name} until {new Date(limits.dayPass.expiresAt).toLocaleString()}</>}
+          </>
+        )}
+      </p>
     </div>
   );
 }

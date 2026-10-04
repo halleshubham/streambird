@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from '../accounts/entities/account.entity';
@@ -8,12 +8,20 @@ import { LiveStream } from '../streams/entities/live-stream.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto';
+import { PlansService } from '../plans/plans.service';
+import { PlanTier } from '../common/enums/plan-tier.enum';
 
 export interface AccountSummary {
   id: string;
   name: string;
   currentTier: Account['currentTier'];
   includedHoursPerMonth: string;
+  planKey: string;
+  includedHoursOverride: string | null;
+  maxDestinationsOverride: number | null;
+  maxGuestsOverride: number | null;
+  dayPassPlanKey: string | null;
+  dayPassExpiresAt: Date | null;
   streamHourUsageCurrentPeriod: string;
   billingPeriodStart: string | null;
   suspendedAt: Date | null;
@@ -67,6 +75,7 @@ export class SuperadminAccountsService {
     @InjectRepository(PlatformConnection)
     private readonly platformConnections: Repository<PlatformConnection>,
     private readonly auditLog: AuditLogService,
+    private readonly plans: PlansService,
   ) {}
 
   async list(limit: number, offset: number): Promise<{ items: AccountSummary[]; total: number }> {
@@ -150,13 +159,36 @@ export class SuperadminAccountsService {
       currentTier: account.currentTier,
       includedHoursPerMonth: account.includedHoursPerMonth,
       billingPeriodStart: account.billingPeriodStart,
+      ...this.planFields(account),
     };
 
     if (dto.currentTier !== undefined) {
       account.currentTier = dto.currentTier;
+      // The tier select predates configurable plans: it moves the account to
+      // the built-in plan of the same name unless a planKey says otherwise.
+      if (dto.planKey === undefined) account.planKey = dto.currentTier;
+    }
+    if (dto.planKey !== undefined) {
+      const plan = await this.plans.findByKeyOrThrow(dto.planKey);
+      if (plan.kind !== 'monthly') throw new BadRequestException('A day pass is granted separately, not assigned as the account plan.');
+      account.planKey = plan.key;
+      if ((Object.values(PlanTier) as string[]).includes(plan.key)) account.currentTier = plan.key as PlanTier;
     }
     if (dto.includedHoursPerMonth !== undefined) {
+      // Legacy field: now simply an hours override.
       account.includedHoursPerMonth = dto.includedHoursPerMonth;
+      account.includedHoursOverride = dto.includedHoursPerMonth;
+    }
+    if (dto.includedHoursOverride !== undefined) {
+      account.includedHoursOverride = dto.includedHoursOverride === null ? null : String(dto.includedHoursOverride);
+    }
+    if (dto.maxDestinationsOverride !== undefined) account.maxDestinationsOverride = dto.maxDestinationsOverride;
+    if (dto.maxGuestsOverride !== undefined) account.maxGuestsOverride = dto.maxGuestsOverride;
+
+    // Keep the mirror column (usage meters/analytics) equal to the effective monthly hours.
+    if (dto.planKey !== undefined || dto.currentTier !== undefined || dto.includedHoursOverride !== undefined || dto.includedHoursPerMonth !== undefined) {
+      const plan = await this.plans.findByKeyOrThrow(account.planKey);
+      account.includedHoursPerMonth = String(account.includedHoursOverride ?? plan.includedHoursPerMonth ?? 0);
     }
     if (dto.billingPeriodStart !== undefined) {
       account.billingPeriodStart = dto.billingPeriodStart;
@@ -168,9 +200,46 @@ export class SuperadminAccountsService {
       currentTier: saved.currentTier,
       includedHoursPerMonth: saved.includedHoursPerMonth,
       billingPeriodStart: saved.billingPeriodStart,
+      ...this.planFields(saved),
     };
     await this.auditLog.log(admin, 'update_subscription', 'account', saved.id, { before, after });
 
+    const company = await this.companies.findOne({ where: { accountId: saved.id } });
+    const userCount = await this.users.count({ where: { accountId: saved.id } });
+    return this.toSummary(saved, company?.name ?? null, userCount);
+  }
+
+  private planFields(a: Account) {
+    return {
+      planKey: a.planKey,
+      includedHoursOverride: a.includedHoursOverride,
+      maxDestinationsOverride: a.maxDestinationsOverride,
+      maxGuestsOverride: a.maxGuestsOverride,
+    };
+  }
+
+  /** Grants a day pass now (e.g. after an offline payment); a payment webhook would call the same thing. */
+  async grantDayPass(accountId: string, admin: User, planKey = 'day_pass'): Promise<AccountSummary> {
+    const pass = await this.plans.findByKeyOrThrow(planKey);
+    if (pass.kind !== 'day_pass' || !pass.validityHours) throw new BadRequestException(`Plan '${planKey}' is not a day pass.`);
+    const account = await this.findAccountOrThrow(accountId);
+    account.dayPassPlanKey = pass.key;
+    account.dayPassExpiresAt = new Date(Date.now() + pass.validityHours * 3_600_000);
+    const saved = await this.accounts.save(account);
+    await this.auditLog.log(admin, 'grant_day_pass', 'account', saved.id, { planKey: pass.key, expiresAt: saved.dayPassExpiresAt });
+    return this.summaryFor(saved);
+  }
+
+  async revokeDayPass(accountId: string, admin: User): Promise<AccountSummary> {
+    const account = await this.findAccountOrThrow(accountId);
+    account.dayPassPlanKey = null;
+    account.dayPassExpiresAt = null;
+    const saved = await this.accounts.save(account);
+    await this.auditLog.log(admin, 'revoke_day_pass', 'account', saved.id);
+    return this.summaryFor(saved);
+  }
+
+  private async summaryFor(saved: Account): Promise<AccountSummary> {
     const company = await this.companies.findOne({ where: { accountId: saved.id } });
     const userCount = await this.users.count({ where: { accountId: saved.id } });
     return this.toSummary(saved, company?.name ?? null, userCount);
@@ -226,6 +295,12 @@ export class SuperadminAccountsService {
       name: account.name,
       currentTier: account.currentTier,
       includedHoursPerMonth: account.includedHoursPerMonth,
+      planKey: account.planKey,
+      includedHoursOverride: account.includedHoursOverride,
+      maxDestinationsOverride: account.maxDestinationsOverride,
+      maxGuestsOverride: account.maxGuestsOverride,
+      dayPassPlanKey: account.dayPassPlanKey,
+      dayPassExpiresAt: account.dayPassExpiresAt,
       streamHourUsageCurrentPeriod: account.streamHourUsageCurrentPeriod,
       billingPeriodStart: account.billingPeriodStart,
       suspendedAt: account.suspendedAt,

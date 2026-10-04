@@ -1,3 +1,4 @@
+import { SessionLimitService } from './session-limit.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LiveStream } from './entities/live-stream.entity';
@@ -26,7 +27,7 @@ import { StudioModule } from '../studio/studio.module';
     // StudioSignalingGateway's doc comment on that).
     forwardRef(() => StudioModule),
   ],
-  providers: [StreamsService, GlitchRecoveryService, StreamSchedulingService],
+  providers: [StreamsService, GlitchRecoveryService, StreamSchedulingService, SessionLimitService],
   controllers: [StreamsController],
   exports: [StreamsService, GlitchRecoveryService],
 })

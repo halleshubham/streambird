@@ -118,6 +118,7 @@ export class StreamSchedulingService {
   async schedule(account: Account, dto: ScheduleStreamDto): Promise<ScheduleDetail> {
     const scheduledAt = this.parseFutureDate(dto.scheduledAt);
     this.assertValidTimezone(dto.timezone);
+    await this.streamsService.assertDestinationCount(account.id, new Set(dto.destinationConnectionIds).size);
     const connections = await this.loadOwnedConnections(account.id, dto.destinationConnectionIds);
 
     const stream = await this.liveStreams.save(
@@ -199,6 +200,7 @@ export class StreamSchedulingService {
 
     // Destinations: drop removed ones (and their platform broadcast), add new ones.
     if (dto.destinationConnectionIds) {
+      await this.streamsService.assertDestinationCount(account.id, new Set(dto.destinationConnectionIds).size);
       const wanted = await this.loadOwnedConnections(account.id, dto.destinationConnectionIds);
       const wantedIds = new Set(wanted.map((c) => c.id));
       const existing = await this.loadDestinations(stream.id);

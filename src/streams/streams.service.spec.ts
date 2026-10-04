@@ -129,6 +129,7 @@ describe('StreamsService', () => {
           provide: AccountsService,
           useValue: {
             assertCanStartStream: jest.fn(async () => undefined),
+            assertDestinationCount: jest.fn(async () => undefined),
             recordStreamUsage: jest.fn(async () => undefined),
           },
         },

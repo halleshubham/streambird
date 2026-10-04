@@ -251,6 +251,12 @@ export interface AccountSummary {
   id: string;
   name: string;
   currentTier: PlanTier;
+  planKey: string;
+  includedHoursOverride: string | null;
+  maxDestinationsOverride: number | null;
+  maxGuestsOverride: number | null;
+  dayPassPlanKey: string | null;
+  dayPassExpiresAt: string | null;
   includedHoursPerMonth: string;
   streamHourUsageCurrentPeriod: string;
   billingPeriodStart: string | null;
@@ -302,4 +308,78 @@ export interface UpdateSubscriptionPayload {
   currentTier?: PlanTier;
   includedHoursPerMonth?: string;
   billingPeriodStart?: string | null;
+  planKey?: string;
+  /** null clears the override (back to the plan's value). */
+  includedHoursOverride?: number | null;
+  maxDestinationsOverride?: number | null;
+  maxGuestsOverride?: number | null;
+}
+
+export type Resolution = 'sd' | 'hd' | 'fhd';
+
+/** A plan as the public pricing page sees it (GET /plans/public). */
+export interface PublicPlan {
+  key: string;
+  name: string;
+  kind: 'monthly' | 'day_pass';
+  /** null = unlimited. */
+  includedHoursPerMonth: number | null;
+  maxDestinations: number;
+  maxGuests: number;
+  maxResolution: Resolution;
+  maxSessionHours: number | null;
+  validityHours: number | null;
+  priceInr: number | null;
+  priceUsd: number | null;
+}
+
+/** Everything a plan row holds, for the superadmin editor (GET /superadmin/plans). numerics arrive as strings. */
+export interface AdminPlan {
+  key: string;
+  name: string;
+  kind: 'monthly' | 'day_pass';
+  includedHoursPerMonth: string | null;
+  graceMultiplier: string;
+  maxDestinations: number;
+  maxGuests: number;
+  maxResolution: Resolution;
+  maxSessionHours: string | null;
+  validityHours: number | null;
+  priceInr: number | null;
+  priceUsd: string | null;
+  isPublic: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+/** Body for POST/PATCH /superadmin/plans -- numbers, with null meaning unlimited/none. */
+export interface PlanPayload {
+  key?: string;
+  name?: string;
+  kind?: 'monthly' | 'day_pass';
+  includedHoursPerMonth?: number | null;
+  graceMultiplier?: number;
+  maxDestinations?: number;
+  maxGuests?: number;
+  maxResolution?: Resolution;
+  maxSessionHours?: number | null;
+  validityHours?: number | null;
+  priceInr?: number | null;
+  priceUsd?: number | null;
+  isPublic?: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** What the signed-in account may do right now (GET /plans/me): plan + overrides + any active day pass. */
+export interface EffectiveLimits {
+  planKey: string;
+  planName: string;
+  includedHours: number | null;
+  graceMultiplier: number;
+  maxDestinations: number;
+  maxGuests: number;
+  maxResolution: Resolution;
+  maxSessionHours: number | null;
+  dayPass: { planKey: string; name: string; expiresAt: string } | null;
 }

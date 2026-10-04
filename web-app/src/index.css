@@ -1808,3 +1808,32 @@ a.icon-btn--danger {
   padding: 8px 14px;
   font-size: 14px;
 }
+
+/* ---- Admin: plans ---- */
+.plan-form { margin-top: 16px; }
+
+.plan-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+
+.plan-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plan-form .checkbox-row { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+.row-muted { opacity: 0.55; }
+
+.plan-form input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+.plan-form p label.checkbox-row {
+  display: flex;
+  margin: 4px 0;
+}

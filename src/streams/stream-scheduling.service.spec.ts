@@ -97,6 +97,7 @@ function build() {
   };
   const streamsService = {
     end: jest.fn(async () => undefined),
+    assertDestinationCount: jest.fn(async () => undefined),
     resolveProvider: (conn: any) => providers[conn.platform],
   };
   const email = { sendStreamInvite: jest.fn(async () => undefined) };
