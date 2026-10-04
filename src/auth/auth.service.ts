@@ -196,6 +196,17 @@ export class AuthService {
     return { user, account, token, expiresAt };
   }
 
+  /**
+   * Facebook login: same identity resolution as Google. Meta only returns an
+   * email it has confirmed, so it's treated as verified.
+   */
+  async loginWithFacebookProfile(
+    rawEmail: string,
+    meta: SessionMeta,
+  ): Promise<{ user: User; account: Account; token: string; expiresAt: Date }> {
+    return this.loginWithGoogleProfile(rawEmail, meta);
+  }
+
   async resolveSession(rawToken: string): Promise<{ user: User; account: Account } | null> {
     const session = await this.sessions.findOne({
       where: { tokenHash: this.hash(rawToken) },

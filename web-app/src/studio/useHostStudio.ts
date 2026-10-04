@@ -227,6 +227,11 @@ export function useHostStudio(streamId: string | undefined) {
   // which has no prior content worth fading from.
   const lastEntriesKeyRef = useRef<string>('');
   const logoAppearedAtRef = useRef<number | null>(null);
+  // Shown on the branded StreamBird slide that fills the canvas while nobody
+  // is on camera -- see drawBrandSlide. The image is StreamBird's own logo,
+  // not the host's custom overlay logo (brandingRef.logoImg).
+  const streamTitleRef = useRef('');
+  const brandImgRef = useRef<HTMLImageElement | null>(null);
   const tickerAppearedAtRef = useRef<number | null>(null);
 
   function renderParticipantList() {
@@ -307,6 +312,55 @@ export function useHostStudio(streamId: string | undefined) {
 
   function easeOutCubic(t: number): number {
     return 1 - Math.pow(1 - t, 3);
+  }
+
+  /**
+   * What viewers see until a camera/screen is on stage: a StreamBird-branded
+   * slide instead of a black frame. Lets the host go live (and guests join)
+   * without having to enable a camera first.
+   */
+  function drawBrandSlide(w: number, h: number, now: number) {
+    const ctx = ctxRef.current!;
+    if (!brandImgRef.current) {
+      const img = new Image();
+      img.src = '/logo.png';
+      brandImgRef.current = img;
+    }
+    const bg = ctx.createLinearGradient(0, 0, w, h);
+    bg.addColorStop(0, '#1b1038');
+    bg.addColorStop(1, '#0e0e16');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    const glow = ctx.createRadialGradient(w * 0.3, h * 0.2, 0, w * 0.3, h * 0.2, w * 0.6);
+    glow.addColorStop(0, 'rgba(124,58,237,0.35)');
+    glow.addColorStop(1, 'rgba(124,58,237,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    const unit = h / 720;
+    const cx = w / 2;
+    const img = brandImgRef.current;
+    const logoH = 150 * unit;
+    const bob = Math.sin(now / 700) * 6 * unit;
+    if (img.complete && img.naturalHeight > 0) {
+      const logoW = (img.naturalWidth / img.naturalHeight) * logoH;
+      ctx.drawImage(img, cx - logoW / 2, h * 0.24 + bob, logoW, logoH);
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#fff';
+    ctx.font = `700 ${64 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+    ctx.fillText('StreamBird', cx, h * 0.24 + logoH + 80 * unit);
+    const title = streamTitleRef.current;
+    if (title) {
+      ctx.fillStyle = '#d9ccff';
+      ctx.font = `500 ${30 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+      ctx.fillText(title.length > 60 ? `${title.slice(0, 57)}…` : title, cx, h * 0.24 + logoH + 135 * unit);
+    }
+    ctx.fillStyle = '#9d8fc9';
+    ctx.font = `400 ${22 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+    ctx.fillText('Live now — we’ll be on screen in a moment', cx, h * 0.24 + logoH + 180 * unit);
+    ctx.textAlign = 'start';
   }
 
   function drawLogo(now: number) {
@@ -527,6 +581,8 @@ export function useHostStudio(streamId: string | undefined) {
       if (entries.length > 0) {
         if (layoutModeRef.current === 'spotlight') drawSpotlight(entries, w, h, now);
         else drawGrid(entries, w, h, now);
+      } else {
+        drawBrandSlide(w, h, now);
       }
 
       drawLogo(now);
@@ -802,6 +858,7 @@ export function useHostStudio(streamId: string | undefined) {
         }
 
         hostTokenRef.current = hostToken;
+        streamTitleRef.current = streamRow.title ?? '';
         setStream(streamRow);
         setLoading(false);
 
@@ -1187,6 +1244,12 @@ export function useHostStudio(streamId: string | undefined) {
     setStatus({ text: 'Starting publish…', isError: false });
 
     try {
+      // No camera/mic yet is fine: the mix destination exists (silent) so the
+      // publish always carries an audio track, and a mic connected later
+      // simply starts flowing into it.
+      ensureAudioMix();
+      const audioCtx = audioContextRef.current;
+      if (audioCtx && audioCtx.state !== 'running') await audioCtx.resume().catch(() => {});
       const videoTrack = canvasRef.current!.captureStream(30).getVideoTracks()[0];
       const audioTrack = audioDestinationRef.current ? audioDestinationRef.current.stream.getAudioTracks()[0] : null;
 
@@ -1348,8 +1411,9 @@ export function useHostStudio(streamId: string | undefined) {
    * if it's already done.
    */
   const resumeLive = useCallback(async () => {
+    // Camera is best-effort: if it can't start (denied, no device, or no user
+    // gesture after a reload) the branded slide keeps the stream on air.
     if (!participantsRef.current.has('local')) await startCamera();
-    if (!participantsRef.current.has('local')) return; // camera denied/failed -- the banner stays for a manual retry
 
     const ctx = audioContextRef.current;
     if (ctx && ctx.state !== 'running') await ctx.resume().catch(() => {});
