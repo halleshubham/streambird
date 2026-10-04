@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { buildFacebookDialogUrl } from './facebook-dialog';
 
 export interface FacebookProfile {
   /** Absent when the Facebook account has no confirmed email, or the user declined the email permission. */
@@ -21,14 +22,13 @@ export class FacebookLoginService {
   constructor(private readonly config: ConfigService) {}
 
   buildAuthUrl(state: string, redirectUri: string): string {
-    const params = new URLSearchParams({
-      client_id: this.config.get<string>('facebook.appId') ?? '',
-      redirect_uri: redirectUri,
+    return buildFacebookDialogUrl({
+      clientId: this.config.get<string>('facebook.appId') ?? '',
+      redirectUri,
       state,
-      response_type: 'code',
       scope: 'email,public_profile',
+      configId: this.config.get<string>('facebook.loginConfigId') || undefined,
     });
-    return `https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`;
   }
 
   async exchangeCodeForProfile(code: string, redirectUri: string): Promise<FacebookProfile> {

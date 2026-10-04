@@ -1,3 +1,4 @@
+import { buildFacebookDialogUrl } from '../auth/facebook-dialog';
 import {
   Body,
   Controller,
@@ -216,13 +217,15 @@ export class PlatformConnectionsController {
       path: FACEBOOK_OAUTH_BASE_PATH,
       maxAge: 10 * 60_000,
     });
-    const params = new URLSearchParams({
-      client_id: this.config.get<string>('facebook.appId') ?? '',
-      redirect_uri: this.config.get<string>('facebook.redirectUri') ?? '',
-      state,
-      scope: FACEBOOK_SCOPES,
-    });
-    res.redirect(`https://www.facebook.com/v23.0/dialog/oauth?${params.toString()}`);
+    res.redirect(
+      buildFacebookDialogUrl({
+        clientId: this.config.get<string>('facebook.appId') ?? '',
+        redirectUri: this.config.get<string>('facebook.redirectUri') ?? '',
+        state,
+        scope: FACEBOOK_SCOPES,
+        configId: this.config.get<string>('facebook.connectConfigId') || undefined,
+      }),
+    );
   }
 
   /**

@@ -72,6 +72,11 @@ export interface AppConfig {
      * Page-connect one above, and also must be registered on the Meta app.
      * Defaults to `${publicBaseUrl}/api/auth/facebook/callback`. */
     loginRedirectUri: string;
+    /** Facebook Login for Business only: Configuration IDs from the Meta app
+     * dashboard. When set, they replace the inline `scope` (see
+     * buildFacebookDialogUrl). Leave blank for classic Facebook Login. */
+    loginConfigId: string;
+    connectConfigId: string;
   };
   cloudflareTurn: {
     /** Both empty = no TURN configured, StudioSignalingGateway's clients
@@ -129,6 +134,8 @@ export default (): AppConfig => ({
     loginRedirectUri:
       process.env.FACEBOOK_LOGIN_REDIRECT_URI ??
       `${process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`}/api/auth/facebook/callback`,
+    loginConfigId: process.env.FACEBOOK_LOGIN_CONFIG_ID ?? '',
+    connectConfigId: process.env.FACEBOOK_CONNECT_CONFIG_ID ?? '',
   },
   cloudflareTurn: {
     tokenId: process.env.CLOUDFLARE_TURN_TOKEN_ID ?? '',
