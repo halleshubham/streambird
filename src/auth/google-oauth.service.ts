@@ -86,6 +86,24 @@ export class GoogleOAuthService {
     };
   }
 
+  /**
+   * Revokes a token (a refresh token also invalidates its access tokens) so
+   * StreamBird's access to the user's Google account really ends -- used
+   * when a YouTube connection is removed. Returns true when Google no longer
+   * honors the token: a 200, or a 400 invalid_token (already revoked, or
+   * revoked by the user in their Google account). Anything else throws.
+   */
+  async revokeToken(token: string): Promise<boolean> {
+    const res = await fetch('https://oauth2.googleapis.com/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }),
+    });
+    if (res.ok) return true;
+    if (res.status === 400) return true; // invalid_token: already gone
+    throw new Error(`Google token revocation failed with status ${res.status}`);
+  }
+
   async refreshAccessToken(refreshToken: string): Promise<GoogleTokens> {
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',

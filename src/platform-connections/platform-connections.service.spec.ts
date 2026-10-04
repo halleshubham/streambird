@@ -5,6 +5,7 @@ import { PlatformConnectionsService } from './platform-connections.service';
 import { PlatformConnection } from './entities/platform-connection.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { EncryptionService } from '../encryption/encryption.service';
+import { GoogleOAuthService } from '../auth/google-oauth.service';
 import { Platform } from '../common/enums/platform.enum';
 
 describe('PlatformConnectionsService', () => {
@@ -17,7 +18,8 @@ describe('PlatformConnectionsService', () => {
     save: jest.Mock;
   };
   let destinationsRepo: { count: jest.Mock };
-  let encryption: { encrypt: jest.Mock };
+  let encryption: { encrypt: jest.Mock; decrypt: jest.Mock };
+  let googleOAuth: { revokeToken: jest.Mock };
 
   beforeEach(async () => {
     repo = {
@@ -28,7 +30,12 @@ describe('PlatformConnectionsService', () => {
       save: jest.fn(async (v) => ({ id: 'conn_1', ...v })),
     };
     destinationsRepo = { count: jest.fn().mockResolvedValue(0) };
-    encryption = { encrypt: jest.fn(() => Buffer.from('ciphertext')) };
+    encryption = {
+      encrypt: jest.fn(() => Buffer.from('ciphertext')),
+      // The test "ciphertexts" are just the JSON of the credentials.
+      decrypt: jest.fn((blob: Buffer) => JSON.parse(blob.toString())),
+    };
+    googleOAuth = { revokeToken: jest.fn().mockResolvedValue(true) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -36,6 +43,7 @@ describe('PlatformConnectionsService', () => {
         { provide: getRepositoryToken(PlatformConnection), useValue: repo },
         { provide: getRepositoryToken(LiveStreamDestination), useValue: destinationsRepo },
         { provide: EncryptionService, useValue: encryption },
+        { provide: GoogleOAuthService, useValue: googleOAuth },
       ],
     }).compile();
     service = moduleRef.get(PlatformConnectionsService);
@@ -195,5 +203,112 @@ describe('PlatformConnectionsService', () => {
     expect(repo.save).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'conn_existing', label: 'New name', isActive: true }),
     );
+  });
+
+  describe('disconnecting wipes credentials and revokes access', () => {
+    const creds = (refreshToken: string) => Buffer.from(JSON.stringify({ accessToken: 'at', refreshToken, expiresAt: 1, channelId: 'ch' }));
+    const youtube = (id: string, refreshToken: string, extra: object = {}) => ({
+      id,
+      accountId: 'acc_1',
+      platform: Platform.YOUTUBE,
+      isActive: true,
+      credentialsCiphertext: creds(refreshToken),
+      ...extra,
+    });
+
+    it('revokes the YouTube refresh token at Google and blanks the stored credentials of a connection with stream history', async () => {
+      const connection = youtube('c1', 'rt_1');
+      repo.findOne.mockResolvedValue(connection);
+      repo.find.mockResolvedValue([connection]); // only itself is active
+      destinationsRepo.count.mockResolvedValue(3);
+
+      await service.remove('c1', 'acc_1');
+
+      expect(googleOAuth.revokeToken).toHaveBeenCalledWith('rt_1');
+      expect(repo.delete).not.toHaveBeenCalled();
+      const saved = repo.save.mock.calls[0][0];
+      expect(saved.isActive).toBe(false);
+      expect(saved.credentialsCiphertext).toEqual(Buffer.alloc(0));
+      expect(saved.credentialsCiphertext.length).toBe(0);
+    });
+
+    it('also revokes before hard-deleting a connection that was never used', async () => {
+      const connection = youtube('c1', 'rt_1');
+      repo.findOne.mockResolvedValue(connection);
+      repo.find.mockResolvedValue([connection]);
+      destinationsRepo.count.mockResolvedValue(0);
+
+      await service.remove('c1', 'acc_1');
+
+      expect(googleOAuth.revokeToken).toHaveBeenCalledWith('rt_1');
+      expect(repo.delete).toHaveBeenCalledWith({ id: 'c1', accountId: 'acc_1' });
+    });
+
+    it('does not revoke a token another active connection stores too (it would break that one), but still wipes its own copy', async () => {
+      const connection = youtube('c1', 'rt_shared');
+      const other = youtube('c2', 'rt_shared', { accountId: 'acc_2' });
+      repo.findOne.mockResolvedValue(connection);
+      repo.find.mockResolvedValue([connection, other]);
+      destinationsRepo.count.mockResolvedValue(1);
+
+      await service.remove('c1', 'acc_1');
+
+      expect(googleOAuth.revokeToken).not.toHaveBeenCalled();
+      expect(repo.save.mock.calls[0][0].credentialsCiphertext.length).toBe(0);
+    });
+
+    it('revokes when the other connections hold different tokens', async () => {
+      const connection = youtube('c1', 'rt_1');
+      repo.findOne.mockResolvedValue(connection);
+      repo.find.mockResolvedValue([connection, youtube('c2', 'rt_other'), youtube('c3', 'rt_x', { credentialsCiphertext: Buffer.alloc(0) })]);
+      destinationsRepo.count.mockResolvedValue(1);
+
+      await service.remove('c1', 'acc_1');
+
+      expect(googleOAuth.revokeToken).toHaveBeenCalledWith('rt_1');
+    });
+
+    it('a failed revocation never blocks the disconnect -- the credentials are still wiped', async () => {
+      const connection = youtube('c1', 'rt_1');
+      repo.findOne.mockResolvedValue(connection);
+      repo.find.mockResolvedValue([connection]);
+      destinationsRepo.count.mockResolvedValue(1);
+      googleOAuth.revokeToken.mockRejectedValue(new Error('Google is down'));
+      jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+
+      await expect(service.remove('c1', 'acc_1')).resolves.toBeUndefined();
+
+      expect(repo.save.mock.calls[0][0]).toMatchObject({ isActive: false });
+      expect(repo.save.mock.calls[0][0].credentialsCiphertext.length).toBe(0);
+    });
+
+    it('wipes Facebook and Twitch credentials too, with no call to Google', async () => {
+      for (const platform of [Platform.FACEBOOK, Platform.TWITCH]) {
+        repo.save.mockClear();
+        repo.findOne.mockResolvedValue({
+          id: 'c9',
+          accountId: 'acc_1',
+          platform,
+          isActive: true,
+          credentialsCiphertext: Buffer.from(JSON.stringify({ pageAccessToken: 'secret', streamKey: 'secret' })),
+        });
+        destinationsRepo.count.mockResolvedValue(2);
+
+        await service.remove('c9', 'acc_1');
+
+        expect(googleOAuth.revokeToken).not.toHaveBeenCalled();
+        expect(repo.save.mock.calls[0][0].credentialsCiphertext.length).toBe(0);
+      }
+    });
+
+    it('an already-wiped connection is simply deactivated again without touching Google', async () => {
+      repo.findOne.mockResolvedValue(youtube('c1', 'rt_1', { isActive: false, credentialsCiphertext: Buffer.alloc(0) }));
+      destinationsRepo.count.mockResolvedValue(1);
+
+      await service.remove('c1', 'acc_1');
+
+      expect(encryption.decrypt).not.toHaveBeenCalled();
+      expect(googleOAuth.revokeToken).not.toHaveBeenCalled();
+    });
   });
 });
