@@ -1,3 +1,5 @@
+import { parseLegacyHosts } from '../common/legacy-hosts';
+
 export interface AppConfig {
   port: number;
   databaseUrl: string;
@@ -33,6 +35,8 @@ export interface AppConfig {
   twitchClientId: string;
   twitchClientSecret: string;
   publicBaseUrl: string;
+  /** Old hostnames that still reach the app after a domain move (LEGACY_HOSTS) -- see common/legacy-hosts.ts. */
+  legacyHosts: string[];
   nodeEnv: string;
   cookieSecure: boolean;
   resendApiKey: string;
@@ -101,10 +105,11 @@ export default (): AppConfig => ({
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`,
+  legacyHosts: parseLegacyHosts(process.env.LEGACY_HOSTS),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   cookieSecure: process.env.NODE_ENV === 'production',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
-  emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.shackyapps.in>',
+  emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.app>',
   superadminEmail: process.env.SUPERADMIN_EMAIL ?? '',
   superadminPassword: process.env.SUPERADMIN_PASSWORD ?? '',
   google: {

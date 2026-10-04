@@ -47,6 +47,7 @@ describe('AccountGuard', () => {
     account?: any;
     resolvedUser?: any;
     publicBaseUrl?: string;
+    legacyHosts?: string[];
   }) {
     const accountsService = {
       findByApiKey: jest.fn(async () => opts.account ?? null),
@@ -60,7 +61,11 @@ describe('AccountGuard', () => {
     };
     const config = {
       get: jest.fn((key: string) =>
-        key === 'publicBaseUrl' ? opts.publicBaseUrl ?? 'https://app.example.com' : undefined,
+        key === 'publicBaseUrl'
+          ? opts.publicBaseUrl ?? 'https://app.example.com'
+          : key === 'legacyHosts'
+            ? opts.legacyHosts
+            : undefined,
       ),
     };
     const guard = new AccountGuard(accountsService as any, authService as any, config as any);
@@ -183,5 +188,29 @@ describe('AccountGuard', () => {
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  describe('CSRF origin check across a domain move (LEGACY_HOSTS)', () => {
+    const account = { id: 'acc_1' };
+    const approvedUser = { id: 'u3', role: Role.USER, approvedAt: new Date(), account };
+    const post = (origin: string) => buildContext({ cookieToken: 'tok', method: 'POST', origin });
+    const guardWith = (legacyHosts?: string[]) =>
+      buildGuard({ resolvedUser: approvedUser, publicBaseUrl: 'https://new.example.com', legacyHosts }).guard;
+
+    it('accepts the canonical origin and an old-domain origin, but nothing else', async () => {
+      const guard = guardWith(['old.example.com']);
+      await expect(guard.canActivate(post('https://new.example.com').context)).resolves.toBe(true);
+      await expect(guard.canActivate(post('https://old.example.com').context)).resolves.toBe(true);
+      await expect(guard.canActivate(post('https://evil.example.com').context)).rejects.toBeInstanceOf(ForbiddenException);
+      // A look-alike that merely contains the legacy host is still foreign.
+      await expect(guard.canActivate(post('https://old.example.com.evil.io').context)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects the old origin once it is no longer listed, and a missing Origin always', async () => {
+      const guard = guardWith(undefined);
+      await expect(guard.canActivate(post('https://old.example.com').context)).rejects.toBeInstanceOf(ForbiddenException);
+      const { context } = buildContext({ cookieToken: 'tok', method: 'POST' });
+      await expect(guardWith(['old.example.com']).canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 });

@@ -103,6 +103,14 @@ A stream can be planned ahead of time ("Schedule for later" on the create page):
 
 API: `POST /streams/schedule`, `GET|PATCH /streams/:id/schedule`, `POST /streams/:id/schedule/guests`, `DELETE .../guests/:inviteId`, `POST .../guests/:inviteId/resend`, `POST /streams/:id/schedule/cancel`, `GET /streams?view=upcoming`. Migration: `0010_scheduled_streams.sql` (applied automatically on container start).
 
+## Moving to a new domain
+
+1. Point DNS at the server and add the new domain to the app in Coolify (keep the old one).
+2. Register the new OAuth redirect URIs *before* switching: Google (`/api/auth/google/callback`, `/api/platform-connections/youtube/callback`) and Meta (`/api/platform-connections/facebook/callback`, plus App Domains / privacy / terms URLs). Verify the new domain in Resend if the sender changes.
+3. Set `LEGACY_HOSTS=<old host>` and switch `PUBLIC_BASE_URL`, `GOOGLE_REDIRECT_URI`, `GOOGLE_YOUTUBE_REDIRECT_URI`, `FACEBOOK_REDIRECT_URI` and `EMAIL_FROM`, then redeploy.
+
+While the old host is listed in `LEGACY_HOSTS`: page visits on it 301-redirect to the new domain (same path and query, so old `/join/<token>` invite links, bookmarks and calendar entries keep working), and browser writes from it still pass the CSRF origin check in `AccountGuard`. `/api`, `/health` and `/socket.io` are never redirected (API-key clients, OAuth callbacks still registered on the old host, Coolify's health check). Sessions are per hostname, so users log in again on the new domain; connected YouTube/Facebook accounts are unaffected. Remove the old host from `LEGACY_HOSTS` (and its redirect URIs) once nothing uses it. MediaMTX's own hostnames (`MEDIAMTX_*`) are independent of this.
+
 ## Testing
 
 ```bash
