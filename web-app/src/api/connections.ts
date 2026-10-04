@@ -17,7 +17,13 @@ export function removeConnection(id: string): Promise<void> {
   return api.delete(`/platform-connections/${id}`);
 }
 
-export function listFacebookPendingPages(): Promise<{ id: string; name: string }[]> {
+export interface FacebookPendingPage {
+  id: string;
+  name: string;
+  pictureUrl: string | null;
+}
+
+export function listFacebookPendingPages(): Promise<FacebookPendingPage[]> {
   return api.get('/platform-connections/facebook/pages');
 }
 

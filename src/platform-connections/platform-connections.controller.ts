@@ -43,6 +43,8 @@ interface FacebookPendingPage {
   id: string;
   name: string;
   access_token: string;
+  /** Graph's nested picture field: { data: { url } }. Public profile-picture URL, not a secret. */
+  picture?: { data?: { url?: string } };
 }
 
 /**
@@ -292,7 +294,7 @@ export class PlatformConnectionsController {
       const { access_token: longLivedToken } = (await longLivedRes.json()) as { access_token: string };
 
       const pagesRes = await fetch(
-        `${FACEBOOK_API_BASE}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(longLivedToken)}`,
+        `${FACEBOOK_API_BASE}/me/accounts?fields=id,name,access_token,picture.type(large){url}&access_token=${encodeURIComponent(longLivedToken)}`,
       );
       if (!pagesRes.ok) {
         this.logger.error(`Facebook /me/accounts lookup failed (${pagesRes.status}): ${await pagesRes.text()}`);
@@ -364,16 +366,16 @@ export class PlatformConnectionsController {
   }
 
   /** Lists the pending Pages from a just-completed Facebook OAuth round
-   * that had more than one Page to choose from -- names/ids only, the
+   * that had more than one Page to choose from -- names, ids and profile-picture URLs only, the
    * per-Page access tokens never leave the server (see
    * pendingFacebookPageSelections). */
   @Get('facebook/pages')
   listFacebookPendingPages(
     @CurrentAccount() account: Account,
     @Req() req: AccountRequest,
-  ): { id: string; name: string }[] {
+  ): { id: string; name: string; pictureUrl: string | null }[] {
     const pages = this.getPendingFacebookPages(req.cookies?.[FACEBOOK_PENDING_PAGES_COOKIE_NAME], account.id);
-    return (pages ?? []).map((p) => ({ id: p.id, name: p.name }));
+    return (pages ?? []).map((p) => ({ id: p.id, name: p.name, pictureUrl: p.picture?.data?.url ?? null }));
   }
 
   @Post('facebook/select')

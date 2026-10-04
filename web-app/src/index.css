@@ -1752,3 +1752,59 @@ a.icon-btn--danger {
   font-size: 13px;
   font-weight: 400;
 }
+
+/* ---- Facebook Page picker ---- */
+.page-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+  margin-bottom: 8px;
+}
+
+.page-choice-pic {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  background: var(--border);
+}
+
+.page-choice-pic--empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-choice-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.page-choice-name {
+  font-weight: 600;
+}
+
+.page-choice-id {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+/* ---- Compact social sign-in buttons ---- */
+.auth-chip-row {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.auth-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 8px 14px;
+  font-size: 14px;
+}
