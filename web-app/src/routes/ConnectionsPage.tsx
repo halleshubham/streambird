@@ -15,6 +15,7 @@ import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 import { BirdBusy } from '../components/BirdBusy';
+import { DocsLink } from '../components/DocsLink';
 
 const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   youtube_oauth_failed: "Connecting YouTube failed. Please try again.",
@@ -138,6 +139,9 @@ export function ConnectionsPage() {
   return (
     <div className="connections-page">
       <h1>Connections</h1>
+      <p className="docs-hint">
+        Need help? <DocsLink page="connect-platforms">How to connect YouTube, Facebook and other platforms</DocsLink>
+      </p>
 
       {oauthNotice && <p className={oauthNotice.isError ? 'error' : 'success'}>{oauthNotice.text}</p>}
 

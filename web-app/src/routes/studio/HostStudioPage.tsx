@@ -30,6 +30,7 @@ import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
 import type { StreamResolution } from '../../studio/useHostStudio';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
+import { DocsLink } from '../../components/DocsLink';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
 export function HostStudioPage() {
@@ -105,6 +106,7 @@ export function HostStudioPage() {
     <div className="studio-page">
       <h1 className="brand-heading">
         <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
+        <DocsLink page="host-studio" className="studio-docs-link">Studio guide</DocsLink>
       </h1>
 
       {stream?.status === 'scheduled' && (

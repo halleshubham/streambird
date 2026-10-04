@@ -1740,3 +1740,15 @@ a.icon-btn--danger {
     animation: none;
   }
 }
+
+/* ---- Docs links ---- */
+.docs-hint {
+  font-size: 14px;
+  margin: 4px 0 12px;
+}
+
+.studio-docs-link {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+}
