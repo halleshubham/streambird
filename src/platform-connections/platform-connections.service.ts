@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -6,6 +6,7 @@ import { PlatformConnection } from './entities/platform-connection.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { Platform } from '../common/enums/platform.enum';
 import { EncryptionService } from '../encryption/encryption.service';
+import { GoogleOAuthService } from '../auth/google-oauth.service';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
 import type { YouTubeCredentials } from '../providers/youtube/youtube.provider';
 import type { FacebookCredentials } from '../providers/facebook/facebook.provider';
@@ -19,12 +20,15 @@ interface TwitchCredentials {
 
 @Injectable()
 export class PlatformConnectionsService {
+  private readonly logger = new Logger(PlatformConnectionsService.name);
+
   constructor(
     @InjectRepository(PlatformConnection)
     private readonly connections: Repository<PlatformConnection>,
     @InjectRepository(LiveStreamDestination)
     private readonly destinations: Repository<LiveStreamDestination>,
     private readonly encryption: EncryptionService,
+    private readonly googleOAuth: GoogleOAuthService,
   ) {}
 
   async findAllForAccount(accountId: string): Promise<PlatformConnection[]> {
@@ -133,6 +137,11 @@ export class PlatformConnectionsService {
   }
 
   /**
+   * Disconnects a platform. Whatever happens to the row, the credentials
+   * stop existing: a YouTube refresh token is revoked at Google (so our
+   * access really ends, not just our copy of the token) and the stored
+   * ciphertext is wiped.
+   *
    * A connection referenced by any live_stream_destinations row can't be
    * hard-deleted -- that FK is ON DELETE RESTRICT by design (stream
    * history must survive a connection being removed later), and
@@ -141,7 +150,8 @@ export class PlatformConnectionsService {
    * connection has any stream history, deactivate it instead (consistent
    * with the existing isActive flag findAllForAccount already filters
    * on) -- it disappears from the account's active connections exactly
-   * like a real delete would, without breaking past streams' records.
+   * like a real delete would, without breaking past streams' records --
+   * but with its credentials blanked, so no token outlives the disconnect.
    * Only a connection that was NEVER actually used is hard-deleted.
    */
   async remove(id: string, accountId: string): Promise<void> {
@@ -150,13 +160,70 @@ export class PlatformConnectionsService {
       throw new NotFoundException(`PlatformConnection ${id} not found`);
     }
 
+    await this.revokeAtProvider(connection);
+
     const usedByAStream = await this.destinations.count({ where: { platformConnectionId: id } });
     if (usedByAStream > 0) {
       connection.isActive = false;
+      // An empty blob can never decrypt (EncryptionService rejects it as too
+      // short), so nothing can accidentally use this connection again; a
+      // reconnect overwrites it with fresh credentials.
+      connection.credentialsCiphertext = Buffer.alloc(0);
       await this.connections.save(connection);
       return;
     }
 
     await this.connections.delete({ id, accountId });
+  }
+
+  /**
+   * Ends our access at the provider where an API exists to do that.
+   * Best-effort: a failure is logged and never blocks the disconnect -- the
+   * stored credentials are wiped regardless, and the user can still revoke
+   * StreamBird in their Google account settings.
+   *
+   * - YouTube: revoke the refresh token at Google -- unless another active
+   *   connection stores the very same token (revoking it would silently
+   *   break that one too).
+   * - Facebook: only a Page access token is stored (no user token), and Meta
+   *   offers no way to revoke a Page token alone; wiping our copy is all we
+   *   can do. The user can remove StreamBird under Facebook's Business
+   *   Integrations settings.
+   * - Twitch: a manually pasted stream key, nothing to revoke.
+   */
+  private async revokeAtProvider(connection: PlatformConnection): Promise<void> {
+    if (connection.platform !== Platform.YOUTUBE || connection.credentialsCiphertext.length === 0) return;
+
+    let refreshToken: string | undefined;
+    try {
+      refreshToken = this.encryption.decrypt<YouTubeCredentials>(connection.credentialsCiphertext).refreshToken;
+    } catch (err) {
+      this.logger.warn(`Could not read the YouTube credentials of connection ${connection.id} to revoke them: ${(err as Error).message}`);
+      return;
+    }
+    if (!refreshToken) return;
+
+    if (await this.refreshTokenUsedElsewhere(connection.id, refreshToken)) {
+      this.logger.log(`Not revoking the Google token of connection ${connection.id}: another active connection uses the same token`);
+      return;
+    }
+
+    try {
+      await this.googleOAuth.revokeToken(refreshToken);
+    } catch (err) {
+      this.logger.warn(`Revoking the Google token of connection ${connection.id} failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async refreshTokenUsedElsewhere(connectionId: string, refreshToken: string): Promise<boolean> {
+    const others = await this.connections.find({ where: { platform: Platform.YOUTUBE, isActive: true } });
+    return others.some((other) => {
+      if (other.id === connectionId || other.credentialsCiphertext.length === 0) return false;
+      try {
+        return this.encryption.decrypt<YouTubeCredentials>(other.credentialsCiphertext).refreshToken === refreshToken;
+      } catch {
+        return false;
+      }
+    });
   }
 }

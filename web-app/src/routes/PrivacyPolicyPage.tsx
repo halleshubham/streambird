@@ -106,6 +106,15 @@ export function PrivacyPolicyPage() {
           within 30 days, except where we're required to retain limited records for
           legal or security purposes.
         </p>
+        <p>
+          You can disconnect a connected platform at any time from the Connections
+          page. When you do, we delete the credentials we stored for it (the
+          encrypted tokens or stream key) and, for YouTube, we also revoke
+          StreamBird's access with Google. Facebook does not let an app revoke a
+          Page access token on its own, so after disconnecting a Facebook Page you
+          can also remove StreamBird under "Business Integrations" in your
+          Facebook settings. The history of streams you already ran is kept.
+        </p>
 
         <h2>6. Security</h2>
         <p>
