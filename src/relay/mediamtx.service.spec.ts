@@ -2,7 +2,7 @@ import { of, throwError } from 'rxjs';
 import { MediaMtxService } from './mediamtx.service';
 
 describe('MediaMtxService', () => {
-  function buildService(httpImpl: Partial<Record<'post' | 'patch' | 'delete' | 'get', jest.Mock>>) {
+  function buildService(httpImpl: Partial<Record<'post' | 'patch' | 'delete' | 'get', jest.Mock>>, configOverrides: Record<string, string> = {}) {
     const http = {
       post: httpImpl.post ?? jest.fn().mockReturnValue(of({})),
       patch: httpImpl.patch ?? jest.fn().mockReturnValue(of({})),
@@ -11,6 +11,7 @@ describe('MediaMtxService', () => {
     } as any;
     const config = {
       get: jest.fn((key: string) => {
+        if (key in configOverrides) return configOverrides[key];
         if (key === 'mediamtx.apiUrl') return 'https://mtx-api.example.com';
         if (key === 'mediamtx.apiUser') return 'user';
         if (key === 'mediamtx.apiPassword') return 'pass';
@@ -142,9 +143,22 @@ describe('MediaMtxService', () => {
     const [url, body] = post.mock.calls[0];
     expect(url).toBe('https://mtx-api.example.com/v3/config/paths/add/stream-1-slate');
     expect(body.runOnInitRestart).toBe(true);
-    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://app.example.com/glitch-slate.png'");
+    expect(body.runOnInit).toContain("-re -stream_loop -1 -i 'https://app.example.com/glitch-slate.mp4'");
+    expect(body.runOnInit).toContain('-c:v copy -tag:v 7');
+    expect(body.runOnInit).not.toContain('libx264');
     expect(body.runOnInit).toContain('anullsrc');
     expect(body.runOnInit).toContain("-f tee '[f=flv]rtmp://live.twitch.tv/app/k1|[f=flv]rtmps://b.example.com/live/k2'");
+  });
+
+  it('still encodes a still-image slate URL (legacy override) with libx264', async () => {
+    const post = jest.fn().mockReturnValue(of({}));
+    const service = buildService({ post }, { 'mediamtx.slateUrl': 'https://cdn.example.com/slate.png' });
+
+    await service.startSlate('stream-1', ['rtmp://a/b']);
+
+    const [, body] = post.mock.calls[0];
+    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://cdn.example.com/slate.png'");
+    expect(body.runOnInit).toContain('libx264');
   });
 
   it('treats an already-running slate (400) as success and a missing one on stop (404) as fine', async () => {

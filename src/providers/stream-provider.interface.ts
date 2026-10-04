@@ -65,6 +65,14 @@ export interface StreamProvider {
 
   endBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void>;
 
+  /**
+   * Minimum time between reads of this provider's live status/viewer count
+   * for one broadcast (see StreamsService.getStatus). Set where the platform
+   * meters API calls (YouTube: 10,000 quota units/day for the whole project,
+   * and every open studio/detail page polls). Unset = read on every poll.
+   */
+  readonly statusMinIntervalMs?: number;
+
   getViewerCount?(
     conn: PlatformConnection,
     platformBroadcastId: string,

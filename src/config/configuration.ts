@@ -29,7 +29,7 @@ export interface AppConfig {
     apiPassword: string;
     /** Public base URL the host's browser publishes WHIP to -- MediaMTX's WebRTC/HTTP port, its own domain. */
     whipBaseUrl: string;
-    /** Override for the "technical glitch" slate image URL; defaults to `${publicBaseUrl}/glitch-slate.png`. */
+    /** Override for the "technical glitch" slate image URL; defaults to `${publicBaseUrl}/glitch-slate.mp4` (a pre-encoded loop that is copied, not re-encoded; a .png/.jpg is encoded on the fly instead). */
     slateUrl: string;
   };
   twitchClientId: string;
