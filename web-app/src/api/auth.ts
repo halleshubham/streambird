@@ -35,3 +35,8 @@ export function me(): Promise<MeResponse> {
 export function googleLoginUrl(): string {
   return '/api/auth/google';
 }
+
+/** Full-page redirect -- not a fetch() call. See AuthController.facebookRedirect. */
+export function facebookLoginUrl(): string {
+  return '/api/auth/facebook';
+}

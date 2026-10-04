@@ -127,10 +127,9 @@ export class FacebookProvider implements StreamProvider {
       ingestUrl,
       streamKey,
       platformBroadcastId: result.id,
-      // Meta resolves any object id to its canonical permalink -- the same
-      // "one stable, always-correct" reasoning YouTubeProvider's own watch
-      // URL comment uses, just via Facebook's own id-based permalink form.
-      watchUrl: `https://www.facebook.com/${result.id}`,
+      // The Page-scoped form. A bare facebook.com/<videoId> does not resolve
+      // to the video for Page live videos (it lands on a wrong/blank page).
+      watchUrl: `https://www.facebook.com/${creds.pageId}/videos/${result.id}`,
     };
   }
 

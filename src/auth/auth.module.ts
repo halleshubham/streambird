@@ -5,6 +5,7 @@ import { UserSession } from './entities/user-session.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { GoogleOAuthService } from './google-oauth.service';
+import { FacebookLoginService } from './facebook-login.service';
 import { SessionGuard } from '../common/guards/session.guard';
 import { UsersModule } from '../users/users.module';
 import { EmailModule } from '../email/email.module';
@@ -16,7 +17,7 @@ import { EmailModule } from '../email/email.module';
     EmailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, SessionGuard, GoogleOAuthService],
+  providers: [AuthService, SessionGuard, GoogleOAuthService, FacebookLoginService],
   exports: [AuthService, SessionGuard, GoogleOAuthService],
 })
 export class AuthModule {}

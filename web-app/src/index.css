@@ -230,7 +230,10 @@ input[type="range"] {
 }
 
 .button-like {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   text-align: center;
   text-decoration: none;
   font: inherit;

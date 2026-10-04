@@ -14,6 +14,7 @@ import { Response } from 'express';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './google-oauth.service';
+import { FacebookLoginService } from './facebook-login.service';
 import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
 import { SignupCompanyDto } from './dto/signup-company.dto';
@@ -25,6 +26,8 @@ import { User } from '../users/entities/user.entity';
 const SESSION_COOKIE_NAME = 'sb_session';
 const OAUTH_STATE_COOKIE_NAME = 'sb_oauth_state';
 const GOOGLE_OAUTH_BASE_PATH = '/api/auth/google';
+const FACEBOOK_LOGIN_BASE_PATH = '/api/auth/facebook';
+const FACEBOOK_LOGIN_STATE_COOKIE_NAME = 'sb_fb_login_state';
 
 interface AuthResponse {
   user: { id: string; email: string; role: string; approvedAt: Date | null };
@@ -36,6 +39,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly googleOAuth: GoogleOAuthService,
+    private readonly facebookLogin: FacebookLoginService,
     private readonly config: ConfigService,
   ) {}
 
@@ -206,6 +210,54 @@ export class AuthController {
       res.redirect('/');
     } catch {
       res.redirect('/login?error=google_oauth_failed');
+    }
+  }
+
+  /** Step 1 of "Continue with Facebook" -- same CSRF-state-cookie pattern as Google above. */
+  @Get('facebook')
+  facebookRedirect(@Res() res: Response): void {
+    const state = crypto.randomBytes(24).toString('base64url');
+    res.cookie(FACEBOOK_LOGIN_STATE_COOKIE_NAME, state, {
+      httpOnly: true,
+      secure: this.config.get<boolean>('cookieSecure'),
+      sameSite: 'lax',
+      path: FACEBOOK_LOGIN_BASE_PATH,
+      maxAge: 10 * 60_000,
+    });
+    res.redirect(
+      this.facebookLogin.buildAuthUrl(state, this.config.get<string>('facebook.loginRedirectUri') ?? ''),
+    );
+  }
+
+  @Get('facebook/callback')
+  async facebookCallback(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Req() req: SessionRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const cookieState = req.cookies?.[FACEBOOK_LOGIN_STATE_COOKIE_NAME];
+    res.clearCookie(FACEBOOK_LOGIN_STATE_COOKIE_NAME, { path: FACEBOOK_LOGIN_BASE_PATH });
+
+    if (!code || !state || !cookieState || state !== cookieState) {
+      res.redirect('/login?error=facebook_oauth_failed');
+      return;
+    }
+
+    try {
+      const profile = await this.facebookLogin.exchangeCodeForProfile(
+        code,
+        this.config.get<string>('facebook.loginRedirectUri') ?? '',
+      );
+      if (!profile.email) {
+        res.redirect('/login?error=facebook_email_missing');
+        return;
+      }
+      const { token, expiresAt } = await this.authService.loginWithFacebookProfile(profile.email, {});
+      this.setSessionCookie(res, token, expiresAt);
+      res.redirect('/');
+    } catch {
+      res.redirect('/login?error=facebook_oauth_failed');
     }
   }
 

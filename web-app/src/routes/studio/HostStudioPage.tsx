@@ -111,7 +111,7 @@ export function HostStudioPage() {
         <div className="panel studio-resume-banner" role="status">
           <span>
             This stream is scheduled
-            {stream.scheduledAt ? ` for ${formatWhen(stream.scheduledAt, stream.timezone ?? 'UTC')}` : ''}. You can set up your camera and let guests join now;
+            {stream.scheduledAt ? ` for ${formatWhen(stream.scheduledAt, stream.timezone ?? 'UTC')}` : ''}. You can let guests join now (camera optional);
             start the stream when you are ready to go on air.
           </span>
           <button type="button" className="icon-btn icon-btn--accent" disabled={startingScheduled} onClick={() => void actions.startScheduledStream()}>
@@ -140,7 +140,6 @@ export function HostStudioPage() {
           height={RESOLUTIONS[resolution].height}
           className="studio-canvas"
         />
-        <BirdLoader loading={!cameraStarted} label="Waiting for your camera…" />
       </div>
 
       <div className="panel">
