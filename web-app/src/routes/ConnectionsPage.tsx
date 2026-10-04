@@ -7,6 +7,7 @@ import {
   connectTwitchManual,
   removeConnection,
   listFacebookPendingPages,
+  type FacebookPendingPage,
   selectFacebookPage,
 } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
@@ -46,7 +47,7 @@ export function ConnectionsPage() {
       return null;
     },
   );
-  const [facebookPendingPages, setFacebookPendingPages] = useState<{ id: string; name: string }[] | null>(null);
+  const [facebookPendingPages, setFacebookPendingPages] = useState<FacebookPendingPage[] | null>(null);
   const [selectingPageId, setSelectingPageId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -205,11 +206,22 @@ export function ConnectionsPage() {
               <button
                 key={p.id}
                 type="button"
-                className="icon-btn"
+                className="icon-btn page-choice"
                 disabled={selectingPageId !== null}
                 onClick={() => void handleSelectFacebookPage(p.id)}
               >
-                {selectingPageId === p.id ? <BirdBusy /> : <PlatformLogo platform="facebook" />} {p.name}
+                {p.pictureUrl ? (
+                  <img src={p.pictureUrl} alt="" className="page-choice-pic" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="page-choice-pic page-choice-pic--empty">
+                    <PlatformLogo platform="facebook" />
+                  </span>
+                )}
+                <span className="page-choice-text">
+                  <span className="page-choice-name">{p.name}</span>
+                  <span className="page-choice-id">Page ID {p.id}</span>
+                </span>
+                {selectingPageId === p.id && <BirdBusy />}
               </button>
             ))}
             <button type="button" className="link-button" disabled={selectingPageId !== null} onClick={cancelFacebookPageSelection}>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import * as authApi from '../api/auth';
 import { docsUrl } from '../docs';
+import { FacebookLogo, GoogleLogo } from '../components/AuthLogos';
 import { PlatformBadge } from '../components/PlatformBadge';
 
 const FEATURES = [
@@ -180,9 +181,14 @@ export function LandingPage() {
           <Link to="/login" className="go-live-cta">
             Start free
           </Link>
-          <a href={authApi.googleLoginUrl()} className="button-like google-button landing-google-btn">
-            Sign in with Google
-          </a>
+          <span className="auth-chip-row">
+            <a href={authApi.googleLoginUrl()} className="button-like auth-chip" aria-label="Sign in with Google">
+              <GoogleLogo /> Google
+            </a>
+            <a href={authApi.facebookLoginUrl()} className="button-like auth-chip" aria-label="Continue with Facebook">
+              <FacebookLogo /> Facebook
+            </a>
+          </span>
           <a href="#pricing" className="link-button">
             See pricing
           </a>
