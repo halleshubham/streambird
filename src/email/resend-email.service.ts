@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { EmailService } from './email.interface';
+import { EmailService, PaymentReceiptData } from './email.interface';
 import { StreamInviteData, buildStreamInviteEmail } from './stream-invite.template';
 
 @Injectable()
@@ -24,6 +24,31 @@ export class ResendEmailService implements EmailService {
           to,
           subject: `${code} is your StreamBird login code`,
           text: `Your StreamBird login code is ${code}. It expires in 10 minutes.`,
+        },
+        { headers: { Authorization: `Bearer ${apiKey}` } },
+      ),
+    );
+  }
+
+  async sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void> {
+    const apiKey = this.config.get<string>('resendApiKey');
+    const from = this.config.get<string>('emailFrom');
+    const until = data.validUntil.toUTCString();
+    await firstValueFrom(
+      this.http.post(
+        'https://api.resend.com/emails',
+        {
+          from,
+          to,
+          subject: `Payment received -- StreamBird ${data.planName}`,
+          text: [
+            `Thanks! We received ₹${data.amountInr.toLocaleString('en-IN')} for StreamBird ${data.planName}${data.kind === 'day_pass' ? ' (day pass)' : ''}.`,
+            '',
+            `Active until: ${until}`,
+            `Payment reference: ${data.paymentId}`,
+            '',
+            'Questions or need a GST invoice? Reply to this email or write to support@shackyapps.in.',
+          ].join('\n'),
         },
         { headers: { Authorization: `Bearer ${apiKey}` } },
       ),

@@ -1,3 +1,4 @@
+import { Plan } from '../plans/entities/plan.entity';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -151,6 +152,29 @@ export class AccountsService {
         `Your ${limits.planName} plan allows up to ${limits.maxDestinations} destination${limits.maxDestinations === 1 ? '' : 's'} per stream, but ${count} were selected. Remove some or upgrade your plan.`,
       );
     }
+  }
+
+  /**
+   * Applies a purchased monthly plan: moves the account onto it for one
+   * billing period (BILLING_PERIOD_DAYS), extending from the current expiry
+   * when it is the same plan and still active. A fresh start also resets the
+   * hours usage so the new period begins at zero.
+   */
+  async activatePlan(accountId: string, plan: Plan, now: Date = new Date()): Promise<Account> {
+    const account = await this.findByIdOrThrow(accountId);
+    const stillActive =
+      account.planKey === plan.key && !!account.planExpiresAt && account.planExpiresAt.getTime() > now.getTime();
+    const from = stillActive ? account.planExpiresAt!.getTime() : now.getTime();
+
+    account.planKey = plan.key;
+    account.planExpiresAt = new Date(from + BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    if ((Object.values(PlanTier) as string[]).includes(plan.key)) account.currentTier = plan.key as PlanTier;
+    account.includedHoursPerMonth = String(account.includedHoursOverride ?? plan.includedHoursPerMonth ?? 0);
+    if (!stillActive) {
+      account.streamHourUsageCurrentPeriod = '0';
+      account.billingPeriodStart = now.toISOString().slice(0, 10);
+    }
+    return this.accounts.save(account);
   }
 
   /** Grants (or extends from now) a day pass. Used by the superadmin today; a payment webhook later. */

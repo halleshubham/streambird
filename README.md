@@ -119,6 +119,16 @@ Where each limit is enforced (all through `PlansService.effectiveLimits` = plan 
 
 `accounts.included_hours_per_month` is kept as a mirror of the effective monthly hours so the usage meters and analytics keep working; enforcement never reads it. Public pricing (`GET /api/plans/public`) feeds the home page. Plans are assigned and day passes granted by hand in admin for now; a payment gateway would call the same code.
 
+## Payments (Razorpay)
+
+One-time Razorpay Orders: a monthly plan buys 30 days (renewable), a day pass buys its validity window. Entirely admin-switchable; off by default.
+
+**Setup:** put `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` in the environment (keys are never stored in the database or sent to the browser; only the public key id is). In Razorpay → Webhooks add `<PUBLIC_BASE_URL>/api/billing/webhook` with the same secret and events `payment.captured`, `order.paid`, `payment.failed`. Then **Admin → Billing → Turn payments on** (shows test/live mode, setup status and recent payments). With it off, Buy buttons are hidden and `POST /api/billing/orders` is refused.
+
+**Flow:** `POST /billing/orders` creates a Razorpay order for the plan's *server-side* price (never a client amount) → the browser opens Razorpay Checkout (script loaded only when someone presses Buy) → on success `POST /billing/verify` checks the HMAC (`order_id|payment_id`, key secret) and applies the plan; Razorpay's webhook (HMAC of the raw body) is the backstop if the browser never returns. The payment row is flipped to `paid` by a conditional UPDATE, so the callback, the webhook and webhook retries can never apply it twice; if applying fails the row is released and the webhook retry tries again. A webhook whose amount/currency differs from the order is ignored.
+
+**Rules:** a purchased plan sets `accounts.plan_expires_at`; once it passes, the account falls back to Free limits (its admin overrides stop applying). Buying a cheaper plan than the current unexpired one is refused (renew or upgrade instead). Receipts are emailed via Resend. Not included: auto-renewal (Razorpay Subscriptions), refunds (do them in the Razorpay dashboard), GST invoices.
+
 ## Moving to a new domain
 
 1. Point DNS at the server and add the new domain to the app in Coolify (keep the old one).

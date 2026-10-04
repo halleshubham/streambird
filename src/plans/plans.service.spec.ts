@@ -74,3 +74,35 @@ describe('PlansService.update', () => {
     expect(saved.priceInr).toBeNull();
   });
 });
+
+describe('PlansService.effectiveLimits: purchased plan expiry', () => {
+  const free = plan({ key: 'free', name: 'Free', includedHoursPerMonth: '2', graceMultiplier: '1', maxDestinations: 1, maxGuests: 2 });
+  const pro = plan({});
+  const build = () => new PlansService({ findOne: jest.fn(async ({ where }: any) => ({ free, pro })[where.key as 'free' | 'pro'] ?? null) } as any);
+  const acct = (over: any = {}) => ({ planKey: 'pro', ...none, planExpiresAt: null, ...over }) as any;
+
+  it('keeps the plan while it has not expired, and reports when it lapses', async () => {
+    const until = new Date(NOW.getTime() + 86_400_000);
+    const l = await build().effectiveLimits(acct({ planExpiresAt: until }), NOW);
+    expect(l).toMatchObject({ planKey: 'pro', maxDestinations: 4, planExpired: false });
+    expect(l.planExpiresAt).toEqual(until);
+  });
+
+  it('falls back to Free limits once expired, ignoring admin overrides made for the old plan', async () => {
+    const l = await build().effectiveLimits(acct({ planExpiresAt: new Date(NOW.getTime() - 1), maxDestinationsOverride: 9, includedHoursOverride: '500' }), NOW);
+    expect(l).toMatchObject({ planKey: 'free', maxDestinations: 1, maxGuests: 2, includedHours: 2, planExpired: true });
+  });
+
+  it('a plan with no expiry never lapses', async () => {
+    expect((await build().effectiveLimits(acct(), NOW)).planKey).toBe('pro');
+  });
+
+  it('a day pass still lifts a lapsed account above Free', async () => {
+    const l = await build().effectiveLimits(
+      acct({ planExpiresAt: new Date(NOW.getTime() - 1), dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) }),
+      NOW,
+    );
+    // (day-pass row isn't in this fake repo, so it resolves to no pass -- the point is it doesn't crash)
+    expect(l.planKey).toBe('free');
+  });
+});

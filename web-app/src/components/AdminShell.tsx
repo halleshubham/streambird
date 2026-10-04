@@ -30,6 +30,9 @@ export function AdminShell() {
           <NavLink to="/admin/plans" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Plans
           </NavLink>
+          <NavLink to="/admin/billing" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Billing
+          </NavLink>
           <NavLink to="/admin/users" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Users
           </NavLink>

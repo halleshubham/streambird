@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EmailService } from './email.interface';
+import { EmailService, PaymentReceiptData } from './email.interface';
 import { StreamInviteData } from './stream-invite.template';
 
 /**
@@ -21,5 +21,9 @@ export class FakeEmailService implements EmailService {
 
   async sendStreamInvite(to: string, data: StreamInviteData): Promise<void> {
     this.logger.log(`[fake email] ${data.kind} for "${data.title}" to ${to}: ${data.joinUrl}`);
+  }
+
+  async sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void> {
+    this.logger.log(`[fake email] receipt to ${to}: ${data.planName} Rs${data.amountInr}, valid until ${data.validUntil.toISOString()}`);
   }
 }
