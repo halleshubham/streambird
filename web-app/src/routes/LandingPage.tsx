@@ -304,6 +304,13 @@ export function LandingPage() {
             </div>
           ))}
         </div>
+        <p className="landing-custom-pricing">
+          Need more guests, more hours or a different mix? <strong>Customised pricing</strong> is available -- email{' '}
+          <a href="mailto:support@shackyapps.in?subject=StreamBird%20customised%20pricing&body=Hi%2C%20I%27d%20like%20a%20quote%20for%20StreamBird.%0A%0AHow%20many%20hours%20a%20month%3A%20%0AGuests%20at%20once%3A%20%0ADestinations%3A%20%0AAnything%20else%3A%20">
+            support@shackyapps.in
+          </a>{' '}
+          with roughly how you stream and we'll reply with a quote.
+        </p>
       </section>
 
       <section id="faq" className="landing-section">

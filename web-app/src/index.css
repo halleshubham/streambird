@@ -1837,3 +1837,10 @@ a.icon-btn--danger {
   display: flex;
   margin: 4px 0;
 }
+
+.landing-custom-pricing {
+  max-width: 640px;
+  margin: 28px auto 0;
+  text-align: center;
+  font-size: 15px;
+}
