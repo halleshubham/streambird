@@ -158,16 +158,18 @@ export class AccountsService {
    * Applies a purchased monthly plan: moves the account onto it for one
    * billing period (BILLING_PERIOD_DAYS), extending from the current expiry
    * when it is the same plan and still active. A fresh start also resets the
-   * hours usage so the new period begins at zero.
+   * hours usage so the new period begins at zero. `until` sets the expiry
+   * outright (used by autopay, where Razorpay says when the cycle ends).
    */
-  async activatePlan(accountId: string, plan: Plan, now: Date = new Date()): Promise<Account> {
+  async activatePlan(accountId: string, plan: Plan, now: Date = new Date(), until?: Date): Promise<Account> {
     const account = await this.findByIdOrThrow(accountId);
     const stillActive =
       account.planKey === plan.key && !!account.planExpiresAt && account.planExpiresAt.getTime() > now.getTime();
     const from = stillActive ? account.planExpiresAt!.getTime() : now.getTime();
 
     account.planKey = plan.key;
-    account.planExpiresAt = new Date(from + BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+    // An explicit end (autopay: the cycle's end plus grace) wins; otherwise one more billing period.
+    account.planExpiresAt = until ?? new Date(from + BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000);
     if ((Object.values(PlanTier) as string[]).includes(plan.key)) account.currentTier = plan.key as PlanTier;
     account.includedHoursPerMonth = String(account.includedHoursOverride ?? plan.includedHoursPerMonth ?? 0);
     if (!stillActive) {

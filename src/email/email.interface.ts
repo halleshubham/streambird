@@ -24,4 +24,6 @@ export interface EmailService {
   sendStreamInvite(to: string, data: StreamInviteData): Promise<void>;
   /** Receipt after a successful Razorpay payment. Best-effort: callers never fail a payment over it. */
   sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void>;
+  /** Plain billing notice (autopay failed, autopay cancelled...). Best-effort. */
+  sendBillingNotice(to: string, subject: string, text: string): Promise<void>;
 }

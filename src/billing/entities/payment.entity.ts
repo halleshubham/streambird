@@ -30,8 +30,12 @@ export class Payment {
   @Column({ type: 'text', default: 'created' })
   status!: PaymentStatus;
 
-  @Column()
-  razorpayOrderId!: string;
+  /** null for autopay charges (no order of ours). */
+  @Column({ type: 'text', nullable: true })
+  razorpayOrderId!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  razorpaySubscriptionId!: string | null;
 
   @Column({ type: 'text', nullable: true })
   razorpayPaymentId!: string | null;

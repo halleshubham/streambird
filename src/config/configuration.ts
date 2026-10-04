@@ -86,6 +86,8 @@ export interface AppConfig {
     webhookSecret: string;
     /** Override only for tests (a local mock). */
     apiBase: string;
+    /** Days a plan keeps working after its cycle ends while a renewal charge is retried (default 3). */
+    graceDays: number;
   };
   cloudflareTurn: {
     /** Both empty = no TURN configured, StudioSignalingGateway's clients
@@ -151,6 +153,7 @@ export default (): AppConfig => ({
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
     webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
     apiBase: process.env.RAZORPAY_API_BASE ?? 'https://api.razorpay.com/v1',
+    graceDays: Number(process.env.RAZORPAY_GRACE_DAYS ?? 3),
   },
   cloudflareTurn: {
     tokenId: process.env.CLOUDFLARE_TURN_TOKEN_ID ?? '',

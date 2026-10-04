@@ -404,6 +404,36 @@ export interface CheckoutOrder {
   description: string;
 }
 
+export interface SubscriptionCheckout {
+  subscriptionId: string;
+  keyId: string;
+  planKey: string;
+  planName: string;
+  amountPaise: number;
+  description: string;
+}
+
+/** The account's autopay (GET /billing/subscription); null when it has none. */
+export interface MySubscription {
+  planKey: string;
+  status: 'authenticated' | 'active' | 'pending' | 'halted' | 'cancelled';
+  amountInr: number;
+  cancelAtCycleEnd: boolean;
+  /** Next renewal, or the end of the paid cycle if cancelled. */
+  currentEnd: string | null;
+}
+
+export interface AdminSubscription {
+  id: string;
+  accountName: string | null;
+  planKey: string;
+  amountInr: number;
+  status: string;
+  cancelAtCycleEnd: boolean;
+  currentEnd: string | null;
+  paidCount: number;
+}
+
 export interface MyPayment {
   id: string;
   planKey: string;
@@ -435,5 +465,6 @@ export interface AdminBilling {
   mode: 'live' | 'test' | null;
   webhookUrl: string;
   webhookEvents: string[];
+  subscriptions: AdminSubscription[];
   payments: AdminPayment[];
 }

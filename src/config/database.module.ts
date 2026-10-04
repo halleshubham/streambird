@@ -1,3 +1,4 @@
+import { Subscription } from '../billing/entities/subscription.entity';
 import { Payment } from '../billing/entities/payment.entity';
 import { AppSetting } from '../billing/entities/app-setting.entity';
 import { Plan } from '../plans/entities/plan.entity';
@@ -32,6 +33,7 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
           Account,
           Plan,
           Payment,
+          Subscription,
           AppSetting,
           PlatformConnection,
           LiveStream,

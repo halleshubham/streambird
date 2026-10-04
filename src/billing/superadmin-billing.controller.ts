@@ -21,9 +21,23 @@ export class SuperadminBillingController {
 
   @Get()
   async overview() {
-    const [status, payments] = await Promise.all([this.billing.adminStatus(), this.billing.listRecent(100)]);
+    const [status, payments, subscriptions] = await Promise.all([
+      this.billing.adminStatus(),
+      this.billing.listRecent(100),
+      this.billing.listSubscriptions(50),
+    ]);
     return {
       ...status,
+      subscriptions: subscriptions.map((s) => ({
+        id: s.id,
+        accountName: s.accountName,
+        planKey: s.planKey,
+        amountInr: s.amountPaise / 100,
+        status: s.status,
+        cancelAtCycleEnd: s.cancelAtCycleEnd,
+        currentEnd: s.currentEnd,
+        paidCount: s.paidCount,
+      })),
       payments: payments.map((p) => ({
         id: p.id,
         accountId: p.accountId,

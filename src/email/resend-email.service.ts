@@ -55,6 +55,14 @@ export class ResendEmailService implements EmailService {
     );
   }
 
+  async sendBillingNotice(to: string, subject: string, text: string): Promise<void> {
+    const apiKey = this.config.get<string>('resendApiKey');
+    const from = this.config.get<string>('emailFrom');
+    await firstValueFrom(
+      this.http.post('https://api.resend.com/emails', { from, to, subject, text }, { headers: { Authorization: `Bearer ${apiKey}` } }),
+    );
+  }
+
   async sendTeamInvite(to: string, companyName: string): Promise<void> {
     const apiKey = this.config.get<string>('resendApiKey');
     const from = this.config.get<string>('emailFrom');
