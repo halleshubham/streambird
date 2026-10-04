@@ -12,6 +12,7 @@ import { AuthService } from '../../auth/auth.service';
 import { Account } from '../../accounts/entities/account.entity';
 import { User } from '../../users/entities/user.entity';
 import { Role } from '../enums/role.enum';
+import { legacyOrigins } from '../legacy-hosts';
 
 export interface AccountRequest extends Request {
   account?: Account;
@@ -107,11 +108,13 @@ export class AccountGuard implements CanActivate {
     // unlike the x-api-key header, which a browser will never attach
     // cross-origin on its own. Reject mutating requests on the cookie path
     // whose Origin doesn't match ours; the header path skips this check
-    // entirely since it isn't exposed the same way.
+    // entirely since it isn't exposed the same way. Hosts listed in
+    // LEGACY_HOSTS (an old domain after a move) are accepted too.
     if (!SAFE_METHODS.has(request.method)) {
       const origin = request.headers.origin;
-      const publicBaseUrl = this.config.get<string>('publicBaseUrl');
-      if (!origin || origin !== publicBaseUrl) {
+      const publicBaseUrl = this.config.get<string>('publicBaseUrl') ?? '';
+      const allowed = [publicBaseUrl, ...legacyOrigins(this.config.get<string[]>('legacyHosts') ?? [], publicBaseUrl)];
+      if (!origin || !allowed.includes(origin)) {
         throw new ForbiddenException('Origin mismatch');
       }
     }
