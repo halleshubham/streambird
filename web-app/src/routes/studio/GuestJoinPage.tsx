@@ -5,6 +5,7 @@ import { Mic, MicOff, Video, VideoOff, LogOut } from 'lucide-react';
 import { useGuestStudio } from '../../studio/useGuestStudio';
 import { MediaStreamVideo } from '../../components/MediaStreamVideo';
 import { BirdLoader } from '../../components/BirdLoader';
+import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
 export function GuestJoinPage() {
   const { token } = useParams<{ token: string }>();
@@ -87,7 +88,7 @@ export function GuestJoinPage() {
             disabled={joining}
             onClick={() => void actions.join(displayName.trim() || 'Guest', passwordRequired ? password : undefined)}
           >
-            {joining ? 'Joining…' : 'Join'}
+            {joining && <BirdBusy />} Join
           </button>
           {joinError && <p className="error">{joinError}</p>}
         </div>
@@ -118,7 +119,10 @@ export function GuestJoinPage() {
               <LogOut size={16} /> Leave room
             </button>
           </div>
-          <p className={`status${callIsError ? ' error' : ''}`}>{callStatus}</p>
+          <p className={`status${callIsError ? ' error' : ''}`}>
+            {isInProgress(callStatus) && <BirdBusy />}
+            {callStatus}
+          </p>
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import * as teamApi from '../api/team';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { TeamMember } from '../types/api';
+import { BirdBusy } from '../components/BirdBusy';
 
 /**
  * Company Admin's own team management -- the backend (TeamController)
@@ -122,7 +123,7 @@ export function TeamPage() {
                       disabled={removingId !== null}
                       onClick={() => void handleRemove(m.id, m.email)}
                     >
-                      {removingId === m.id ? 'Removing…' : 'Remove'}
+                      {removingId === m.id && <BirdBusy />} Remove
                     </button>
                   )}
                 </td>

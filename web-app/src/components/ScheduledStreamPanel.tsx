@@ -22,6 +22,7 @@ import { PlatformBadge } from './PlatformBadge';
 import { thumbnailProblem } from './ThumbnailPicker';
 import { DURATION_OPTIONS, formatWhen, parseEmails, toLocalInputValue } from '../lib/schedule';
 import type { ScheduleDetail } from '../types/api';
+import { BirdBusy } from './BirdBusy';
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -187,7 +188,8 @@ export function ScheduledStreamPanel({
                   )
                 }
               >
-                {busy === 'precreate' ? 'Working…' : detail.precreateOnPlatforms ? 'Remove from platforms until start' : 'Create on platforms now'}
+                {busy === 'precreate' && <BirdBusy />}
+                {detail.precreateOnPlatforms ? 'Remove from platforms until start' : 'Create on platforms now'}
               </button>
               <p className="field-hint">
                 {detail.precreateOnPlatforms
@@ -210,7 +212,7 @@ export function ScheduledStreamPanel({
               })
             }
           >
-            <Play size={16} /> {busy === 'start' ? 'Starting…' : 'Start stream now'}
+            {busy === 'start' ? <BirdBusy /> : <Play size={16} />} Start stream now
           </button>
           <button type="button" className="icon-btn" onClick={() => navigate(`/streams/${streamId}/studio`)}>
             <Clapperboard size={16} /> Open studio
@@ -249,7 +251,7 @@ export function ScheduledStreamPanel({
                 });
               }}
             >
-              <Trash2 size={16} /> {busy === 'delete' ? 'Deleting…' : 'Delete (no emails)'}
+              {busy === 'delete' ? <BirdBusy /> : <Trash2 size={16} />} Delete (no emails)
             </button>
           )}
         </div>
@@ -280,7 +282,7 @@ export function ScheduledStreamPanel({
           )}
           <div className="scheduled-actions">
             <button type="button" className="icon-btn" disabled={busy !== null} onClick={() => thumbInput.current?.click()}>
-              <ImagePlus size={16} /> {busy === 'thumb' ? 'Uploading…' : detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}
+              {busy === 'thumb' ? <BirdBusy /> : <ImagePlus size={16} />} {detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}
             </button>
             {detail.hasThumbnail && (
               <button
@@ -357,7 +359,7 @@ export function ScheduledStreamPanel({
                   disabled={busy !== null}
                   onClick={() => void run(`resend-${g.id}`, () => resendScheduleInvite(streamId, g.id), () => `Invitation re-sent to ${g.email}.`)}
                 >
-                  <Mail size={14} /> {busy === `resend-${g.id}` ? 'Sending…' : 'Resend'}
+                  {busy === `resend-${g.id}` ? <BirdBusy /> : <Mail size={14} />} Resend
                 </button>
                 <button
                   type="button"
@@ -378,7 +380,7 @@ export function ScheduledStreamPanel({
           <label htmlFor="add-guests">Invite more guests</label>
           <GuestEmailsField id="add-guests" value={newGuests} onChange={setNewGuests} rows={2} />
           <button type="submit" className="icon-btn" disabled={busy !== null}>
-            <UserPlus size={16} /> {busy === 'add' ? 'Sending…' : 'Send invites'}
+            {busy === 'add' ? <BirdBusy /> : <UserPlus size={16} />} Send invites
           </button>
         </form>
       </section>
@@ -447,7 +449,7 @@ function EditSchedule({
       )}
       {formError && <p className="error">{formError}</p>}
       <button type="submit" className="icon-btn icon-btn--accent" disabled={busy}>
-        {busy ? 'Saving…' : 'Save changes'}
+        {busy && <BirdBusy />} Save changes
       </button>
     </form>
   );

@@ -30,6 +30,7 @@ import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
 import type { StreamResolution } from '../../studio/useHostStudio';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
+import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
@@ -87,7 +88,7 @@ export function HostStudioPage() {
   if (loading) {
     return (
       <div className="studio-page">
-        <p className="status">Loading…</p>
+        <BirdLoader loading compact />
       </div>
     );
   }
@@ -114,7 +115,7 @@ export function HostStudioPage() {
             start the stream when you are ready to go on air.
           </span>
           <button type="button" className="icon-btn icon-btn--accent" disabled={startingScheduled} onClick={() => void actions.startScheduledStream()}>
-            {startingScheduled ? 'Starting…' : 'Start stream'}
+            {startingScheduled && <BirdBusy />} Start stream
           </button>
         </div>
       )}
@@ -232,7 +233,12 @@ export function HostStudioPage() {
 
       {(status || inviteMessage) && (
         <div className="studio-status-toast">
-          {status && <p className={`status${status.isError ? ' error' : ''}`}>{status.text}</p>}
+          {status && (
+            <p className={`status${status.isError ? ' error' : ''}`}>
+              {isInProgress(status.text) && <BirdBusy />}
+              {status.text}
+            </p>
+          )}
           {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
         </div>
       )}

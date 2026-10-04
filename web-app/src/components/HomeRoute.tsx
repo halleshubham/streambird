@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LandingPage } from '../routes/LandingPage';
+import { BirdLoader } from './BirdLoader';
 
 /**
  * "/" is the one route whose content depends on who's looking: an
@@ -14,7 +15,9 @@ export function HomeRoute() {
   const { status } = useAuth();
 
   if (status === 'loading') {
-    return <div className="page-loading">Loading…</div>;
+    return <div className="page-loading">
+        <BirdLoader loading compact />
+      </div>;
   }
 
   if (status === 'authenticated') {

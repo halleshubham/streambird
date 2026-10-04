@@ -1,12 +1,15 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PendingApprovalPage } from '../routes/PendingApprovalPage';
+import { BirdLoader } from './BirdLoader';
 
 export function ProtectedRoute() {
   const { status, user } = useAuth();
 
   if (status === 'loading') {
-    return <div className="page-loading">Loading…</div>;
+    return <div className="page-loading">
+        <BirdLoader loading compact />
+      </div>;
   }
 
   if (status === 'anonymous') {

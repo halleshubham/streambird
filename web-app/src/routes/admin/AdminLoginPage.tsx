@@ -4,6 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import * as authApi from '../../api/auth';
 import { ApiError } from '../../api/client';
+import { BirdBusy } from '../../components/BirdBusy';
 
 /** Real password login for the fixed Superadmin identity -- see
  * AuthController.superadminLogin. Completely separate from the
@@ -60,7 +61,7 @@ export function AdminLoginPage() {
           />
           {error && <p className="error">{error}</p>}
           <button type="submit" disabled={busy || !email.trim() || !password}>
-            {busy ? 'Logging in…' : 'Log in'}
+            {busy && <BirdBusy />} Log in
           </button>
         </form>
       </div>

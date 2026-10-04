@@ -1712,3 +1712,28 @@ a.icon-btn--danger {
 .thumbnail-picker + .field-hint {
   margin-top: 8px;
 }
+
+/* Small flapping bird for busy buttons and in-progress status lines (see BirdBusy). */
+.bird-busy {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: contain;
+  animation: bird-busy-flap 0.9s ease-in-out infinite;
+}
+
+.status .bird-busy {
+  margin-right: 6px;
+  vertical-align: -3px;
+}
+
+@keyframes bird-busy-flap {
+  0%, 100% { transform: translateY(0) rotate(-6deg); }
+  50% { transform: translateY(-2px) rotate(6deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bird-busy {
+    animation: none;
+  }
+}
