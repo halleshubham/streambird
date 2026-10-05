@@ -1,5 +1,6 @@
 import { APIRequestContext, BrowserContext, expect, Page, test } from '@playwright/test';
 import * as crypto from 'crypto';
+import { computeLayout } from '../../web-app/src/studio/compose';
 
 const CONTROL = `http://127.0.0.1:${process.env.UI_CONTROL_PORT ?? 4311}`;
 const APP = `http://127.0.0.1:${process.env.UI_APP_PORT ?? 4310}`;
@@ -166,6 +167,80 @@ test.describe('host studio', () => {
     expect(rgb.reduce((a, b) => a + b, 0)).toBeGreaterThan(20); // the branded gradient, not #000
     await expect(page.getByRole('button', { name: /Go live/ })).toBeEnabled();
     await expect(page.getByRole('button', { name: /Start my camera/ })).toBeVisible();
+  });
+
+  /** Fills the page's slides input with solid-colour images (made in the page, so no files are needed). */
+  async function addSolidSlides(page: Page, colours: string[]) {
+    await page.evaluate(async (cols: string[]) => {
+      const dt = new DataTransfer();
+      for (const [i, colour] of cols.entries()) {
+        const c = document.createElement('canvas');
+        c.width = 1600;
+        c.height = 900;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = colour;
+        ctx.fillRect(0, 0, 1600, 900);
+        const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), 'image/png'));
+        dt.items.add(new File([blob], `slide-${i + 1}.png`, { type: 'image/png' }));
+      }
+      const input = document.querySelector<HTMLInputElement>('#slidesInput')!;
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, colours);
+  }
+  const pixel = (page: Page, x: number, y: number) =>
+    page.locator('canvas.studio-canvas').evaluate((c: HTMLCanvasElement, [px, py]: number[]) => {
+      const d = c.getContext('2d')!.getImageData(px, py, 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, [x, y]);
+
+  test('slide layout: loads slides, flips them, and the canvas style and ticker size change what is drawn', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const canvas = page.locator('canvas.studio-canvas');
+    await expect(canvas).toBeVisible();
+    const [cw, ch] = await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
+
+    // The default look is untouched: Grid layout, Vanilla style.
+    await expect(page.locator('#layoutSelect')).toHaveValue('grid');
+    await expect(page.locator('#themeSelect')).toHaveValue('vanilla');
+
+    await page.selectOption('#layoutSelect', 'anchor-slide-right');
+    await addSolidSlides(page, ['#ff0000', '#0000ff']);
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 1 / 2');
+    const slide = computeLayout('anchor-slide-right', cw, ch).slide!;
+    const cx = Math.round(slide.x + slide.w / 2);
+    const cy = Math.round(slide.y + slide.h / 2);
+    await page.waitForTimeout(700); // crossfade
+    const first = await pixel(page, cx, cy);
+    expect(first[0]).toBeGreaterThan(200);
+    expect(first[2]).toBeLessThan(60);
+
+    await page.getByRole('button', { name: /Next/ }).click();
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 2 / 2');
+    await page.waitForTimeout(800);
+    const second = await pixel(page, cx, cy);
+    expect(second[2]).toBeGreaterThan(200);
+    expect(second[0]).toBeLessThan(60);
+
+    // A canvas style paints the background around the tiles.
+    await page.selectOption('#themeSelect', 'newsroom');
+    await page.waitForTimeout(700);
+    const bg = await pixel(page, 2, 2);
+    expect(Math.abs(bg[0] - 11)).toBeLessThan(14);
+    expect(Math.abs(bg[1] - 31)).toBeLessThan(14);
+    expect(Math.abs(bg[2] - 58)).toBeLessThan(14);
+
+    // The ticker bar grows with its text size: 50px up from the bottom is outside the 36px bar until the text is larger.
+    await page.fill('#newsInput', 'Breaking: studio test');
+    await page.waitForTimeout(700);
+    const before = await pixel(page, 8, ch - 50);
+    expect(before[0]).toBeLessThan(80);
+    await page.locator('#newsFontSizeInput').fill('60');
+    await page.waitForTimeout(500);
+    const after = await pixel(page, 8, ch - 50);
+    expect(after[0]).toBeGreaterThan(120); // the newsroom ticker red
   });
 
   test("the quality menu is limited to the plan's maximum", async ({ page, context, browser }) => {

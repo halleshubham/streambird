@@ -25,9 +25,15 @@ import {
   Eye,
   EyeOff,
   Gauge,
+  Palette,
+  Presentation,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
-import type { StreamResolution } from '../../studio/useHostStudio';
+import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
+import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
@@ -50,6 +56,9 @@ export function HostStudioPage() {
     inviteMessage,
     participants,
     layoutMode,
+    themeId,
+    slides,
+    slideIndex,
     resolution,
     maxResolution,
     cameraStarting,
@@ -67,6 +76,7 @@ export function HostStudioPage() {
     startingScheduled,
     actions,
   } = useHostStudio(streamId);
+  const onStageCount = participants.filter((p) => p.onStage && !p.isScreenShare).length;
 
   async function copyWatchUrl(id: string, url: string) {
     try {
@@ -357,6 +367,82 @@ export function HostStudioPage() {
       </div>
 
       <div className="panel">
+        <label className="studio-section-label" htmlFor="layoutSelect">
+          <Palette size={14} /> Layout and canvas style
+        </label>
+        <label htmlFor="layoutSelect">Layout</label>
+        <select id="layoutSelect" value={layoutMode} onChange={(e) => actions.setLayout(e.target.value as LayoutMode)}>
+          {[...new Set(LAYOUTS.map((l) => l.group))].map((group) => (
+            <optgroup key={group} label={group}>
+              {LAYOUTS.filter((l) => l.group === group).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="docs-hint">
+          {LAYOUT_BY_ID[layoutMode].description}
+          {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
+            ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
+        </p>
+
+        <label htmlFor="themeSelect">Canvas style</label>
+        <select id="themeSelect" value={themeId} onChange={(e) => actions.setTheme(e.target.value)}>
+          {[...new Set(THEMES.map((t) => t.group))].map((group) => (
+            <optgroup key={group} label={group}>
+              {THEMES.filter((t) => t.group === group).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <p className="docs-hint">
+          {getTheme(themeId).id === 'vanilla'
+            ? 'Vanilla is the original plain look. Styles show around the tiles of the framed layouts (everything except Grid and Spotlight).'
+            : 'The style shows around the tiles of the framed layouts; Grid and Spotlight fill the whole frame.'}
+        </p>
+      </div>
+
+      <div className="panel">
+        <label className="studio-section-label" htmlFor="slidesInput">
+          <Presentation size={14} /> Slides
+        </label>
+        <input
+          id="slidesInput"
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => {
+            void actions.addSlides(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        <div className="studio-toolbar">
+          <button type="button" className="icon-btn icon-btn--small" disabled={slideIndex <= 0} onClick={actions.prevSlide}>
+            <ChevronLeft size={14} /> Previous
+          </button>
+          <span data-testid="slide-counter">{slides.length === 0 ? 'No slides' : `Slide ${slideIndex + 1} / ${slides.length}`}</span>
+          <button type="button" className="icon-btn icon-btn--small" disabled={slideIndex >= slides.length - 1} onClick={actions.nextSlide}>
+            Next <ChevronRight size={14} />
+          </button>
+          {slides.length > 0 && (
+            <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={actions.clearSlides}>
+              <Trash2 size={14} /> Clear
+            </button>
+          )}
+        </div>
+        <p className="docs-hint">
+          {slides.length > 0 ? `${slides[slideIndex]?.name ?? ''} -- ` : ''}
+          Images only (export a deck or PDF as images first). Left and right arrow keys change slide. A screen share replaces the slide while it is on.
+          {!LAYOUT_BY_ID[layoutMode].hasSlide && ' Pick a layout with slides to show them.'}
+        </p>
+      </div>
+
+      <div className="panel">
         <label className="studio-section-label" htmlFor="logoInput">
           <ImageIcon size={14} /> Logo (shown top-left)
         </label>
@@ -366,8 +452,8 @@ export function HostStudioPage() {
         <input
           id="logoSizeInput"
           type="range"
-          min={16}
-          max={240}
+          min={BRANDING_RANGES.logoSize.min}
+          max={BRANDING_RANGES.logoSize.max}
           value={branding.logoSize}
           onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
         />
@@ -385,10 +471,20 @@ export function HostStudioPage() {
         <input
           id="nameFontSizeInput"
           type="range"
-          min={8}
-          max={48}
+          min={BRANDING_RANGES.nameFontSize.min}
+          max={BRANDING_RANGES.nameFontSize.max}
           value={branding.nameFontSize}
           onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
+        />
+
+        <label htmlFor="newsFontSizeInput">News ticker text size: {branding.newsFontSize}px</label>
+        <input
+          id="newsFontSizeInput"
+          type="range"
+          min={BRANDING_RANGES.newsFontSize.min}
+          max={BRANDING_RANGES.newsFontSize.max}
+          value={branding.newsFontSize}
+          onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
         />
       </div>
 
