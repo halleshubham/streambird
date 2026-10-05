@@ -6,6 +6,23 @@ import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
 import type { PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
+import {
+  BRANDING_RANGES,
+  DEFAULT_THEME_ID,
+  LAYOUT_BY_ID,
+  SCREEN_SHARE_ID,
+  THEME_BY_ID,
+  computeLayout,
+  getTheme,
+  isFramedLayout,
+  isLayoutId,
+  newsBarHeight,
+  orderPeople,
+  type CanvasTheme,
+  type LayoutId,
+  type Rect,
+} from './compose';
+import { loadSlide, paintBackground, type SlideImage } from './themePaint';
 
 // Mirrors StreamDetailPage's own poll interval -- see that page for why
 // 10s (fast enough to catch a destination's platformStatus climbing from
@@ -24,7 +41,8 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:193
 // primary defense for participants on speakers rather than headphones.
 const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
-export type LayoutMode = 'grid' | 'spotlight';
+/** 'grid' and 'spotlight' are the original layouts; the rest are framed (see compose.ts). */
+export type LayoutMode = LayoutId;
 
 export type StreamResolution = 'sd' | 'hd' | 'fhd';
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd'];
@@ -73,6 +91,25 @@ export interface Branding {
   logoSize: number;
   newsText: string;
   nameFontSize: number;
+  /** Ticker text size in canvas pixels (the bar grows with it). */
+  newsFontSize: number;
+}
+
+const DEFAULT_BRANDING: Branding = {
+  logoSize: BRANDING_RANGES.logoSize.default,
+  newsText: '',
+  nameFontSize: BRANDING_RANGES.nameFontSize.default,
+  newsFontSize: BRANDING_RANGES.newsFontSize.default,
+};
+
+/** Slideshow images the host loads for the slide layouts (kept in memory for this session). */
+export const MAX_SLIDES = 40;
+
+/** How a tile is drawn: the original 'contain' fit with square corners, or a rounded 'cover' fit for framed layouts. */
+interface TileStyle {
+  fit: 'cover';
+  radius: number;
+  theme: CanvasTheme;
 }
 
 /** A named, saved bundle of layout + branding settings -- session-lifetime only (see useHostStudio scenes state). */
@@ -80,13 +117,14 @@ export interface Scene {
   name: string;
   layoutMode: LayoutMode;
   branding: Branding;
+  themeId?: string;
 }
 
 // The screen-share track lives in the same participantsRef Map as every
 // real guest/host entry (so it rides the existing grid/spotlight draw loop
 // and the generic per-guest room-monitor relay for free) but under this
 // clearly-synthetic key, never a real socket id.
-const SCREEN_SHARE_ID = 'screen-share';
+// (SCREEN_SHARE_ID is shared with compose.ts.)
 
 /**
  * Timer source that keeps ticking while the tab is hidden. requestAnimationFrame
@@ -119,6 +157,7 @@ interface PersistedStudioState {
   layoutMode: LayoutMode;
   resolution: StreamResolution;
   branding: Branding;
+  themeId: string;
   scenes: Scene[];
   logoDataUrl: string | null;
   wentLive: boolean;
@@ -183,10 +222,15 @@ export function useHostStudio(streamId: string | undefined) {
   const [isLive, setIsLive] = useState(false);
   const [ending, setEnding] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
-  const [branding, setBranding] = useState<Branding>({ logoSize: 90, newsText: '', nameFontSize: 14 });
+  const [branding, setBranding] = useState<Branding>({ ...DEFAULT_BRANDING });
+  const [themeId, setThemeIdState] = useState<string>(DEFAULT_THEME_ID);
+  const [slides, setSlides] = useState<{ name: string }[]>([]);
+  const [slideIndex, setSlideIndex] = useState(0);
   // Scenes only need to persist for the lifetime of this studio session --
   // in-memory React state, deliberately not persisted to the backend/DB.
   const [scenes, setScenes] = useState<Scene[]>([]);
+  const scenesRef = useRef<Scene[]>([]);
+  scenesRef.current = scenes;
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -205,12 +249,10 @@ export function useHostStudio(streamId: string | undefined) {
   const audioSourceNodesRef = useRef<Map<string, MediaStreamAudioSourceNode>>(new Map());
   const layoutModeRef = useRef<LayoutMode>('grid');
   const drawingRef = useRef(false);
-  const brandingRef = useRef<Branding & { logoImg: HTMLImageElement | null }>({
-    logoImg: null,
-    logoSize: 90,
-    newsText: '',
-    nameFontSize: 14,
-  });
+  const brandingRef = useRef<Branding & { logoImg: HTMLImageElement | null }>({ ...DEFAULT_BRANDING, logoImg: null });
+  const themeIdRef = useRef<string>(DEFAULT_THEME_ID);
+  const slidesRef = useRef<SlideImage[]>([]);
+  const slideIndexRef = useRef(0);
   const newsScrollXRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const whipPcRef = useRef<RTCPeerConnection | null>(null);
@@ -407,7 +449,9 @@ export function useHostStudio(streamId: string | undefined) {
     const b = brandingRef.current;
     if (!b.newsText) return;
     const ctx = ctxRef.current!;
-    const barH = 36;
+    const theme = getTheme(themeIdRef.current);
+    const fontSize = b.newsFontSize;
+    const barH = newsBarHeight(fontSize);
     let barY = h - barH;
     const appearedAt = tickerAppearedAtRef.current;
     if (appearedAt !== null) {
@@ -416,11 +460,11 @@ export function useHostStudio(streamId: string | undefined) {
       barY = h - barH + (1 - eased) * barH; // slides up from fully below-frame into its resting position
       if (t >= 1) tickerAppearedAtRef.current = null;
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillStyle = theme.tickerBg;
     ctx.fillRect(0, barY, w, barH);
 
-    ctx.font = '18px sans-serif';
-    ctx.fillStyle = '#fff';
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.fillStyle = theme.tickerFg;
     ctx.textBaseline = 'middle';
     const textWidth = ctx.measureText(b.newsText).width;
 
@@ -434,11 +478,39 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.fillText(b.newsText, newsScrollXRef.current, barY + barH / 2);
   }
 
-  function drawCell(p: Participant, x: number, y: number, w: number, h: number, now: number) {
+  function drawCell(p: Participant, x: number, y: number, w: number, h: number, now: number, style?: TileStyle) {
     const ctx = ctxRef.current!;
     const vw = p.videoEl.videoWidth;
     const vh = p.videoEl.videoHeight;
-    if (vw > 0 && vh > 0) {
+    if (style) {
+      // Framed layouts: a rounded tile that the video fills (cropped, not letterboxed).
+      const radius = Math.round(Math.min(w, h) * 0.04 * style.theme.radius);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = Math.max(6, h * 0.02);
+      ctx.shadowOffsetY = Math.max(2, h * 0.006);
+      ctx.fillStyle = style.theme.cardBg;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.fill();
+      ctx.restore();
+      if (vw > 0 && vh > 0) {
+        const scale = Math.max(w / vw, h / vh);
+        const sw = w / scale;
+        const sh = h / scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, radius);
+        ctx.clip();
+        ctx.drawImage(p.videoEl, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, w, h);
+        ctx.restore();
+      }
+      ctx.strokeStyle = style.theme.border;
+      ctx.lineWidth = Math.max(2, h * 0.003);
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.stroke();
+    } else if (vw > 0 && vh > 0) {
       // "Contain" fit (like CSS object-fit: contain): scale the video's
       // native aspect ratio to fit entirely within the cell, centered, so
       // it's never stretched/squished -- any leftover space is left
@@ -500,8 +572,8 @@ export function useHostStudio(streamId: string | undefined) {
       const cx = plateX + padX + badgeD / 2;
       const cy = plateY + boxH / 2;
       const grad = ctx.createLinearGradient(cx - badgeD / 2, cy - badgeD / 2, cx + badgeD / 2, cy + badgeD / 2);
-      grad.addColorStop(0, LOWER_THIRD_ACCENT);
-      grad.addColorStop(1, '#ec4899');
+      grad.addColorStop(0, style ? style.theme.accent : LOWER_THIRD_ACCENT);
+      grad.addColorStop(1, style ? style.theme.accent2 : '#ec4899');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(cx, cy, badgeD / 2, 0, Math.PI * 2);
@@ -543,6 +615,76 @@ export function useHostStudio(streamId: string | undefined) {
     const thumbSize = w / 6;
     ordered.slice(1).forEach((p, i) => {
       drawCell(p, w - thumbSize - 8, 8 + i * (thumbSize * 0.6 + 8), thumbSize, thumbSize * 0.6, now);
+    });
+  }
+
+  /** The slide area of a framed layout: the screen share when one is active, else the current slideshow image. */
+  function drawSlideArea(rect: Rect, screen: Participant | null, theme: CanvasTheme) {
+    const ctx = ctxRef.current!;
+    const radius = Math.round(Math.min(rect.w, rect.h) * 0.03 * theme.radius);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = Math.max(6, rect.h * 0.02);
+    ctx.shadowOffsetY = Math.max(2, rect.h * 0.006);
+    ctx.fillStyle = theme.cardBg;
+    ctx.beginPath();
+    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
+    ctx.fill();
+    ctx.restore();
+
+    const fitInto = (srcW: number, srcH: number, draw: (x: number, y: number, w: number, h: number) => void) => {
+      const scale = Math.min(rect.w / srcW, rect.h / srcH);
+      const dw = srcW * scale;
+      const dh = srcH * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
+      ctx.clip();
+      draw(rect.x + (rect.w - dw) / 2, rect.y + (rect.h - dh) / 2, dw, dh);
+      ctx.restore();
+    };
+
+    const slide = slidesRef.current[slideIndexRef.current];
+    if (screen && screen.videoEl.videoWidth > 0) {
+      fitInto(screen.videoEl.videoWidth, screen.videoEl.videoHeight, (x, y, w, h) => ctx.drawImage(screen.videoEl, x, y, w, h));
+    } else if (slide) {
+      fitInto(slide.canvas.width, slide.canvas.height, (x, y, w, h) => ctx.drawImage(slide.canvas, x, y, w, h));
+    } else {
+      ctx.save();
+      ctx.fillStyle = theme.fg;
+      ctx.globalAlpha = 0.55;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `600 ${Math.round(rect.h * 0.07)}px system-ui, sans-serif`;
+      ctx.fillText('Slides', rect.x + rect.w / 2, rect.y + rect.h / 2 - rect.h * 0.04);
+      ctx.font = `400 ${Math.round(rect.h * 0.04)}px system-ui, sans-serif`;
+      ctx.fillText('Add images in the Slides panel, or share your screen', rect.x + rect.w / 2, rect.y + rect.h / 2 + rect.h * 0.05);
+      ctx.restore();
+    }
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = Math.max(2, rect.h * 0.003);
+    ctx.beginPath();
+    ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
+    ctx.stroke();
+  }
+
+  function drawFramed(layout: LayoutId, entries: Participant[], w: number, h: number, now: number) {
+    const def = LAYOUT_BY_ID[layout];
+    const theme = getTheme(themeIdRef.current);
+    // Tiles stop above the ticker bar when one is showing.
+    const reserve = brandingRef.current.newsText ? newsBarHeight(brandingRef.current.newsFontSize) : 0;
+    const geo = computeLayout(layout, w, h - reserve);
+    const screen = def.hasSlide ? (entries.find((p) => p.id === SCREEN_SHARE_ID) ?? null) : null;
+    const people = orderPeople(
+      layout,
+      def.hasSlide ? entries.filter((p) => p.id !== SCREEN_SHARE_ID) : entries,
+      pinnedIdRef.current,
+    );
+    if (geo.slide) drawSlideArea(geo.slide, screen, theme);
+    const style: TileStyle = { fit: 'cover', radius: theme.radius, theme };
+    people.slice(0, geo.people.length).forEach((p, i) => {
+      const t = geo.people[i];
+      drawCell(p, t.x, t.y, t.w, t.h, now, style);
     });
   }
 
@@ -595,11 +737,15 @@ export function useHostStudio(streamId: string | undefined) {
       }
       lastEntriesKeyRef.current = entriesKey;
 
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, w, h);
+      paintBackground(ctx, getTheme(themeIdRef.current), w, h);
 
-      if (entries.length > 0) {
-        if (layoutModeRef.current === 'spotlight') drawSpotlight(entries, w, h, now);
+      const layout = layoutModeRef.current;
+      if (isFramedLayout(layout)) {
+        // A slide layout is still worth drawing with nobody on camera (the slides are the content).
+        if (entries.length > 0 || LAYOUT_BY_ID[layout].hasSlide) drawFramed(layout, entries, w, h, now);
+        else drawBrandSlide(w, h, now);
+      } else if (entries.length > 0) {
+        if (layout === 'spotlight') drawSpotlight(entries, w, h, now);
         else drawGrid(entries, w, h, now);
       } else {
         drawBrandSlide(w, h, now);
@@ -857,14 +1003,20 @@ export function useHostStudio(streamId: string | undefined) {
         if (cancelled) return;
 
         const saved = loadPersisted(streamRow.id);
-        if (saved.layoutMode) {
+        if (isLayoutId(saved.layoutMode)) {
           layoutModeRef.current = saved.layoutMode;
           setLayoutMode(saved.layoutMode);
         }
+        if (saved.themeId && saved.themeId in THEME_BY_ID) {
+          themeIdRef.current = saved.themeId;
+          setThemeIdState(saved.themeId);
+        }
         if (saved.resolution && saved.resolution in RESOLUTIONS) setResolutionState(saved.resolution);
         if (saved.branding) {
-          Object.assign(brandingRef.current, saved.branding);
-          setBranding({ ...saved.branding });
+          // Merged over the defaults so a state saved before a field existed (newsFontSize) still loads.
+          const merged: Branding = { ...DEFAULT_BRANDING, ...saved.branding };
+          Object.assign(brandingRef.current, merged);
+          setBranding(merged);
           if (saved.branding.newsText) tickerAppearedAtRef.current = performance.now();
         }
         if (saved.scenes) setScenes(saved.scenes);
@@ -944,8 +1096,8 @@ export function useHostStudio(streamId: string | undefined) {
 
   useEffect(() => {
     if (!stream) return;
-    savePersisted(stream.id, { layoutMode, resolution, branding, scenes });
-  }, [stream, layoutMode, resolution, branding, scenes]);
+    savePersisted(stream.id, { layoutMode, resolution, branding, themeId, scenes });
+  }, [stream, layoutMode, resolution, branding, themeId, scenes]);
 
   // Plan quality cap: fetch once, and pull a saved/default resolution down to it.
   useEffect(() => {
@@ -1010,7 +1162,7 @@ export function useHostStudio(streamId: string | undefined) {
     beginTransition();
     layoutModeRef.current = next;
     setLayoutMode(next);
-    setStatus({ text: `Layout: ${next}`, isError: false });
+    setStatus({ text: `Layout: ${LAYOUT_BY_ID[next]?.name ?? next}`, isError: false });
 
     if (stream?.studioSessionId) {
       updateLayout(stream.studioSessionId, { layout: next, overlays: [] }).catch((err) => {
@@ -1189,6 +1341,7 @@ export function useHostStudio(streamId: string | undefined) {
 
   function setLogoSize(size: number) {
     if (Number.isFinite(size) && size > 0) {
+      size = Math.min(BRANDING_RANGES.logoSize.max, size);
       brandingRef.current.logoSize = size;
       setBranding((b) => ({ ...b, logoSize: size }));
     }
@@ -1206,10 +1359,91 @@ export function useHostStudio(streamId: string | undefined) {
 
   function setNameFontSize(size: number) {
     if (Number.isFinite(size) && size > 0) {
+      size = Math.min(BRANDING_RANGES.nameFontSize.max, size);
       brandingRef.current.nameFontSize = size;
       setBranding((b) => ({ ...b, nameFontSize: size }));
     }
   }
+
+  function setNewsFontSize(size: number) {
+    if (Number.isFinite(size) && size > 0) {
+      size = Math.min(BRANDING_RANGES.newsFontSize.max, size);
+      brandingRef.current.newsFontSize = size;
+      setBranding((b) => ({ ...b, newsFontSize: size }));
+    }
+  }
+
+  // ---- Canvas style and slides ------------------------------------------
+
+  const setTheme = useCallback((id: string) => {
+    if (!(id in THEME_BY_ID)) return;
+    beginTransition();
+    themeIdRef.current = id;
+    setThemeIdState(id);
+  }, []);
+
+  const gotoSlide = useCallback((index: number) => {
+    const count = slidesRef.current.length;
+    if (count === 0) return;
+    const next = Math.min(count - 1, Math.max(0, index));
+    if (next === slideIndexRef.current) return;
+    beginTransition();
+    slideIndexRef.current = next;
+    setSlideIndex(next);
+  }, []);
+
+  const addSlides = useCallback(async (files: FileList | File[] | null) => {
+    if (!files) return;
+    const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) {
+      setStatus({ text: 'Slides must be image files (PNG, JPG, WebP...). Export a PDF or deck as images first.', isError: true });
+      return;
+    }
+    if (slidesRef.current.length >= MAX_SLIDES) {
+      setStatus({ text: `The slideshow already has ${MAX_SLIDES} slides, the limit. Clear some first.`, isError: true });
+      return;
+    }
+    const loaded: SlideImage[] = [];
+    for (const f of images) {
+      try {
+        loaded.push(await loadSlide(f));
+      } catch {
+        setStatus({ text: `Could not read "${f.name}" as an image.`, isError: true });
+      }
+    }
+    if (loaded.length === 0) return;
+    // Decoding is async, so the room is worked out here, after it: two overlapping adds can't exceed the cap.
+    const room = Math.max(0, MAX_SLIDES - slidesRef.current.length);
+    const kept = loaded.slice(0, room);
+    slidesRef.current = [...slidesRef.current, ...kept];
+    setSlides(slidesRef.current.map((x) => ({ name: x.name })));
+    if (kept.length < loaded.length || images.length > loaded.length) {
+      setStatus({ text: `Added ${kept.length} of ${images.length} slides (limit ${MAX_SLIDES}, images only).`, isError: false });
+    }
+  }, []);
+
+  const clearSlides = useCallback(() => {
+    slidesRef.current = [];
+    slideIndexRef.current = 0;
+    setSlides([]);
+    setSlideIndex(0);
+  }, []);
+
+  const nextSlide = useCallback(() => gotoSlide(slideIndexRef.current + 1), [gotoSlide]);
+  const prevSlide = useCallback(() => gotoSlide(slideIndexRef.current - 1), [gotoSlide]);
+
+  // Arrow keys flip slides (not while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (slidesRef.current.length === 0) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') nextSlide();
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nextSlide, prevSlide]);
 
   // ---- Scenes (session-lifetime presets) --------------------------------
   //
@@ -1223,10 +1457,12 @@ export function useHostStudio(streamId: string | undefined) {
     const snapshot: Scene = {
       name: trimmed,
       layoutMode: layoutModeRef.current,
+      themeId: themeIdRef.current,
       branding: {
         logoSize: brandingRef.current.logoSize,
         newsText: brandingRef.current.newsText,
         nameFontSize: brandingRef.current.nameFontSize,
+        newsFontSize: brandingRef.current.newsFontSize,
       },
     };
     setScenes((prev) => [...prev.filter((s) => s.name !== trimmed), snapshot]);
@@ -1235,20 +1471,23 @@ export function useHostStudio(streamId: string | undefined) {
   }, []);
 
   const applyScene = useCallback((name: string) => {
-    setScenes((prev) => {
-      const scene = prev.find((s) => s.name === name);
-      if (scene) {
-        setLayout(scene.layoutMode);
-        brandingRef.current.logoSize = scene.branding.logoSize;
-        brandingRef.current.newsText = scene.branding.newsText;
-        brandingRef.current.nameFontSize = scene.branding.nameFontSize;
-        newsScrollXRef.current = null;
-        setBranding({ ...scene.branding });
-        setActiveSceneName(name);
-        setStatus({ text: `Switched to scene "${name}".`, isError: false });
-      }
-      return prev;
-    });
+    // Read from a ref, not inside a setState updater: updaters must be pure (StrictMode runs them twice).
+    const scene = scenesRef.current.find((sc) => sc.name === name);
+    if (!scene) return;
+    setLayout(scene.layoutMode); // also starts the crossfade, which covers the style and branding change below
+    if (scene.themeId && scene.themeId in THEME_BY_ID) {
+      themeIdRef.current = scene.themeId;
+      setThemeIdState(scene.themeId);
+    }
+    const sceneBranding: Branding = { ...DEFAULT_BRANDING, ...scene.branding };
+    brandingRef.current.logoSize = sceneBranding.logoSize;
+    brandingRef.current.newsText = sceneBranding.newsText;
+    brandingRef.current.nameFontSize = sceneBranding.nameFontSize;
+    brandingRef.current.newsFontSize = sceneBranding.newsFontSize;
+    newsScrollXRef.current = null;
+    setBranding(sceneBranding);
+    setActiveSceneName(name);
+    setStatus({ text: `Switched to scene "${name}".`, isError: false });
   }, [setLayout]);
 
   function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
@@ -1502,6 +1741,9 @@ export function useHostStudio(streamId: string | undefined) {
     inviteMessage,
     participants: participantsView,
     layoutMode,
+    themeId,
+    slides,
+    slideIndex,
     resolution,
     maxResolution,
     cameraStarting,
@@ -1537,6 +1779,13 @@ export function useHostStudio(streamId: string | undefined) {
       setLogoSize,
       setNewsText,
       setNameFontSize,
+      setNewsFontSize,
+      setTheme,
+      addSlides,
+      clearSlides,
+      nextSlide,
+      prevSlide,
+      gotoSlide,
       startScreenShare,
       stopScreenShare,
       saveScene,
