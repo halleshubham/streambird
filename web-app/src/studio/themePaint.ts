@@ -108,6 +108,8 @@ export async function loadSlide(file: File): Promise<SlideImage> {
     const img = new Image();
     img.src = url;
     await img.decode();
+    // An SVG with no width/height/viewBox decodes but has no size to draw.
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('image has no size');
     const scale = Math.min(1, MAX_SLIDE_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));

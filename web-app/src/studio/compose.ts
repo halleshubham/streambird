@@ -100,7 +100,8 @@ export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometr
     case 'podcast-pip': {
       const pw = w * 0.24;
       const ph = (pw * 3) / 4;
-      return { slide: null, people: [r(m, m, w - 2 * m, h - 2 * m), r(w - 2 * m - pw, h - 2 * m - ph - h * 0.05, pw, ph)] };
+      // The inset sits one gutter inside the large tile's bottom-right corner.
+      return { slide: null, people: [r(m, m, w - 2 * m, h - 2 * m), r(w - 2 * m - pw, h - 2 * m - ph, pw, ph)] };
     }
     case 'pod-slide-left': {
       const leftW = (w - 3 * m) * 0.66;
@@ -124,11 +125,11 @@ export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometr
     case 'pod-slide-pip': {
       const pw = w * 0.17;
       const ph = (pw * 3) / 4;
-      const y = h - m - ph - h * 0.05;
-      return {
-        slide: fit16x9(r(m, m, w - 2 * m, h - 2 * m)),
-        people: [r(w - 2 * m - 2 * pw - m, y, pw, ph), r(w - 2 * m - pw, y, pw, ph)],
-      };
+      const slide = fit16x9(r(m, m, w - 2 * m, h - 2 * m));
+      // Insets sit one gutter inside the slide's bottom-right corner, not the frame's.
+      const right = slide.x + slide.w - m;
+      const y = slide.y + slide.h - m - ph;
+      return { slide, people: [r(right - 2 * pw - m, y, pw, ph), r(right - pw, y, pw, ph)] };
     }
     case 'anchor-slide-right': {
       const aw = (w - 3 * m) * 0.3;
@@ -147,10 +148,8 @@ export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometr
     case 'anchor-pip': {
       const pw = w * 0.22;
       const ph = (pw * 3) / 4;
-      return {
-        slide: fit16x9(r(m, m, w - 2 * m, h - 2 * m)),
-        people: [r(w - 2 * m - pw, h - m - ph - h * 0.05, pw, ph)],
-      };
+      const slide = fit16x9(r(m, m, w - 2 * m, h - 2 * m));
+      return { slide, people: [r(slide.x + slide.w - m - pw, slide.y + slide.h - m - ph, pw, ph)] };
     }
     case 'panel-slide-left': {
       const leftW = (w - 3 * m) * 0.58;
@@ -186,7 +185,8 @@ export const SCREEN_SHARE_ID = 'screen-share';
  */
 export function orderPeople<T extends { id: string }>(layout: LayoutId, entries: T[], pinnedId: string | null): T[] {
   const host = entries.find((e) => e.id === HOST_ID);
-  const rest = entries.filter((e) => e.id !== HOST_ID);
+  // The screen share goes last so a guest who joins after it started still gets a tile (and never the large one).
+  const rest = [...entries.filter((e) => e.id !== HOST_ID && e.id !== SCREEN_SHARE_ID), ...entries.filter((e) => e.id === SCREEN_SHARE_ID)];
   const ordered = host ? [host, ...rest] : rest;
   if (layout !== 'podcast-pip' || ordered.length < 2) return ordered;
   const main = ordered.find((e) => e.id === pinnedId) ?? ordered[1];

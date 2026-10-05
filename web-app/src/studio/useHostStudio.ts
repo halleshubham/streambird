@@ -229,6 +229,8 @@ export function useHostStudio(streamId: string | undefined) {
   // Scenes only need to persist for the lifetime of this studio session --
   // in-memory React state, deliberately not persisted to the backend/DB.
   const [scenes, setScenes] = useState<Scene[]>([]);
+  const scenesRef = useRef<Scene[]>([]);
+  scenesRef.current = scenes;
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -1397,10 +1399,12 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: 'Slides must be image files (PNG, JPG, WebP...). Export a PDF or deck as images first.', isError: true });
       return;
     }
-    const room = MAX_SLIDES - slidesRef.current.length;
-    const take = images.slice(0, Math.max(0, room));
+    if (slidesRef.current.length >= MAX_SLIDES) {
+      setStatus({ text: `The slideshow already has ${MAX_SLIDES} slides, the limit. Clear some first.`, isError: true });
+      return;
+    }
     const loaded: SlideImage[] = [];
-    for (const f of take) {
+    for (const f of images) {
       try {
         loaded.push(await loadSlide(f));
       } catch {
@@ -1408,10 +1412,13 @@ export function useHostStudio(streamId: string | undefined) {
       }
     }
     if (loaded.length === 0) return;
-    slidesRef.current = [...slidesRef.current, ...loaded];
+    // Decoding is async, so the room is worked out here, after it: two overlapping adds can't exceed the cap.
+    const room = Math.max(0, MAX_SLIDES - slidesRef.current.length);
+    const kept = loaded.slice(0, room);
+    slidesRef.current = [...slidesRef.current, ...kept];
     setSlides(slidesRef.current.map((x) => ({ name: x.name })));
-    if (images.length > take.length) {
-      setStatus({ text: `Added ${loaded.length} slides; the limit is ${MAX_SLIDES}.`, isError: false });
+    if (kept.length < loaded.length || images.length > loaded.length) {
+      setStatus({ text: `Added ${kept.length} of ${images.length} slides (limit ${MAX_SLIDES}, images only).`, isError: false });
     }
   }, []);
 
@@ -1464,26 +1471,23 @@ export function useHostStudio(streamId: string | undefined) {
   }, []);
 
   const applyScene = useCallback((name: string) => {
-    setScenes((prev) => {
-      const scene = prev.find((s) => s.name === name);
-      if (scene) {
-        setLayout(scene.layoutMode);
-        if (scene.themeId && scene.themeId in THEME_BY_ID) {
-          themeIdRef.current = scene.themeId;
-          setThemeIdState(scene.themeId);
-        }
-        const sceneBranding: Branding = { ...DEFAULT_BRANDING, ...scene.branding };
-        brandingRef.current.logoSize = sceneBranding.logoSize;
-        brandingRef.current.newsText = sceneBranding.newsText;
-        brandingRef.current.nameFontSize = sceneBranding.nameFontSize;
-        brandingRef.current.newsFontSize = sceneBranding.newsFontSize;
-        newsScrollXRef.current = null;
-        setBranding(sceneBranding);
-        setActiveSceneName(name);
-        setStatus({ text: `Switched to scene "${name}".`, isError: false });
-      }
-      return prev;
-    });
+    // Read from a ref, not inside a setState updater: updaters must be pure (StrictMode runs them twice).
+    const scene = scenesRef.current.find((sc) => sc.name === name);
+    if (!scene) return;
+    setLayout(scene.layoutMode); // also starts the crossfade, which covers the style and branding change below
+    if (scene.themeId && scene.themeId in THEME_BY_ID) {
+      themeIdRef.current = scene.themeId;
+      setThemeIdState(scene.themeId);
+    }
+    const sceneBranding: Branding = { ...DEFAULT_BRANDING, ...scene.branding };
+    brandingRef.current.logoSize = sceneBranding.logoSize;
+    brandingRef.current.newsText = sceneBranding.newsText;
+    brandingRef.current.nameFontSize = sceneBranding.nameFontSize;
+    brandingRef.current.newsFontSize = sceneBranding.newsFontSize;
+    newsScrollXRef.current = null;
+    setBranding(sceneBranding);
+    setActiveSceneName(name);
+    setStatus({ text: `Switched to scene "${name}".`, isError: false });
   }, [setLayout]);
 
   function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {

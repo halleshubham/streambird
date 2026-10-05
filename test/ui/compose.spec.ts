@@ -59,6 +59,20 @@ test.describe('layouts', () => {
     });
   }
 
+  test('inset layouts: the small tiles sit inside the frame they overlay, one gutter from its corner', () => {
+    for (const [w, h] of SIZES) {
+      const within = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+      const pip = computeLayout('podcast-pip', w, h);
+      expect(within(pip.people[1], pip.people[0])).toBe(true);
+      for (const id of ['pod-slide-pip', 'anchor-pip'] as const) {
+        const geo = computeLayout(id, w, h);
+        for (const tile of geo.people) expect(within(tile, geo.slide!), `${id} ${w}x${h}`).toBe(true);
+      }
+      const two = computeLayout('pod-slide-pip', w, h).people;
+      expect(two[0].x + two[0].w).toBeLessThanOrEqual(two[1].x); // the two insets don't overlap each other
+    }
+  });
+
   test('the classic layouts have no fixed geometry (they keep their own drawing)', () => {
     expect(computeLayout('grid', 1280, 720)).toEqual({ slide: null, people: [] });
     expect(isFramedLayout('grid')).toBe(false);
@@ -71,6 +85,10 @@ test.describe('layouts', () => {
     expect(orderPeople('podcast-pip', e, null).map((x) => x.id)).toEqual(['g1', 'local', 'g2']);
     expect(orderPeople('podcast-pip', e, 'g2').map((x) => x.id)).toEqual(['g2', 'local', 'g1']);
     expect(orderPeople('podcast-pip', [{ id: 'local' }], null).map((x) => x.id)).toEqual(['local']);
+    // A screen share never takes a person's tile or the large one: it goes last.
+    const withShare = [{ id: 'local' }, { id: 'screen-share' }, { id: 'g1' }];
+    expect(orderPeople('podcast-split', withShare, null).map((x) => x.id)).toEqual(['local', 'g1', 'screen-share']);
+    expect(orderPeople('podcast-pip', withShare, null).map((x) => x.id)).toEqual(['g1', 'local', 'screen-share']);
   });
 
   test('layout ids are validated (a stale saved layout is ignored)', () => {

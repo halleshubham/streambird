@@ -384,6 +384,8 @@ export function HostStudioPage() {
         </select>
         <p className="docs-hint">
           {LAYOUT_BY_ID[layoutMode].description}
+          {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
+            ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
           {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
             ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
         </p>
