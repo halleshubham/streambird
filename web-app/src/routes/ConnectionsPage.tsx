@@ -191,7 +191,7 @@ export function ConnectionsPage() {
             <li>Update the title, description, privacy, start time and thumbnail you set in StreamBird.</li>
             <li>Start the broadcast when you go live, end it when you end the stream, and read its status so you can see whether it is live.</li>
             <li>Delete a scheduled broadcast that StreamBird created, if you cancel that stream.</li>
-            <li>Read your channel's name and picture, so you can see which channel is connected.</li>
+            <li>Read your channel's name, so you can see which channel is connected.</li>
           </ul>
           <p>
             <strong>What it never does:</strong> read or post comments, change captions or ratings,

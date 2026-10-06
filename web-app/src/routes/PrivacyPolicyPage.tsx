@@ -96,8 +96,8 @@ export function PrivacyPolicyPage() {
           the narrowest permission that allows creating and running a live broadcast. We use it
           only to create the live broadcast and stream for the event you set up, update its
           title, description, privacy, start time and thumbnail, start and end it, read its
-          status, delete a scheduled broadcast StreamBird itself created if you cancel it, and
-          read your channel's name and picture so you can see which channel is connected. We do
+          status and current viewer count, delete a scheduled broadcast StreamBird itself created if you cancel it, and
+          read your channel's name so you can see which channel is connected. We do
           not read or post comments, change captions or ratings, or upload, edit or delete
           videos you already have. "Sign in with Google" asks only for your basic profile and
           email (<code>openid</code>, <code>email</code>, <code>profile</code>). You can revoke
