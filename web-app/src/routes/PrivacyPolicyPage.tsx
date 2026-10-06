@@ -88,6 +88,23 @@ export function PrivacyPolicyPage() {
           explicit consent to investigate a support request you raised.
         </p>
 
+        <h3>YouTube permission</h3>
+        <p>
+          Connecting a YouTube channel asks for one Google permission:{' '}
+          <code>https://www.googleapis.com/auth/youtube.force-ssl</code> ("See, edit, and
+          permanently delete your YouTube videos, ratings, comments and captions"). It is
+          the narrowest permission that allows creating and running a live broadcast. We use it
+          only to create the live broadcast and stream for the event you set up, update its
+          title, description, privacy, start time and thumbnail, start and end it, read its
+          status and current viewer count, delete a scheduled broadcast StreamBird itself created if you cancel it, and
+          read your channel's name so you can see which channel is connected. We do
+          not read or post comments, change captions or ratings, or upload, edit or delete
+          videos you already have. "Sign in with Google" asks only for your basic profile and
+          email (<code>openid</code>, <code>email</code>, <code>profile</code>). You can revoke
+          access at any time by disconnecting the channel in StreamBird, or from your Google
+          Account's security settings.
+        </p>
+
         <h2>4. Sharing</h2>
         <p>
           We share stream media and metadata with the destination platforms you

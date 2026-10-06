@@ -62,6 +62,10 @@ export interface AppConfig {
      * treats each registered redirect URI as its own OAuth flow. e.g.
      * `${publicBaseUrl}/api/platform-connections/youtube/callback`. */
     youtubeRedirectUri: string;
+    /** The one YouTube scope the platform-connect flow asks for. Defaults to `youtube.force-ssl`, the narrowest
+     * scope that covers every live-broadcast call StreamBird makes (the broader `youtube` scope also would, but
+     * is "manage your whole YouTube account"). It must match the scope submitted for OAuth verification. */
+    youtubeScope: string;
   };
   facebook: {
     appId: string;
@@ -140,6 +144,7 @@ export default (): AppConfig => ({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     redirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
     youtubeRedirectUri: process.env.GOOGLE_YOUTUBE_REDIRECT_URI ?? '',
+    youtubeScope: process.env.GOOGLE_YOUTUBE_SCOPE || 'https://www.googleapis.com/auth/youtube.force-ssl',
   },
   facebook: {
     appId: process.env.FACEBOOK_APP_ID ?? '',
