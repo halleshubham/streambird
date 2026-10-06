@@ -40,6 +40,11 @@ export interface Reply<T = any> {
 }
 
 /** A browser-like HTTP client: keeps cookies, sends the Origin header the CSRF check requires. */
+export interface RedirectReply {
+  status: number;
+  location: string | null;
+}
+
 export class Client {
   private cookies = new Map<string, string>();
   constructor(private readonly baseUrl: string) {}
@@ -73,6 +78,15 @@ export class Client {
       // not JSON
     }
     return { status: res.status, body };
+  }
+
+  /** GET without following a redirect: returns where it points (for OAuth start URLs). */
+  async getRedirect(path: string): Promise<RedirectReply> {
+    const res = await fetch(`${this.baseUrl}/api${path}`, {
+      redirect: 'manual',
+      headers: { Origin: this.baseUrl, ...(this.cookies.size ? { Cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ') } : {}) },
+    });
+    return { status: res.status, location: res.headers.get('location') };
   }
 
   get = <T = any>(path: string) => this.call<T>('GET', path);
@@ -131,6 +145,11 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
     PUBLIC_BASE_URL: baseUrl,
     NODE_ENV: 'test',
     LEGACY_HOSTS: '',
+    GOOGLE_CLIENT_ID: 'e2e-google-client',
+    GOOGLE_CLIENT_SECRET: 'e2e-google-secret',
+    GOOGLE_REDIRECT_URI: `${baseUrl}/api/auth/google/callback`,
+    GOOGLE_YOUTUBE_REDIRECT_URI: `${baseUrl}/api/platform-connections/youtube/callback`,
+    GOOGLE_YOUTUBE_SCOPE: '',
     RAZORPAY_KEY_ID: razorpay ? RZP.keyId : '',
     RAZORPAY_KEY_SECRET: razorpay ? RZP.keySecret : '',
     RAZORPAY_WEBHOOK_SECRET: razorpay ? RZP.webhookSecret : '',

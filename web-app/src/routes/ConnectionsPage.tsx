@@ -177,10 +177,28 @@ export function ConnectionsPage() {
           <PlatformLogo platform="youtube" size={18} /> Connect YouTube
         </h2>
         <p>
-          Connect a YouTube channel to schedule and go live directly from StreamBird. This
-          requests the YouTube scope on your Google account, separate from any "Sign in with
-          Google" login you may already use.
+          Connect a YouTube channel to schedule and go live directly from StreamBird. This is a
+          separate permission from any "Sign in with Google" login you may already use. Google
+          will ask you to allow StreamBird to <strong>"See, edit, and permanently delete your
+          YouTube videos, ratings, comments and captions"</strong> (the <code>youtube.force-ssl</code>{' '}
+          permission), the narrowest permission Google offers that lets an app create and run a
+          live broadcast.
         </p>
+        <div className="youtube-permission-note" data-testid="youtube-permission-note">
+          <p><strong>What StreamBird uses it for</strong></p>
+          <ul>
+            <li>Create the live broadcast and its stream for your event, and connect the two.</li>
+            <li>Update the title, description, privacy, start time and thumbnail you set in StreamBird.</li>
+            <li>Start the broadcast when you go live, end it when you end the stream, and read its status so you can see whether it is live.</li>
+            <li>Delete a scheduled broadcast that StreamBird created, if you cancel that stream.</li>
+            <li>Read your channel's name and picture, so you can see which channel is connected.</li>
+          </ul>
+          <p>
+            <strong>What it never does:</strong> read or post comments, change captions or ratings,
+            upload, edit or delete videos you already have, or touch anything except the broadcasts
+            StreamBird itself created. Disconnecting a channel here revokes the access with Google.
+          </p>
+        </div>
         <a
           className="button-like icon-btn"
           style={{ display: 'inline-flex', width: 'auto' }}
