@@ -30,10 +30,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
+  ImagePlus,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
-import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, getTheme } from '../../studio/compose';
+import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
@@ -59,6 +60,9 @@ export function HostStudioPage() {
     themeId,
     slides,
     slideIndex,
+    wallpaper,
+    wallpaperFocus,
+    wallpaperDim,
     resolution,
     maxResolution,
     cameraStarting,
@@ -407,6 +411,62 @@ export function HostStudioPage() {
             ? 'Vanilla is the original plain look. Styles show around the tiles of the framed layouts (everything except Grid and Spotlight).'
             : 'The style shows around the tiles of the framed layouts; Grid and Spotlight fill the whole frame.'}
         </p>
+      </div>
+
+      <div className="panel">
+        <label className="studio-section-label" htmlFor="wallpaperInput">
+          <ImagePlus size={14} /> Wallpaper
+        </label>
+        <p className="docs-hint">
+          Best: an image of exactly <strong>{RESOLUTIONS[resolution].width}x{RESOLUTIONS[resolution].height}</strong> (16:9, for the selected quality). Any other image is
+          cropped to fit, and you choose what stays. It shows behind the tiles in every layout; the canvas style still sets the ticker and tile colours.
+        </p>
+        <input
+          id="wallpaperInput"
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            void actions.setWallpaperFile(e.target.files?.[0] ?? null);
+            e.target.value = '';
+          }}
+        />
+        {wallpaper && (
+          <>
+            <p className="docs-hint" data-testid="wallpaper-fit">
+              <strong>{wallpaper.name}</strong>: {describeWallpaperFit(wallpaper.width, wallpaper.height, RESOLUTIONS[resolution].width, RESOLUTIONS[resolution].height).message}
+            </p>
+            <label htmlFor="wallpaperFocusX">Crop position, left to right: {wallpaperFocus.x}%</label>
+            <input
+              id="wallpaperFocusX"
+              type="range"
+              min={WALLPAPER_RANGES.focus.min}
+              max={WALLPAPER_RANGES.focus.max}
+              value={wallpaperFocus.x}
+              onChange={(e) => actions.setWallpaperFocus(parseInt(e.target.value, 10), wallpaperFocus.y)}
+            />
+            <label htmlFor="wallpaperFocusY">Crop position, top to bottom: {wallpaperFocus.y}%</label>
+            <input
+              id="wallpaperFocusY"
+              type="range"
+              min={WALLPAPER_RANGES.focus.min}
+              max={WALLPAPER_RANGES.focus.max}
+              value={wallpaperFocus.y}
+              onChange={(e) => actions.setWallpaperFocus(wallpaperFocus.x, parseInt(e.target.value, 10))}
+            />
+            <label htmlFor="wallpaperDim">Darken: {wallpaperDim}%</label>
+            <input
+              id="wallpaperDim"
+              type="range"
+              min={WALLPAPER_RANGES.dim.min}
+              max={WALLPAPER_RANGES.dim.max}
+              value={wallpaperDim}
+              onChange={(e) => actions.setWallpaperDim(parseInt(e.target.value, 10))}
+            />
+            <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={actions.clearWallpaper}>
+              <Trash2 size={14} /> Remove wallpaper
+            </button>
+          </>
+        )}
       </div>
 
       <div className="panel">

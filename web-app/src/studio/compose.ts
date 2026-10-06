@@ -420,3 +420,87 @@ export const BRANDING_RANGES = {
 export function newsBarHeight(fontSize: number): number {
   return Math.max(36, Math.round(fontSize * 1.9));
 }
+
+// ---- Wallpaper -------------------------------------------------------------
+
+export const WALLPAPER_RANGES = {
+  /** Which part of the image stays when it has to be cropped: 0 = left/top edge, 50 = centre, 100 = right/bottom edge. */
+  focus: { min: 0, max: 100, default: 50 },
+  /** Darkening laid over the wallpaper so tiles and text stay readable (percent). */
+  dim: { min: 0, max: 70, default: 0 },
+} as const;
+
+/** Wallpapers are stored no larger than this on the long side (the biggest canvas is 1920x1080). */
+export const WALLPAPER_MAX_SIDE = 1920;
+
+export interface CropRect {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+/**
+ * The part of a src image that fills a dst canvas with "cover" scaling: the whole canvas is
+ * covered and whatever overflows is cropped. focusX/focusY (0-100) choose which part stays.
+ */
+export function coverCrop(srcW: number, srcH: number, dstW: number, dstH: number, focusX = 50, focusY = 50): CropRect {
+  const scale = Math.max(dstW / srcW, dstH / srcH);
+  const sw = Math.min(srcW, dstW / scale);
+  const sh = Math.min(srcH, dstH / scale);
+  const fx = Math.min(100, Math.max(0, focusX)) / 100;
+  const fy = Math.min(100, Math.max(0, focusY)) / 100;
+  return { sx: (srcW - sw) * fx, sy: (srcH - sh) * fy, sw, sh };
+}
+
+export interface WallpaperFit {
+  /** Exactly the canvas size: nothing is scaled or cropped. */
+  exact: boolean;
+  /** Which edges are trimmed to fill the canvas. */
+  crop: 'none' | 'sides' | 'top-bottom';
+  /** Share of the image that stays visible (1 = all of it). */
+  kept: number;
+  /** The image is smaller than the canvas, so it is enlarged and may look soft. */
+  upscaled: boolean;
+  /** One plain sentence for the host. */
+  message: string;
+}
+
+/** What will happen to an srcW x srcH image on a dstW x dstH canvas, in words the host can act on. */
+export function describeWallpaperFit(srcW: number, srcH: number, dstW: number, dstH: number): WallpaperFit {
+  const ideal = `${dstW}x${dstH}`;
+  if (srcW === dstW && srcH === dstH) {
+    return { exact: true, crop: 'none', kept: 1, upscaled: false, message: `Perfect fit: ${srcW}x${srcH}. Nothing is scaled or cropped.` };
+  }
+  const srcAspect = srcW / srcH;
+  const dstAspect = dstW / dstH;
+  const upscaled = srcW < dstW || srcH < dstH;
+  const soft = upscaled ? ` It is smaller than ${ideal}, so it is enlarged and may look soft.` : '';
+  if (Math.abs(srcAspect - dstAspect) < 0.005) {
+    return {
+      exact: false,
+      crop: 'none',
+      kept: 1,
+      upscaled,
+      message: `Right shape (16:9) at ${srcW}x${srcH}; it is scaled to ${ideal}. Nothing is cropped.${soft}`,
+    };
+  }
+  if (srcAspect > dstAspect) {
+    const kept = dstAspect / srcAspect;
+    return {
+      exact: false,
+      crop: 'sides',
+      kept,
+      upscaled,
+      message: `${srcW}x${srcH} is wider than the frame, so the left and right are cropped (${Math.round(kept * 100)}% of the width stays). Use the position slider to choose what stays, or provide ${ideal}.${soft}`,
+    };
+  }
+  const kept = srcAspect / dstAspect;
+  return {
+    exact: false,
+    crop: 'top-bottom',
+    kept,
+    upscaled,
+    message: `${srcW}x${srcH} is taller than the frame, so the top and bottom are cropped (${Math.round(kept * 100)}% of the height stays). Use the position slider to choose what stays, or provide ${ideal}.${soft}`,
+  };
+}

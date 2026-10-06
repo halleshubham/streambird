@@ -243,6 +243,85 @@ test.describe('host studio', () => {
     expect(after[0]).toBeGreaterThan(120); // the newsroom ticker red
   });
 
+  /** Fills the wallpaper input with a generated image: left half `left`, right half `right`. */
+  async function addWallpaper(page: Page, w: number, h: number, left: string, right: string, name = 'wall.png') {
+    await page.evaluate(
+      async ([width, height, l, r, fileName]) => {
+        const c = document.createElement('canvas');
+        c.width = width as number;
+        c.height = height as number;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = l as string;
+        ctx.fillRect(0, 0, (width as number) / 2, height as number);
+        ctx.fillStyle = r as string;
+        ctx.fillRect((width as number) / 2, 0, (width as number) / 2, height as number);
+        const blob: Blob = await new Promise((res) => c.toBlob((b) => res(b!), 'image/png'));
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], fileName as string, { type: 'image/png' }));
+        const input = document.querySelector<HTMLInputElement>('#wallpaperInput')!;
+        input.files = dt.files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      [w, h, left, right, name],
+    );
+  }
+
+  test('wallpaper: exact size is a perfect fit, other sizes are cropped around a chosen position, and it survives a reload', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const canvas = page.locator('canvas.studio-canvas');
+    await expect(canvas).toBeVisible();
+    const [cw, ch] = await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
+    // A layout that always draws its own background (the plain grid shows the StreamBird slate with nobody on camera).
+    await page.selectOption('#layoutSelect', 'anchor-slide-right');
+
+    await addWallpaper(page, cw, ch, '#ff0000', '#ff0000', 'exact.png');
+    await expect(page.getByTestId('wallpaper-fit')).toContainText('Perfect fit');
+    await page.waitForTimeout(700);
+    const exact = await pixel(page, cw / 2, 2);
+    expect(exact[0]).toBeGreaterThan(200);
+    expect(exact[2]).toBeLessThan(60);
+
+    // Wider than 16:9: the sides are cropped, and the position slider decides which side stays.
+    await addWallpaper(page, 2400, 900, '#ff0000', '#0000ff', 'wide.png');
+    await expect(page.getByTestId('wallpaper-fit')).toContainText('left and right are cropped');
+    await expect(page.getByTestId('wallpaper-fit')).toContainText(`provide ${cw}x${ch}`);
+    await page.locator('#wallpaperFocusX').fill('0');
+    await page.waitForTimeout(700);
+    const leftKept = await pixel(page, cw / 2, 2);
+    expect(leftKept[0]).toBeGreaterThan(200);
+    expect(leftKept[2]).toBeLessThan(60);
+    await page.locator('#wallpaperFocusX').fill('100');
+    await page.waitForTimeout(500);
+    const rightKept = await pixel(page, cw / 2, 2);
+    expect(rightKept[2]).toBeGreaterThan(200);
+    expect(rightKept[0]).toBeLessThan(60);
+
+    // Darken laid over it.
+    await page.locator('#wallpaperDim').fill('50');
+    await page.waitForTimeout(400);
+    const dimmed = await pixel(page, cw / 2, 2);
+    expect(dimmed[2]).toBeGreaterThan(90);
+    expect(dimmed[2]).toBeLessThan(160);
+
+    // It is still there after a reload, with the same crop position.
+    await page.reload();
+    await expect(page.getByTestId('wallpaper-fit')).toContainText('wide.png');
+    await expect(page.locator('#wallpaperFocusX')).toHaveValue('100');
+    await page.waitForTimeout(1200);
+    const afterReload = await pixel(page, cw / 2, 2);
+    expect(afterReload[2]).toBeGreaterThan(90);
+    expect(afterReload[0]).toBeLessThan(60);
+
+    // Removing it brings the canvas style background back.
+    await page.getByRole('button', { name: /Remove wallpaper/ }).click();
+    await expect(page.getByTestId('wallpaper-fit')).toHaveCount(0);
+    await page.waitForTimeout(700);
+    const removed = await pixel(page, cw / 2, 2);
+    expect(removed[0] + removed[1] + removed[2]).toBeLessThan(30); // Vanilla's plain black
+  });
+
   test("the quality menu is limited to the plan's maximum", async ({ page, context, browser }) => {
     const { api } = await signIn(context);
     const id = await newStream(context, api);
