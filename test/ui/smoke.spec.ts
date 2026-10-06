@@ -368,6 +368,36 @@ test.describe('host studio', () => {
     await expect(page.getByText(/cannot be changed once the stream is created/)).toBeVisible();
   });
 
+  test.describe('with a camera (the config provides a fake one)', () => {
+    test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      await page.addInitScript(() => {
+        const w = window as unknown as { __gum: unknown[] };
+        w.__gum = [];
+        const orig = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = (c?: MediaStreamConstraints) => {
+          w.__gum.push(c);
+          return orig(c);
+        };
+      });
+      const requested = () => page.evaluate(() => ((window as unknown as { __gum: { video: unknown }[] }).__gum[0] ?? {}).video);
+
+      const tall = await newStream(context, api, 'portrait');
+      await page.goto(`/streams/${tall}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      expect(await requested()).toEqual({ aspectRatio: { ideal: 9 / 16 } });
+      await expect(page.getByText(/landscape webcam is cropped to the middle/)).toBeVisible();
+
+      const wide = await newStream(context, api);
+      await page.goto(`/streams/${wide}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      expect(await requested()).toBe(true);
+      await expect(page.getByText(/landscape webcam is cropped to the middle/)).toHaveCount(0);
+    });
+  });
+
   test("the quality menu is limited to the plan's maximum", async ({ page, context, browser }) => {
     const { api } = await signIn(context);
     const id = await newStream(context, api);

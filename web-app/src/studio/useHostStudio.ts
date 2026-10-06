@@ -278,6 +278,8 @@ export function useHostStudio(streamId: string | undefined) {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const scenesRef = useRef<Scene[]>([]);
   scenesRef.current = scenes;
+  const orientationRef = useRef<StreamOrientation>('landscape');
+  orientationRef.current = stream?.orientation ?? 'landscape';
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -708,14 +710,16 @@ export function useHostStudio(streamId: string | undefined) {
       ctx.globalAlpha = 0.55;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `600 ${Math.round(rect.h * 0.07)}px system-ui, sans-serif`;
-      ctx.fillText('Slides', rect.x + rect.w / 2, rect.y + rect.h / 2 - rect.h * 0.04);
-      ctx.font = `400 ${Math.round(rect.h * 0.04)}px system-ui, sans-serif`;
-      ctx.fillText('Add images in the Slides panel, or share your screen', rect.x + rect.w / 2, rect.y + rect.h / 2 + rect.h * 0.05);
+      const base = Math.min(rect.w, rect.h); // = rect.h on a landscape card; the width on a tall vertical one
+      const maxW = rect.w * 0.9;
+      ctx.font = `600 ${Math.round(base * 0.07)}px system-ui, sans-serif`;
+      ctx.fillText('Slides', rect.x + rect.w / 2, rect.y + rect.h / 2 - base * 0.04, maxW);
+      ctx.font = `400 ${Math.round(base * 0.04)}px system-ui, sans-serif`;
+      ctx.fillText('Add images in the Slides panel, or share your screen', rect.x + rect.w / 2, rect.y + rect.h / 2 + base * 0.05, maxW);
       ctx.restore();
     }
     ctx.strokeStyle = theme.border;
-    ctx.lineWidth = Math.max(2, rect.h * 0.003);
+    ctx.lineWidth = Math.max(2, Math.min(rect.w, rect.h) * 0.003);
     ctx.beginPath();
     ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
     ctx.stroke();
@@ -1187,7 +1191,10 @@ export function useHostStudio(streamId: string | undefined) {
   const startCamera = useCallback(async () => {
     setCameraStarting(true);
     try {
-      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
+      // A vertical stream asks for a tall picture (a phone gives one; a webcam gives the closest mode it has,
+      // so less of the frame is cropped away). `ideal` never fails the request.
+      const video: MediaTrackConstraints | boolean = orientationRef.current === 'portrait' ? { aspectRatio: { ideal: 9 / 16 } } : true;
+      const localStream = await navigator.mediaDevices.getUserMedia({ video, audio: AUDIO_CONSTRAINTS });
       const videoEl = document.createElement('video');
       videoEl.srcObject = localStream;
       videoEl.muted = true;
