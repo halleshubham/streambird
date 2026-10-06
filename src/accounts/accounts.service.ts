@@ -179,6 +179,22 @@ export class AccountsService {
     return this.accounts.save(account);
   }
 
+  /**
+   * Puts an account on a plan with no expiry (a review account: see users/review-accounts.ts). Only moves an
+   * account that is still on the free plan, so it never overrides something an admin or a payment set.
+   */
+  async assignReviewPlan(accountId: string, planKey: string): Promise<Account> {
+    const account = await this.findByIdOrThrow(accountId);
+    if (account.planKey !== 'free') return account;
+    const plan = await this.plans.findByKeyOrThrow(planKey);
+    if (plan.kind !== 'monthly') throw new ForbiddenException(`Plan '${planKey}' is not a monthly plan`);
+    account.planKey = plan.key;
+    account.planExpiresAt = null; // no expiry: assigned, not bought
+    if ((Object.values(PlanTier) as string[]).includes(plan.key)) account.currentTier = plan.key as PlanTier;
+    account.includedHoursPerMonth = String(account.includedHoursOverride ?? plan.includedHoursPerMonth ?? 0);
+    return this.accounts.save(account);
+  }
+
   /** Grants (or extends from now) a day pass. Used by the superadmin today; a payment webhook later. */
   async grantDayPass(accountId: string, planKey = 'day_pass'): Promise<Account> {
     const pass = await this.plans.findByKeyOrThrow(planKey);

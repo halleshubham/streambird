@@ -141,6 +141,10 @@ Admin-switchable (off by default). Monthly plans are sold as **autopay** (Razorp
 
 While the old host is listed in `LEGACY_HOSTS`: page visits on it 301-redirect to the new domain (same path and query, so old `/join/<token>` invite links, bookmarks and calendar entries keep working), and browser writes from it still pass the CSRF origin check in `AccountGuard`. `/api`, `/health` and `/socket.io` are never redirected (API-key clients, OAuth callbacks still registered on the old host, Coolify's health check). Sessions are per hostname, so users log in again on the new domain; connected YouTube/Facebook accounts are unaffected. Remove the old host from `LEGACY_HOSTS` (and its redirect URIs) once nothing uses it. MediaMTX's own hostnames (`MEDIAMTX_*`) are independent of this.
 
+## Review accounts
+
+To let an outside reviewer (for example Google's OAuth verification team) use the product without anyone approving them: set `REVIEW_ACCOUNT_EMAILS` (comma separated) in the environment. Those exact addresses are approved the first time they sign in and put on `REVIEW_ACCOUNT_PLAN` (default `pro`, no expiry). They still have to sign in (a Google test account is easiest, there is no password or fixed code), nobody else is affected, and a superadmin is never touched. Remove the address when the review is over.
+
 ## Vertical (9:16) streams
 
 A stream's **Shape** is chosen when it is created or scheduled (`orientation`: `landscape`, the default, or `portrait`) and cannot be changed afterwards. A vertical stream's studio canvas is 720x1280 (HD) or 1080x1920 (Full HD), the layouts stack instead of sitting side by side, and the "technical difficulties" slate is `glitch-slate-portrait.mp4` so the video keeps its size if the host drops (`GLITCH_SLATE_PORTRAIT_URL` overrides it). One encode fans out to every destination, so Twitch and Facebook receive the vertical picture too; YouTube shows it full-screen on phones. The relay copies the video, so it needs no change.
