@@ -29,7 +29,7 @@ import { GoogleOAuthService } from '../auth/google-oauth.service';
 
 const YOUTUBE_OAUTH_STATE_COOKIE_NAME = 'sb_yt_oauth_state';
 const YOUTUBE_OAUTH_BASE_PATH = '/api/platform-connections/youtube';
-const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube';
+const DEFAULT_YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 
 const FACEBOOK_API_BASE = 'https://graph.facebook.com/v23.0';
 const FACEBOOK_OAUTH_STATE_COOKIE_NAME = 'sb_fb_oauth_state';
@@ -98,7 +98,8 @@ export class PlatformConnectionsController {
 
   /**
    * Step 1 of connecting a YouTube destination: redirects to Google's
-   * consent screen asking for the `youtube` scope specifically (distinct
+   * consent screen asking for the YouTube scope specifically (`youtube.force-ssl` unless
+   * GOOGLE_YOUTUBE_SCOPE overrides it; distinct
    * from, and in addition to, whatever scope a "Sign in with Google"
    * login already granted -- this is a separate grant against the same
    * OAuth client). `state` follows the exact same short-lived-httpOnly-
@@ -121,7 +122,7 @@ export class PlatformConnectionsController {
     res.redirect(
       this.googleOAuth.buildAuthUrl(state, {
         redirectUri: this.config.get<string>('google.youtubeRedirectUri') ?? '',
-        scope: YOUTUBE_SCOPE,
+        scope: this.config.get<string>('google.youtubeScope') || DEFAULT_YOUTUBE_SCOPE,
         accessType: 'offline',
         prompt: 'consent',
       }),

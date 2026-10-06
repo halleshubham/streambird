@@ -63,6 +63,19 @@ test.describe('signed-in user', () => {
     await expect(page.getByText(/Free plan/)).toBeVisible();
   });
 
+  test('the Connections page explains the YouTube permission, and the privacy policy names the same scope', async ({ page, context }) => {
+    await signIn(context);
+    await page.goto('/connections');
+    const note = page.getByTestId('youtube-permission-note');
+    await expect(note).toContainText('Create the live broadcast');
+    await expect(note).toContainText('What it never does');
+    await expect(page.getByText('See, edit, and permanently delete your YouTube videos, ratings, comments and captions').first()).toBeVisible();
+    await expect(page.getByRole('link', { name: /Connect YouTube/ })).toHaveAttribute('href', '/api/platform-connections/youtube/connect');
+
+    await page.goto('/privacy');
+    await expect(page.getByText('https://www.googleapis.com/auth/youtube.force-ssl')).toBeVisible();
+  });
+
   test('billing page: explains payments are off, then offers autopay as the default once an admin turns them on', async ({ page, context, browser }) => {
     await signIn(context);
     await page.goto('/billing');

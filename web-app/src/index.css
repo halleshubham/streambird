@@ -1872,3 +1872,14 @@ a.icon-btn--danger {
 }
 .billing-price span { font-size: 13px; font-weight: 400; }
 .billing-current { margin-bottom: 12px; }
+
+.youtube-permission-note {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent, #7c3aed);
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 4px;
+  font-size: 14px;
+}
+.youtube-permission-note p { margin: 4px 0; }
+.youtube-permission-note ul { margin: 4px 0 8px 18px; padding: 0; }
