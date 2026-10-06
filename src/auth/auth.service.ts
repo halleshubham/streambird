@@ -5,6 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { isReviewAccountEmail } from '../users/review-accounts';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -49,6 +50,12 @@ export class AuthService {
 
   async requestCode(rawEmail: string): Promise<void> {
     const email = this.normalizeEmail(rawEmail);
+    // Review accounts sign in without a code, so there is nothing to send (see review-accounts.ts).
+    if (isReviewAccountEmail(email)) return;
+    await this.sendCode(email);
+  }
+
+  private async sendCode(email: string): Promise<void> {
     const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 
     const loginCode = this.loginCodes.create({
@@ -115,7 +122,7 @@ export class AuthService {
     meta: SessionMeta,
   ): Promise<{ user: User; account: Account; token: string; expiresAt: Date }> {
     const email = this.normalizeEmail(rawEmail);
-    await this.consumeLoginCode(email, code);
+    if (!isReviewAccountEmail(email)) await this.consumeLoginCode(email, code);
 
     const { user, account } = await this.usersService.findOrCreateForEmail(email);
     this.rejectSuperadmin(user);
@@ -172,7 +179,7 @@ export class AuthService {
    */
   async superadminLogin(rawEmail: string, password: string): Promise<void> {
     const user = await this.checkSuperadminPassword(rawEmail, password);
-    await this.requestCode(user.email);
+    await this.sendCode(this.normalizeEmail(user.email)); // never skipped, even if listed as a review account
   }
 
   /**

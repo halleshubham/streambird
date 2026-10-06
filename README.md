@@ -143,7 +143,7 @@ While the old host is listed in `LEGACY_HOSTS`: page visits on it 301-redirect t
 
 ## Review accounts
 
-To let an outside reviewer (for example Google's OAuth verification team) use the product without anyone approving them: set `REVIEW_ACCOUNT_EMAILS` (comma separated) in the environment. Those exact addresses are approved the first time they sign in and put on `REVIEW_ACCOUNT_PLAN` (default `pro`, no expiry). They still have to sign in (a Google test account is easiest, there is no password or fixed code), nobody else is affected, and a superadmin is never touched. Remove the address when the review is over.
+To let an outside reviewer (for example Google's OAuth verification team) use the product without anyone approving them: set `REVIEW_ACCOUNT_EMAILS` (comma separated) in the environment. Those exact addresses are approved the first time they sign in and put on `REVIEW_ACCOUNT_PLAN` (default `pro`, no expiry). They also skip the emailed login code: typing the address on the login page (or "Sign in with Google") signs in, so list throwaway test accounts only. Nobody else is affected, and a superadmin is never touched (still password + code). Remove the address when the review is over.
 
 ## Vertical (9:16) streams
 
