@@ -22,7 +22,8 @@ describeE2E('review account: listed addresses can use the product without an adm
   const signInByCode = async (email: string) => {
     const c = new Client(h.baseUrl);
     await c.post('/auth/request-code', { email });
-    const verified = await c.post('/auth/verify-code', { email, code: h.mailbox.codes.get(email) });
+    // A listed address gets no email, so the code is whatever the person types (unused).
+    const verified = await c.post('/auth/verify-code', { email, code: h.mailbox.codes.get(email) ?? '000000' });
     expect(verified.status).toBe(200);
     return { c, verified };
   };
@@ -45,6 +46,16 @@ describeE2E('review account: listed addresses can use the product without an adm
     expect(dest.status).toBe(201);
     const stream = await c.post('/streams', { title: 'review', destinationConnectionIds: [dest.body.id] });
     expect(stream.status).toBe(201);
+  });
+
+  it('a listed address is sent no login code, an unlisted one is', async () => {
+    await new Client(h.baseUrl).post('/auth/request-code', { email: reviewer });
+    expect(h.mailbox.codes.get(reviewer)).toBeUndefined();
+    const other = `${ids('other')('c')}@e2e.test`.toLowerCase();
+    await new Client(h.baseUrl).post('/auth/request-code', { email: other });
+    expect(h.mailbox.codes.get(other)).toBeDefined();
+    const wrong = await new Client(h.baseUrl).post('/auth/verify-code', { email: other, code: '000000' });
+    expect(wrong.status).toBe(400);
   });
 
   it('any other address is still held for approval', async () => {

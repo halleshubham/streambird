@@ -206,6 +206,33 @@ describe('AuthService', () => {
     expect(stored.lastSeenAt).not.toBeNull();
   });
 
+  describe('review accounts', () => {
+    afterEach(() => {
+      delete process.env.REVIEW_ACCOUNT_EMAILS;
+    });
+
+    it('sends no code and signs in without one', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = 'a@x.com, Review@Example.com';
+      const { service, emailService, loginCodes } = await build();
+
+      await service.requestCode('review@example.com');
+      expect(emailService.sendLoginCode).not.toHaveBeenCalled();
+      expect(loginCodes.rows.size).toBe(0);
+
+      const res = await service.verifyCode(' Review@example.com ', '000000', {});
+      expect(res.token).toBeTruthy();
+    });
+
+    it('still requires a code for any address that is not listed', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = 'review@example.com';
+      const { service, emailService } = await build();
+
+      await service.requestCode('other@example.com');
+      expect(emailService.sendLoginCode).toHaveBeenCalledTimes(1);
+      await expect(service.verifyCode('other@example.com', '000000', {})).rejects.toThrow();
+    });
+  });
+
   it('resolveSession returns null for an unknown token', async () => {
     const { service } = await build();
     expect(await service.resolveSession('not-a-real-token')).toBeNull();

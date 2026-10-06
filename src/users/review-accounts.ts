@@ -5,10 +5,10 @@
  * outside reviewer (for example Google's OAuth verification team) can sign in with a test Google
  * account and use StreamBird straight away.
  *
- * Deliberately narrow: it only ever approves the exact addresses the operator set in the
- * environment, it needs the address to have signed in (so the reviewer proves they own it, with
- * Google, a code or Facebook), it never touches a superadmin, and there is no password or fixed
- * code involved.
+ * Deliberately narrow: it only ever applies to the exact addresses the operator set in the
+ * environment, it never touches a superadmin, and there is no password or fixed code. Listed
+ * addresses also skip the emailed login code (typing the address on the login page signs in), so
+ * only list throwaway test accounts, and remove them when the review is over.
  */
 export function reviewAccountEmails(env: NodeJS.ProcessEnv = process.env): Set<string> {
   return new Set(
