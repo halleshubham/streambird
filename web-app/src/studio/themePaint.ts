@@ -3,7 +3,7 @@ import { WALLPAPER_MAX_SIDE, coverCrop, type CanvasTheme } from './compose';
 const cache = new Map<string, HTMLCanvasElement>();
 
 function paintPattern(ctx: CanvasRenderingContext2D, theme: CanvasTheme, w: number, h: number): void {
-  const unit = h / 720; // patterns scale with the canvas so they look the same at every resolution
+  const unit = Math.min(w / 1280, h / 720); // patterns scale with the canvas so they look the same at every resolution (and in portrait)
   ctx.save();
   ctx.strokeStyle = theme.patternColor;
   ctx.fillStyle = theme.patternColor;

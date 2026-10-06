@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
-import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, describeWallpaperFit, getTheme } from '../../studio/compose';
+import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
@@ -57,6 +57,7 @@ export function HostStudioPage() {
     inviteMessage,
     participants,
     layoutMode,
+    orientation,
     themeId,
     slides,
     slideIndex,
@@ -80,6 +81,7 @@ export function HostStudioPage() {
     startingScheduled,
     actions,
   } = useHostStudio(streamId);
+  const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
   const onStageCount = participants.filter((p) => p.onStage && !p.isScreenShare).length;
 
   async function copyWatchUrl(id: string, url: string) {
@@ -155,9 +157,9 @@ export function HostStudioPage() {
       <div className="studio-video-wrap">
         <canvas
           ref={canvasRef}
-          width={RESOLUTIONS[resolution].width}
-          height={RESOLUTIONS[resolution].height}
-          className="studio-canvas"
+          width={canvasSize.width}
+          height={canvasSize.height}
+          className={`studio-canvas${orientation === 'portrait' ? ' studio-canvas--portrait' : ''}`}
         />
       </div>
 
@@ -184,11 +186,14 @@ export function HostStudioPage() {
               >
                 {Object.entries(RESOLUTIONS)
                   .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
-                  .map(([value, r]) => (
-                    <option key={value} value={value}>
-                      {r.label}
-                    </option>
-                  ))}
+                  .map(([value, r]) => {
+                    const dims = canvasSizeFor(r, orientation);
+                    return (
+                      <option key={value} value={value}>
+                        {orientation === 'portrait' ? `${r.label.replace(/\s*\(.*\)/, '')} vertical (${dims.width}x${dims.height})` : r.label}
+                      </option>
+                    );
+                  })}
               </select>
             </label>
           </div>
@@ -390,6 +395,7 @@ export function HostStudioPage() {
           {LAYOUT_BY_ID[layoutMode].description}
           {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
             ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
+          {orientation === 'portrait' && ' Vertical stream: a landscape webcam is cropped to the middle of the frame, so keep yourself centred (a phone camera held upright fills it).'}
           {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
             ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
         </p>
@@ -418,7 +424,7 @@ export function HostStudioPage() {
           <ImagePlus size={14} /> Wallpaper
         </label>
         <p className="docs-hint">
-          Best: an image of exactly <strong>{RESOLUTIONS[resolution].width}x{RESOLUTIONS[resolution].height}</strong> (16:9, for the selected quality). Any other image is
+          Best: an image of exactly <strong>{canvasSize.width}x{canvasSize.height}</strong> ({aspectLabel(canvasSize.width, canvasSize.height)}, for the selected quality). Any other image is
           cropped to fit, and you choose what stays. It shows behind the tiles in every layout; the canvas style still sets the ticker and tile colours.
         </p>
         <input
@@ -433,7 +439,7 @@ export function HostStudioPage() {
         {wallpaper && (
           <>
             <p className="docs-hint" data-testid="wallpaper-fit">
-              <strong>{wallpaper.name}</strong>: {describeWallpaperFit(wallpaper.width, wallpaper.height, RESOLUTIONS[resolution].width, RESOLUTIONS[resolution].height).message}
+              <strong>{wallpaper.name}</strong>: {describeWallpaperFit(wallpaper.width, wallpaper.height, canvasSize.width, canvasSize.height).message}
             </p>
             <label htmlFor="wallpaperFocusX">Crop position, left to right: {wallpaperFocus.x}%</label>
             <input

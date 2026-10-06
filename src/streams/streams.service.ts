@@ -80,6 +80,7 @@ export class StreamsService {
       description: dto.description ?? null,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
       visibility: dto.visibility ?? null,
+      orientation: dto.orientation ?? 'landscape',
       status: StreamStatus.SCHEDULED,
     });
     await this.liveStreams.save(stream);

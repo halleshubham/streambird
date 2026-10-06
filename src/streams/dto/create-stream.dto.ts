@@ -30,6 +30,11 @@ export class CreateStreamDto {
   @IsIn(['public', 'unlisted', 'private'])
   visibility?: 'public' | 'unlisted' | 'private';
 
+  /** 'landscape' (16:9, default) or 'portrait' (9:16 vertical). One encode goes to every destination, so it applies to all of them. */
+  @IsOptional()
+  @IsIn(['landscape', 'portrait'])
+  orientation?: 'landscape' | 'portrait';
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(50) // matches Cloudflare's per-live-input output ceiling

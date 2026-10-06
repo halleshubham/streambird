@@ -159,7 +159,7 @@ export class MediaMtxService {
    * drawtext and no volume we control, but it can always reach the public
    * internet (it already pushes RTMPS out).
    */
-  private buildSlateCommand(rtmpDests: string[], slateUrl: string): string | null {
+  private buildSlateCommand(rtmpDests: string[], slateUrl: string, orientation: 'landscape' | 'portrait' = 'landscape'): string | null {
     const validDests = rtmpDests.filter((dest) => /^rtmps?:\/\//i.test(dest));
     if (validDests.length === 0 || !/^https?:\/\//i.test(slateUrl)) return null;
 
@@ -187,8 +187,10 @@ export class MediaMtxService {
     // replaced, so a slate already looping from the old copy is unaffected)
     // and loop that. If the fetch or the local /tmp fails, fall back to
     // encoding the same-named .png so a slate always starts.
-    const local = '/tmp/glitch-slate.mp4';
-    const part = '/tmp/.glitch-slate.$$.mp4';
+    // One cached copy per orientation: a landscape and a portrait stream can be on their slates at once.
+    const suffix = orientation === 'portrait' ? '-portrait' : '';
+    const local = `/tmp/glitch-slate${suffix}.mp4`;
+    const part = `/tmp/.glitch-slate${suffix}.$$.mp4`;
     const fetchClip = `ffmpeg -nostdin -loglevel error -y -i ${this.shQuote(slateUrl)} -c copy -f mp4 ${part} && mv -f ${part} ${local}`;
     const loopClip = [
       'exec ffmpeg -nostdin -loglevel warning',
@@ -203,11 +205,16 @@ export class MediaMtxService {
     return `if ${fetchClip}; then ${loopClip}; else ${encodeStill(fallbackPng)}; fi`;
   }
 
-  private get slateUrl(): string {
-    const override = this.config.get<string>('mediamtx.slateUrl');
+  /**
+   * The slate must have the same shape as the stream: a 16:9 slate dropped into a vertical
+   * stream (or the reverse) changes the video size mid-broadcast, which platforms handle badly.
+   */
+  private slateUrlFor(orientation: 'landscape' | 'portrait'): string {
+    const portrait = orientation === 'portrait';
+    const override = this.config.get<string>(portrait ? 'mediamtx.slatePortraitUrl' : 'mediamtx.slateUrl');
     if (override) return override;
     const base = (this.config.get<string>('publicBaseUrl') ?? '').replace(/\/$/, '');
-    return `${base}/glitch-slate.mp4`;
+    return `${base}/${portrait ? 'glitch-slate-portrait.mp4' : 'glitch-slate.mp4'}`;
   }
 
   /**
@@ -217,11 +224,11 @@ export class MediaMtxService {
    * stops ffmpeg). Idempotent: an already-existing slate path is left
    * running. Returns whether a slate is now running; best-effort, never throws.
    */
-  async startSlate(pathName: string, rtmpDests: string[]): Promise<boolean> {
+  async startSlate(pathName: string, rtmpDests: string[], orientation: 'landscape' | 'portrait' = 'landscape'): Promise<boolean> {
     const apiUrl = this.apiUrl;
     if (!apiUrl) return false;
 
-    const runOnInit = this.buildSlateCommand(rtmpDests, this.slateUrl);
+    const runOnInit = this.buildSlateCommand(rtmpDests, this.slateUrlFor(orientation), orientation);
     if (!runOnInit) return false;
 
     try {

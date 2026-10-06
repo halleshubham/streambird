@@ -81,6 +81,7 @@ export function gutterFor(w: number, h: number): number {
 
 /** Where the slide area and the people tiles go for a layout on a w x h canvas. 'grid'/'spotlight' have no fixed geometry. */
 export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometry {
+  if (h > w) return computePortraitLayout(id, w, h);
   const m = gutterFor(w, h);
   switch (id) {
     case 'podcast-split': {
@@ -169,6 +170,107 @@ export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometr
       return {
         slide: fit16x9(r(m, m, w - 2 * m, topH)),
         people: [0, 1, 2, 3].map((i) => r(m + i * (tw + m), 2 * m + topH, tw, th)),
+      };
+    }
+    default:
+      return { slide: null, people: [] };
+  }
+}
+
+
+/** A 16:9 band across the full width at the given y, no taller than maxH. */
+function band(w: number, m: number, y: number, maxH: number): Rect {
+  const width = Math.min(w - 2 * m, (maxH * 16) / 9);
+  const height = (width * 9) / 16;
+  return r(m + (w - 2 * m - width) / 2, y, width, height);
+}
+
+/**
+ * The same layouts for a vertical (9:16) canvas. Tiles stack and the slide becomes a 16:9
+ * band across the top (or bottom), because a side-by-side arrangement would leave
+ * everything tiny in a narrow frame.
+ */
+function computePortraitLayout(id: LayoutId, w: number, h: number): LayoutGeometry {
+  const m = gutterFor(w, h);
+  const full = w - 2 * m;
+  switch (id) {
+    case 'podcast-split': {
+      const th = (h - 3 * m) / 2;
+      return { slide: null, people: [r(m, m, full, th), r(m, 2 * m + th, full, th)] };
+    }
+    case 'podcast-center': {
+      const tw = w * 0.84;
+      const th = (tw * 3) / 4;
+      const gap = 2 * m;
+      const y0 = (h - (2 * th + gap)) / 2;
+      const x = (w - tw) / 2;
+      return { slide: null, people: [r(x, y0, tw, th), r(x, y0 + th + gap, tw, th)] };
+    }
+    case 'podcast-pip': {
+      const pw = w * 0.36;
+      const ph = (pw * 4) / 3;
+      return { slide: null, people: [r(m, m, full, h - 2 * m), r(w - 2 * m - pw, h - 2 * m - ph, pw, ph)] };
+    }
+    case 'pod-slide-left': {
+      // slide on top, host above guest
+      const slide = band(w, m, m, (h - 3 * m) * 0.32);
+      const y0 = slide.y + slide.h + m;
+      const th = (h - m - y0 - m) / 2;
+      return { slide, people: [r(m, y0, full, th), r(m, y0 + th + m, full, th)] };
+    }
+    case 'pod-slide-top': {
+      // slide on top, host and guest side by side
+      const slide = band(w, m, m, (h - 3 * m) * 0.32);
+      const y0 = slide.y + slide.h + m;
+      const tw = (w - 3 * m) / 2;
+      const th = Math.min(h - m - y0, (tw * 4) / 3);
+      return { slide, people: [r(m, y0, tw, th), r(2 * m + tw, y0, tw, th)] };
+    }
+    case 'pod-slide-pip': {
+      const pw = w * 0.36;
+      const ph = (pw * 4) / 3;
+      const y = h - 2 * m - ph;
+      return { slide: r(m, m, full, h - 2 * m), people: [r(w - 2 * m - 2 * pw - m, y, pw, ph), r(w - 2 * m - pw, y, pw, ph)] };
+    }
+    case 'anchor-slide-right': {
+      // anchor on top, slide below
+      const b = band(w, m, 0, (h - 3 * m) * 0.4);
+      const slide = r(b.x, h - m - b.h, b.w, b.h);
+      return { slide, people: [r(m, m, full, h - 3 * m - b.h)] };
+    }
+    case 'anchor-slide-left': {
+      // slide on top, anchor below
+      const slide = band(w, m, m, (h - 3 * m) * 0.4);
+      const y0 = slide.y + slide.h + m;
+      return { slide, people: [r(m, y0, full, h - m - y0)] };
+    }
+    case 'anchor-pip': {
+      const pw = w * 0.4;
+      const ph = (pw * 4) / 3;
+      return { slide: r(m, m, full, h - 2 * m), people: [r(w - 2 * m - pw, h - 2 * m - ph, pw, ph)] };
+    }
+    case 'panel-slide-left': {
+      // slide on top, a 2x2 block below
+      const slide = band(w, m, m, (h - 3 * m) * 0.32);
+      const y0 = slide.y + slide.h + m;
+      const tw = (w - 3 * m) / 2;
+      const th = (h - m - y0 - m) / 2;
+      return {
+        slide,
+        people: [r(m, y0, tw, th), r(2 * m + tw, y0, tw, th), r(m, y0 + th + m, tw, th), r(2 * m + tw, y0 + th + m, tw, th)],
+      };
+    }
+    case 'panel-slide-top': {
+      // slide on top, the host large, three guests in a row beneath
+      const slide = band(w, m, m, (h - 3 * m) * 0.32);
+      const y0 = slide.y + slide.h + m;
+      const rem = h - m - y0;
+      const hostH = rem * 0.55;
+      const rowY = y0 + hostH + m;
+      const tw = (w - 4 * m) / 3;
+      return {
+        slide,
+        people: [r(m, y0, full, hostH), r(m, rowY, tw, h - m - rowY), r(2 * m + tw, rowY, tw, h - m - rowY), r(3 * m + 2 * tw, rowY, tw, h - m - rowY)],
       };
     }
     default:
@@ -407,6 +509,23 @@ export function getTheme(id: string | null | undefined): CanvasTheme {
   return (id && THEME_BY_ID[id]) || THEME_BY_ID[DEFAULT_THEME_ID];
 }
 
+// ---- Orientation -----------------------------------------------------------
+
+export type StreamOrientation = 'landscape' | 'portrait';
+
+/** The canvas size for a quality (given in landscape terms) in the stream's orientation: portrait swaps width and height. */
+export function canvasSizeFor(size: { width: number; height: number }, orientation: StreamOrientation | null | undefined): { width: number; height: number } {
+  return orientation === 'portrait' ? { width: size.height, height: size.width } : { width: size.width, height: size.height };
+}
+
+/** '16:9', '9:16', or the raw ratio for anything else. */
+export function aspectLabel(w: number, h: number): string {
+  const a = w / h;
+  if (Math.abs(a - 16 / 9) < 0.01) return '16:9';
+  if (Math.abs(a - 9 / 16) < 0.01) return '9:16';
+  return `${w}:${h}`;
+}
+
 // ---- Branding ranges -------------------------------------------------------
 
 /** Slider ranges, in canvas pixels. The defaults are the studio's original values. */
@@ -482,7 +601,7 @@ export function describeWallpaperFit(srcW: number, srcH: number, dstW: number, d
       crop: 'none',
       kept: 1,
       upscaled,
-      message: `Right shape (16:9) at ${srcW}x${srcH}; it is scaled to ${ideal}. Nothing is cropped.${soft}`,
+      message: `Right shape (${aspectLabel(dstW, dstH)}) at ${srcW}x${srcH}; it is scaled to ${ideal}. Nothing is cropped.${soft}`,
     };
   }
   if (srcAspect > dstAspect) {

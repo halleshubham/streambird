@@ -53,6 +53,7 @@ export interface ScheduleDetail {
   title: string;
   description: string | null;
   visibility: string | null;
+  orientation: 'landscape' | 'portrait';
   status: StreamStatus;
   scheduledAt: Date;
   timezone: string;
@@ -131,6 +132,7 @@ export class StreamSchedulingService {
         expectedDurationMinutes: dto.durationMinutes ?? null,
         guestNotes: dto.guestNotes?.trim() || null,
         visibility: dto.visibility ?? null,
+        orientation: dto.orientation ?? 'landscape',
         isScheduledEvent: true,
         precreateOnPlatforms: !!dto.createOnPlatforms,
         status: StreamStatus.SCHEDULED,
@@ -618,6 +620,7 @@ export class StreamSchedulingService {
       title: stream.title,
       description: stream.description,
       visibility: stream.visibility,
+      orientation: stream.orientation ?? 'landscape',
       status: stream.status,
       scheduledAt: stream.scheduledAt!,
       timezone: stream.timezone ?? 'UTC',

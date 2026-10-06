@@ -22,6 +22,7 @@ import {
   type CanvasTheme,
   type LayoutId,
   type Rect,
+  type StreamOrientation,
 } from './compose';
 import {
   loadSlide,
@@ -277,6 +278,8 @@ export function useHostStudio(streamId: string | undefined) {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const scenesRef = useRef<Scene[]>([]);
   scenesRef.current = scenes;
+  const orientationRef = useRef<StreamOrientation>('landscape');
+  orientationRef.current = stream?.orientation ?? 'landscape';
   const [activeSceneName, setActiveSceneName] = useState<string | null>(null);
   const [destinations, setDestinations] = useState<StreamStatusDestination[]>([]);
   const [connectionById, setConnectionById] = useState<Map<string, PlatformConnection>>(new Map());
@@ -448,29 +451,30 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
 
-    const unit = h / 720;
+    const unit = Math.min(w / 1280, h / 720); // identical to h / 720 on a 16:9 canvas; keeps type inside a narrow portrait one
+    const top = h > w ? h * 0.34 : h * 0.24;
     const cx = w / 2;
     const img = brandImgRef.current;
     const logoH = 150 * unit;
     const bob = Math.sin(now / 700) * 6 * unit;
     if (img.complete && img.naturalHeight > 0) {
       const logoW = (img.naturalWidth / img.naturalHeight) * logoH;
-      ctx.drawImage(img, cx - logoW / 2, h * 0.24 + bob, logoW, logoH);
+      ctx.drawImage(img, cx - logoW / 2, top + bob, logoW, logoH);
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#fff';
     ctx.font = `700 ${64 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-    ctx.fillText('StreamBird', cx, h * 0.24 + logoH + 80 * unit);
+    ctx.fillText('StreamBird', cx, top + logoH + 80 * unit);
     const title = streamTitleRef.current;
     if (title) {
       ctx.fillStyle = '#d9ccff';
       ctx.font = `500 ${30 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-      ctx.fillText(title.length > 60 ? `${title.slice(0, 57)}…` : title, cx, h * 0.24 + logoH + 135 * unit);
+      ctx.fillText(title.length > 60 ? `${title.slice(0, 57)}…` : title, cx, top + logoH + 135 * unit);
     }
     ctx.fillStyle = '#9d8fc9';
     ctx.font = `400 ${22 * unit}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-    ctx.fillText('Live now — we’ll be on screen in a moment', cx, h * 0.24 + logoH + 180 * unit);
+    ctx.fillText('Live now — we’ll be on screen in a moment', cx, top + logoH + 180 * unit);
     ctx.textAlign = 'start';
   }
 
@@ -642,11 +646,13 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   function drawGrid(entries: Participant[], w: number, h: number, now: number) {
-    const cols = Math.ceil(Math.sqrt(entries.length));
+    // Landscape: as many columns as rows or more (unchanged). A vertical canvas stacks instead, so two people
+    // are one above the other rather than two slim columns.
+    const portrait = h > w;
+    const cols = portrait ? Math.ceil(entries.length / Math.ceil(Math.sqrt(entries.length))) : Math.ceil(Math.sqrt(entries.length));
     const rows = Math.ceil(entries.length / cols);
-    void rows;
     const cellW = w / cols;
-    const cellH = h / Math.ceil(entries.length / cols);
+    const cellH = h / rows;
     entries.forEach((p, i) => {
       drawCell(p, (i % cols) * cellW, Math.floor(i / cols) * cellH, cellW, cellH, now);
     });
@@ -704,14 +710,16 @@ export function useHostStudio(streamId: string | undefined) {
       ctx.globalAlpha = 0.55;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `600 ${Math.round(rect.h * 0.07)}px system-ui, sans-serif`;
-      ctx.fillText('Slides', rect.x + rect.w / 2, rect.y + rect.h / 2 - rect.h * 0.04);
-      ctx.font = `400 ${Math.round(rect.h * 0.04)}px system-ui, sans-serif`;
-      ctx.fillText('Add images in the Slides panel, or share your screen', rect.x + rect.w / 2, rect.y + rect.h / 2 + rect.h * 0.05);
+      const base = Math.min(rect.w, rect.h); // = rect.h on a landscape card; the width on a tall vertical one
+      const maxW = rect.w * 0.9;
+      ctx.font = `600 ${Math.round(base * 0.07)}px system-ui, sans-serif`;
+      ctx.fillText('Slides', rect.x + rect.w / 2, rect.y + rect.h / 2 - base * 0.04, maxW);
+      ctx.font = `400 ${Math.round(base * 0.04)}px system-ui, sans-serif`;
+      ctx.fillText('Add images in the Slides panel, or share your screen', rect.x + rect.w / 2, rect.y + rect.h / 2 + base * 0.05, maxW);
       ctx.restore();
     }
     ctx.strokeStyle = theme.border;
-    ctx.lineWidth = Math.max(2, rect.h * 0.003);
+    ctx.lineWidth = Math.max(2, Math.min(rect.w, rect.h) * 0.003);
     ctx.beginPath();
     ctx.roundRect(rect.x, rect.y, rect.w, rect.h, radius);
     ctx.stroke();
@@ -1183,7 +1191,10 @@ export function useHostStudio(streamId: string | undefined) {
   const startCamera = useCallback(async () => {
     setCameraStarting(true);
     try {
-      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: AUDIO_CONSTRAINTS });
+      // A vertical stream asks for a tall picture (a phone gives one; a webcam gives the closest mode it has,
+      // so less of the frame is cropped away). `ideal` never fails the request.
+      const video: MediaTrackConstraints | boolean = orientationRef.current === 'portrait' ? { aspectRatio: { ideal: 9 / 16 } } : true;
+      const localStream = await navigator.mediaDevices.getUserMedia({ video, audio: AUDIO_CONSTRAINTS });
       const videoEl = document.createElement('video');
       videoEl.srcObject = localStream;
       videoEl.muted = true;
@@ -1872,6 +1883,7 @@ export function useHostStudio(streamId: string | undefined) {
     inviteMessage,
     participants: participantsView,
     layoutMode,
+    orientation: (stream?.orientation ?? 'landscape') as StreamOrientation,
     themeId,
     slides,
     slideIndex,

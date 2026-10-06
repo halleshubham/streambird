@@ -142,14 +142,14 @@ test.describe('admin', () => {
 });
 
 test.describe('host studio', () => {
-  async function newStream(context: BrowserContext, api: APIRequestContext): Promise<string> {
+  async function newStream(context: BrowserContext, api: APIRequestContext, orientation?: 'landscape' | 'portrait'): Promise<string> {
     const conn = await (
       await api.post(`${APP}/api/platform-connections/twitch/manual`, {
         data: { label: 'UI Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
         headers: apiHeaders,
       })
     ).json();
-    const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'UI smoke stream', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+    const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'UI smoke stream', orientation, destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
     return stream.id as string;
   }
 
@@ -320,6 +320,82 @@ test.describe('host studio', () => {
     await page.waitForTimeout(700);
     const removed = await pixel(page, cw / 2, 2);
     expect(removed[0] + removed[1] + removed[2]).toBeLessThan(30); // Vanilla's plain black
+  });
+
+  test('a vertical stream gets a 9:16 canvas, vertical qualities and vertical layouts', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api, 'portrait');
+    await page.goto(`/streams/${id}/studio`);
+    const canvas = page.locator('canvas.studio-canvas');
+    await expect(canvas).toBeVisible();
+
+    // HD is 1280x720 for a landscape stream; for a vertical one it is 720x1280.
+    expect(await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height])).toEqual([720, 1280]);
+    await expect(canvas).toHaveClass(/studio-canvas--portrait/);
+    await expect(page.locator('.studio-resolution-select option:checked')).toContainText('720x1280');
+
+    // The wallpaper hint asks for a vertical image.
+    await expect(page.locator('#wallpaperInput').locator('xpath=preceding-sibling::p[1]')).toContainText('720x1280');
+
+    // A slide layout stacks: the slide is a band across the top, the anchor below it.
+    await page.selectOption('#layoutSelect', 'anchor-slide-left');
+    await addSolidSlides(page, ['#ff0000']);
+    await page.waitForTimeout(900);
+    const [cw, ch] = await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
+    const slide = computeLayout('anchor-slide-left', cw, ch).slide!;
+    expect(slide.w).toBeGreaterThan(cw * 0.8); // spans the width
+    expect(slide.y + slide.h).toBeLessThan(ch / 2); // in the top half
+    const px = await pixel(page, Math.round(slide.x + slide.w / 2), Math.round(slide.y + slide.h / 2));
+    expect(px[0]).toBeGreaterThan(200);
+    expect(px[2]).toBeLessThan(60);
+
+    // The same stream in landscape is untouched.
+    const wide = await newStream(context, api);
+    await page.goto(`/streams/${wide}/studio`);
+    expect(await page.locator('canvas.studio-canvas').evaluate((c: HTMLCanvasElement) => [c.width, c.height])).toEqual([1280, 720]);
+  });
+
+  test('the new-stream form offers a vertical shape and explains what it means', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Form Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    await page.goto('/streams/new');
+    await expect(page.locator('#orientation')).toHaveValue('landscape');
+    await page.selectOption('#orientation', 'portrait');
+    await expect(page.getByText(/Twitch and Facebook get it vertical too/)).toBeVisible();
+    await expect(page.getByText(/cannot be changed once the stream is created/)).toBeVisible();
+  });
+
+  test.describe('with a camera (the config provides a fake one)', () => {
+    test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      await page.addInitScript(() => {
+        const w = window as unknown as { __gum: unknown[] };
+        w.__gum = [];
+        const orig = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = (c?: MediaStreamConstraints) => {
+          w.__gum.push(c);
+          return orig(c);
+        };
+      });
+      const requested = () => page.evaluate(() => ((window as unknown as { __gum: { video: unknown }[] }).__gum[0] ?? {}).video);
+
+      const tall = await newStream(context, api, 'portrait');
+      await page.goto(`/streams/${tall}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      expect(await requested()).toEqual({ aspectRatio: { ideal: 9 / 16 } });
+      await expect(page.getByText(/landscape webcam is cropped to the middle/)).toBeVisible();
+
+      const wide = await newStream(context, api);
+      await page.goto(`/streams/${wide}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      expect(await requested()).toBe(true);
+      await expect(page.getByText(/landscape webcam is cropped to the middle/)).toHaveCount(0);
+    });
   });
 
   test("the quality menu is limited to the plan's maximum", async ({ page, context, browser }) => {

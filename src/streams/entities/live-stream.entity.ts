@@ -30,6 +30,10 @@ export class LiveStream {
   @Column({ type: 'text', nullable: true })
   visibility!: string | null;
 
+  /** 'landscape' (16:9, the default) or 'portrait' (9:16, e.g. YouTube vertical): the shape of the studio canvas and of the idle slate. Fixed when the stream is created. */
+  @Column({ type: 'text', default: 'landscape' })
+  orientation!: 'landscape' | 'portrait';
+
   @Column({ type: 'enum', enum: StreamStatus, default: StreamStatus.SCHEDULED })
   status!: StreamStatus;
 

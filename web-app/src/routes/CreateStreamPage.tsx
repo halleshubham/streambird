@@ -20,6 +20,7 @@ export function CreateStreamPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'private'>('unlisted');
+  const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<'now' | 'schedule'>('now');
   const [whenLocal, setWhenLocal] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60_000)));
@@ -84,6 +85,7 @@ export function CreateStreamPage() {
           title: title.trim() || 'Untitled stream',
           description: description.trim() || undefined,
           visibility,
+          orientation,
           scheduledAt: when.toISOString(),
           timezone: timeZone,
           durationMinutes: duration,
@@ -114,6 +116,7 @@ export function CreateStreamPage() {
         title: title.trim() || 'Untitled stream',
         description: description.trim() || undefined,
         visibility,
+        orientation,
         destinationConnectionIds: [...selected],
       });
       navigate(`/streams/${stream.id}/studio`);
@@ -180,6 +183,21 @@ export function CreateStreamPage() {
           <option value="private">Private</option>
         </select>
         <p className="field-hint">Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.</p>
+
+        <label htmlFor="orientation">Shape</label>
+        <select
+          id="orientation"
+          value={orientation}
+          onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
+        >
+          <option value="landscape">Landscape (16:9) -- the usual</option>
+          <option value="portrait">Vertical (9:16) -- phones, YouTube Shorts live</option>
+        </select>
+        <p className="field-hint">
+          {orientation === 'portrait'
+            ? 'The same vertical picture goes to every destination you pick, so Twitch and Facebook get it vertical too. YouTube shows it full-screen on phones. This cannot be changed once the stream is created.'
+            : 'Every destination gets the same 16:9 picture.'}
+        </p>
 
         {mode === 'schedule' && (
           <>
