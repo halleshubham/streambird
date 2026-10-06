@@ -71,6 +71,7 @@ describe('UsersService', () => {
         return { account, apiKey: 'sb_fake' };
       }),
       remove: jest.fn(async (_accountId: string) => undefined),
+      assignReviewPlan: jest.fn(async (accountId: string, planKey: string) => ({ id: accountId, planKey })),
     };
 
     // createdAt is needed for find()'s sort -- the real repo's column
@@ -380,6 +381,82 @@ describe('UsersService', () => {
       const reactivated = await service.reactivateUser(user.id);
 
       expect(reactivated.suspendedAt).toBeNull();
+    });
+  });
+
+  describe('review accounts (REVIEW_ACCOUNT_EMAILS)', () => {
+    const saved = { emails: process.env.REVIEW_ACCOUNT_EMAILS, plan: process.env.REVIEW_ACCOUNT_PLAN };
+    afterEach(() => {
+      if (saved.emails === undefined) delete process.env.REVIEW_ACCOUNT_EMAILS;
+      else process.env.REVIEW_ACCOUNT_EMAILS = saved.emails;
+      if (saved.plan === undefined) delete process.env.REVIEW_ACCOUNT_PLAN;
+      else process.env.REVIEW_ACCOUNT_PLAN = saved.plan;
+    });
+
+    it('approves a listed address on its first sign-in and gives it the review plan, with no admin step', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = ' Reviewer@Example.com , other@example.com ';
+      const { service, accountsService } = await build();
+
+      const { user } = await service.findOrCreateForEmail('reviewer@example.com');
+
+      expect(user.approvedAt).toBeInstanceOf(Date);
+      expect(user.role).toBe(Role.USER);
+      expect(accountsService.assignReviewPlan).toHaveBeenCalledWith(user.accountId, 'pro');
+    });
+
+    it('leaves every other address pending approval, as before', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = 'reviewer@example.com';
+      const { service, accountsService } = await build();
+
+      const { user } = await service.findOrCreateForEmail('someone@example.com');
+
+      expect(user.approvedAt).toBeNull();
+      expect(accountsService.assignReviewPlan).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the setting is empty or unset', async () => {
+      delete process.env.REVIEW_ACCOUNT_EMAILS;
+      const { service, accountsService } = await build();
+      const { user } = await service.findOrCreateForEmail('reviewer@example.com');
+      expect(user.approvedAt).toBeNull();
+      expect(accountsService.assignReviewPlan).not.toHaveBeenCalled();
+    });
+
+    it('approves an existing, still-pending account the next time its address signs in, and is idempotent', async () => {
+      delete process.env.REVIEW_ACCOUNT_EMAILS;
+      const { service } = await build();
+      const first = await service.findOrCreateForEmail('reviewer@example.com');
+      expect(first.user.approvedAt).toBeNull();
+
+      process.env.REVIEW_ACCOUNT_EMAILS = 'reviewer@example.com';
+      const second = await service.findOrCreateForEmail('reviewer@example.com');
+      expect(second.user.approvedAt).toBeInstanceOf(Date);
+      const stamp = second.user.approvedAt!.getTime();
+      const third = await service.findOrCreateForEmail('reviewer@example.com');
+      expect(third.user.approvedAt!.getTime()).toBe(stamp);
+    });
+
+    it('uses REVIEW_ACCOUNT_PLAN when set', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = 'reviewer@example.com';
+      process.env.REVIEW_ACCOUNT_PLAN = 'starter';
+      const { service, accountsService } = await build();
+      const { user } = await service.findOrCreateForEmail('reviewer@example.com');
+      expect(accountsService.assignReviewPlan).toHaveBeenCalledWith(user.accountId, 'starter');
+    });
+
+    it('never touches a superadmin', async () => {
+      process.env.REVIEW_ACCOUNT_EMAILS = 'root@example.com';
+      const { service, users, accountsService } = await build();
+      const created = await service.findOrCreateForEmail('root@example.com');
+      created.user.role = Role.SUPERADMIN;
+      created.user.approvedAt = null;
+      await users.save(created.user);
+      accountsService.assignReviewPlan.mockClear();
+
+      const again = await service.findOrCreateForEmail('root@example.com');
+
+      expect(again.user.approvedAt).toBeNull();
+      expect(accountsService.assignReviewPlan).not.toHaveBeenCalled();
     });
   });
 });

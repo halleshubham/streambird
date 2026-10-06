@@ -12,6 +12,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { Company } from '../companies/entities/company.entity';
 import { Role } from '../common/enums/role.enum';
+import { isReviewAccountEmail, reviewAccountPlanKey } from './review-accounts';
 
 const MIN_EMAIL_SEARCH_LENGTH = 2;
 const MAX_EMAIL_SEARCH_RESULTS = 50;
@@ -58,7 +59,7 @@ export class UsersService {
   async findOrCreateForEmail(email: string): Promise<{ user: User; account: Account }> {
     const existing = await this.findByEmail(email);
     if (existing) {
-      return { user: existing, account: existing.account };
+      return this.provisionIfReviewAccount(existing, existing.account);
     }
 
     const { account } = await this.accountsService.create({ name: email });
@@ -70,7 +71,22 @@ export class UsersService {
     });
     await this.users.save(user);
 
-    return { user, account };
+    return this.provisionIfReviewAccount(user, account);
+  }
+
+  /**
+   * An email the operator listed in REVIEW_ACCOUNT_EMAILS is approved on sign-in and given a plan
+   * with room to try the product (see review-accounts.ts). Anyone else is returned untouched.
+   * Idempotent, and never applied to a superadmin.
+   */
+  private async provisionIfReviewAccount(user: User, account: Account): Promise<{ user: User; account: Account }> {
+    if (user.role === Role.SUPERADMIN || !isReviewAccountEmail(user.email)) return { user, account };
+    if (!user.approvedAt) {
+      user.approvedAt = new Date();
+      await this.users.save(user);
+    }
+    const updated = await this.accountsService.assignReviewPlan(user.accountId, reviewAccountPlanKey());
+    return { user, account: updated ?? account };
   }
 
   /**
