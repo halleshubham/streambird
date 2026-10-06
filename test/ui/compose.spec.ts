@@ -4,7 +4,10 @@ import {
   LAYOUTS,
   LAYOUT_BY_ID,
   THEMES,
+  WALLPAPER_RANGES,
   computeLayout,
+  coverCrop,
+  describeWallpaperFit,
   getTheme,
   isFramedLayout,
   isLayoutId,
@@ -142,5 +145,62 @@ test.describe('branding ranges', () => {
     expect(newsBarHeight(18)).toBe(36);
     expect(newsBarHeight(12)).toBe(36);
     expect(newsBarHeight(60)).toBeGreaterThan(100);
+  });
+});
+
+test.describe('wallpaper', () => {
+  test('coverCrop: an exact-size image is untouched, anything else fills the frame and crops the overflow', () => {
+    expect(coverCrop(1920, 1080, 1920, 1080)).toEqual({ sx: 0, sy: 0, sw: 1920, sh: 1080 });
+    // 4:3 into 16:9: full width kept, 900 of 1200 rows kept.
+    expect(coverCrop(1600, 1200, 1280, 720)).toEqual({ sx: 0, sy: 150, sw: 1600, sh: 900 });
+    expect(coverCrop(1600, 1200, 1280, 720, 50, 0).sy).toBe(0);
+    expect(coverCrop(1600, 1200, 1280, 720, 50, 100).sy).toBe(300);
+    // Wider than 16:9: full height kept, the sides are cropped.
+    const wide = coverCrop(2400, 900, 1280, 720, 0, 50);
+    expect(wide).toEqual({ sx: 0, sy: 0, sw: 1600, sh: 900 });
+    expect(coverCrop(2400, 900, 1280, 720, 100, 50).sx).toBe(800);
+  });
+
+  test('coverCrop never reads outside the image, whatever the focus', () => {
+    for (const [sw, sh] of [[640, 360], [1000, 1000], [3000, 500], [500, 3000], [1920, 1080]] as const) {
+      for (const f of [-20, 0, 33, 50, 100, 250]) {
+        const c = coverCrop(sw, sh, 1280, 720, f, f);
+        expect(c.sx).toBeGreaterThanOrEqual(0);
+        expect(c.sy).toBeGreaterThanOrEqual(0);
+        expect(c.sx + c.sw).toBeLessThanOrEqual(sw + 1e-6);
+        expect(c.sy + c.sh).toBeLessThanOrEqual(sh + 1e-6);
+        // The crop has the canvas's shape, so the result is never stretched.
+        expect(Math.abs(c.sw / c.sh - 1280 / 720)).toBeLessThan(0.001);
+      }
+    }
+  });
+
+  test('describeWallpaperFit tells the host exactly what will happen', () => {
+    const exact = describeWallpaperFit(1920, 1080, 1920, 1080);
+    expect(exact.exact).toBe(true);
+    expect(exact.message).toMatch(/Perfect fit/);
+
+    const scaled = describeWallpaperFit(3840, 2160, 1920, 1080);
+    expect(scaled).toMatchObject({ exact: false, crop: 'none', upscaled: false });
+    expect(scaled.message).toMatch(/Nothing is cropped/);
+
+    const wide = describeWallpaperFit(2400, 900, 1280, 720);
+    expect(wide.crop).toBe('sides');
+    expect(wide.kept).toBeCloseTo(0.667, 2);
+    expect(wide.message).toMatch(/left and right are cropped \(67% of the width stays\)/);
+    expect(wide.message).toMatch(/provide 1280x720/);
+
+    const tall = describeWallpaperFit(1600, 1200, 1280, 720);
+    expect(tall.crop).toBe('top-bottom');
+    expect(tall.message).toMatch(/top and bottom are cropped \(75% of the height stays\)/);
+
+    const small = describeWallpaperFit(640, 360, 1920, 1080);
+    expect(small.upscaled).toBe(true);
+    expect(small.message).toMatch(/enlarged and may look soft/);
+  });
+
+  test('ranges: focus is 0-100 centred by default, dim starts at 0 so a new wallpaper is shown as it is', () => {
+    expect(WALLPAPER_RANGES.focus).toEqual({ min: 0, max: 100, default: 50 });
+    expect(WALLPAPER_RANGES.dim.default).toBe(0);
   });
 });

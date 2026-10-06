@@ -12,6 +12,7 @@ import {
   LAYOUT_BY_ID,
   SCREEN_SHARE_ID,
   THEME_BY_ID,
+  WALLPAPER_RANGES,
   computeLayout,
   getTheme,
   isFramedLayout,
@@ -22,7 +23,16 @@ import {
   type LayoutId,
   type Rect,
 } from './compose';
-import { loadSlide, paintBackground, type SlideImage } from './themePaint';
+import {
+  loadSlide,
+  loadWallpaper,
+  paintBackground,
+  paintWallpaper,
+  wallpaperFromDataUrl,
+  wallpaperToDataUrl,
+  type SlideImage,
+  type Wallpaper,
+} from './themePaint';
 
 // Mirrors StreamDetailPage's own poll interval -- see that page for why
 // 10s (fast enough to catch a destination's platformStatus climbing from
@@ -181,6 +191,39 @@ function savePersisted(streamId: string, patch: Partial<PersistedStudioState>) {
   }
 }
 
+// The wallpaper lives under its own key: it can be large, and a full storage quota must not
+// stop the layout/branding state above from saving.
+interface PersistedWallpaper {
+  name: string;
+  width: number;
+  height: number;
+  dataUrl: string;
+  focusX: number;
+  focusY: number;
+  dim: number;
+}
+const wallpaperKey = (streamId: string) => `streambird:studio:${streamId}:wallpaper:v1`;
+
+function loadPersistedWallpaper(streamId: string): PersistedWallpaper | null {
+  try {
+    const raw = localStorage.getItem(wallpaperKey(streamId));
+    return raw ? (JSON.parse(raw) as PersistedWallpaper) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Returns false when it could not be saved (storage full or blocked): the wallpaper then lasts for this session only. */
+function savePersistedWallpaper(streamId: string, wp: PersistedWallpaper | null): boolean {
+  try {
+    if (wp) localStorage.setItem(wallpaperKey(streamId), JSON.stringify(wp));
+    else localStorage.removeItem(wallpaperKey(streamId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * All of the imperative WebRTC/Web Audio/canvas-compositing logic from the
  * original web/host.js, ported behind a hook -- the underlying protocol
@@ -226,6 +269,9 @@ export function useHostStudio(streamId: string | undefined) {
   const [themeId, setThemeIdState] = useState<string>(DEFAULT_THEME_ID);
   const [slides, setSlides] = useState<{ name: string }[]>([]);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [wallpaper, setWallpaperState] = useState<{ name: string; width: number; height: number } | null>(null);
+  const [wallpaperFocus, setWallpaperFocusState] = useState<{ x: number; y: number }>({ x: WALLPAPER_RANGES.focus.default, y: WALLPAPER_RANGES.focus.default });
+  const [wallpaperDim, setWallpaperDimState] = useState<number>(WALLPAPER_RANGES.dim.default);
   // Scenes only need to persist for the lifetime of this studio session --
   // in-memory React state, deliberately not persisted to the backend/DB.
   const [scenes, setScenes] = useState<Scene[]>([]);
@@ -253,6 +299,9 @@ export function useHostStudio(streamId: string | undefined) {
   const themeIdRef = useRef<string>(DEFAULT_THEME_ID);
   const slidesRef = useRef<SlideImage[]>([]);
   const slideIndexRef = useRef(0);
+  const wallpaperRef = useRef<Wallpaper | null>(null);
+  const wallpaperDataUrlRef = useRef<string | null>(null);
+  const wallpaperSettingsRef = useRef({ x: WALLPAPER_RANGES.focus.default as number, y: WALLPAPER_RANGES.focus.default as number, dim: WALLPAPER_RANGES.dim.default as number });
   const newsScrollXRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const whipPcRef = useRef<RTCPeerConnection | null>(null);
@@ -738,6 +787,11 @@ export function useHostStudio(streamId: string | undefined) {
       lastEntriesKeyRef.current = entriesKey;
 
       paintBackground(ctx, getTheme(themeIdRef.current), w, h);
+      const wp = wallpaperRef.current;
+      if (wp) {
+        const ws = wallpaperSettingsRef.current;
+        paintWallpaper(ctx, wp, w, h, ws.x, ws.y, ws.dim);
+      }
 
       const layout = layoutModeRef.current;
       if (isFramedLayout(layout)) {
@@ -1027,6 +1081,21 @@ export function useHostStudio(streamId: string | undefined) {
             logoAppearedAtRef.current = performance.now();
           };
           img.src = saved.logoDataUrl;
+        }
+
+        const savedWp = loadPersistedWallpaper(streamRow.id);
+        if (savedWp) {
+          wallpaperFromDataUrl(savedWp.dataUrl, savedWp.name, savedWp.width, savedWp.height)
+            .then((wp) => {
+              if (cancelled) return;
+              wallpaperRef.current = wp;
+              wallpaperDataUrlRef.current = savedWp.dataUrl;
+              wallpaperSettingsRef.current = { x: savedWp.focusX, y: savedWp.focusY, dim: savedWp.dim };
+              setWallpaperState({ name: wp.name, width: wp.width, height: wp.height });
+              setWallpaperFocusState({ x: savedWp.focusX, y: savedWp.focusY });
+              setWallpaperDimState(savedWp.dim);
+            })
+            .catch(() => savePersistedWallpaper(streamRow.id, null));
         }
 
         hostTokenRef.current = hostToken;
@@ -1374,6 +1443,68 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   // ---- Canvas style and slides ------------------------------------------
+
+  // ---- Wallpaper -----------------------------------------------------------
+
+  function persistWallpaper() {
+    if (!stream) return true;
+    const wp = wallpaperRef.current;
+    if (!wp || !wallpaperDataUrlRef.current) return savePersistedWallpaper(stream.id, null);
+    const ws = wallpaperSettingsRef.current;
+    return savePersistedWallpaper(stream.id, {
+      name: wp.name,
+      width: wp.width,
+      height: wp.height,
+      dataUrl: wallpaperDataUrlRef.current,
+      focusX: ws.x,
+      focusY: ws.y,
+      dim: ws.dim,
+    });
+  }
+
+  async function setWallpaperFile(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setStatus({ text: 'A wallpaper must be an image file (JPG, PNG, WebP...).', isError: true });
+      return;
+    }
+    try {
+      const wp = await loadWallpaper(file);
+      beginTransition();
+      wallpaperRef.current = wp;
+      wallpaperDataUrlRef.current = wallpaperToDataUrl(wp);
+      wallpaperSettingsRef.current = { x: WALLPAPER_RANGES.focus.default, y: WALLPAPER_RANGES.focus.default, dim: wallpaperSettingsRef.current.dim };
+      setWallpaperState({ name: wp.name, width: wp.width, height: wp.height });
+      setWallpaperFocusState({ x: WALLPAPER_RANGES.focus.default, y: WALLPAPER_RANGES.focus.default });
+      if (!persistWallpaper()) {
+        setStatus({ text: 'Wallpaper added. It is too large to keep after a reload, so you will need to add it again then.', isError: false });
+      }
+    } catch {
+      setStatus({ text: `Could not read "${file.name}" as an image.`, isError: true });
+    }
+  }
+
+  function clearWallpaper() {
+    beginTransition();
+    wallpaperRef.current = null;
+    wallpaperDataUrlRef.current = null;
+    setWallpaperState(null);
+    persistWallpaper();
+  }
+
+  function setWallpaperFocus(x: number, y: number) {
+    const clamp = (v: number) => Math.min(WALLPAPER_RANGES.focus.max, Math.max(WALLPAPER_RANGES.focus.min, v));
+    wallpaperSettingsRef.current = { ...wallpaperSettingsRef.current, x: clamp(x), y: clamp(y) };
+    setWallpaperFocusState({ x: clamp(x), y: clamp(y) });
+    persistWallpaper();
+  }
+
+  function setWallpaperDim(dim: number) {
+    const v = Math.min(WALLPAPER_RANGES.dim.max, Math.max(WALLPAPER_RANGES.dim.min, dim));
+    wallpaperSettingsRef.current = { ...wallpaperSettingsRef.current, dim: v };
+    setWallpaperDimState(v);
+    persistWallpaper();
+  }
 
   const setTheme = useCallback((id: string) => {
     if (!(id in THEME_BY_ID)) return;
@@ -1744,6 +1875,9 @@ export function useHostStudio(streamId: string | undefined) {
     themeId,
     slides,
     slideIndex,
+    wallpaper,
+    wallpaperFocus,
+    wallpaperDim,
     resolution,
     maxResolution,
     cameraStarting,
@@ -1781,6 +1915,10 @@ export function useHostStudio(streamId: string | undefined) {
       setNameFontSize,
       setNewsFontSize,
       setTheme,
+      setWallpaperFile,
+      clearWallpaper,
+      setWallpaperFocus,
+      setWallpaperDim,
       addSlides,
       clearSlides,
       nextSlide,

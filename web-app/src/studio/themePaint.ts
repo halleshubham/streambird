@@ -1,4 +1,4 @@
-import type { CanvasTheme } from './compose';
+import { WALLPAPER_MAX_SIDE, coverCrop, type CanvasTheme } from './compose';
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -118,5 +118,60 @@ export async function loadSlide(file: File): Promise<SlideImage> {
     return { name: file.name, canvas };
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+export interface Wallpaper {
+  name: string;
+  /** The image as stored: at most WALLPAPER_MAX_SIDE on the long side. */
+  canvas: HTMLCanvasElement;
+  /** The original file's size, which is what the host is told about. */
+  width: number;
+  height: number;
+}
+
+function toStoredCanvas(img: HTMLImageElement | HTMLCanvasElement, w: number, h: number): HTMLCanvasElement {
+  const scale = Math.min(1, WALLPAPER_MAX_SIDE / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+/** Decodes an image file into a wallpaper (downscaled to at most 1920px on its long side). */
+export async function loadWallpaper(file: File): Promise<Wallpaper> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('image has no size');
+    return { name: file.name, canvas: toStoredCanvas(img, img.naturalWidth, img.naturalHeight), width: img.naturalWidth, height: img.naturalHeight };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** JPEG copy of the stored wallpaper for localStorage (a wallpaper has no transparency worth keeping). */
+export function wallpaperToDataUrl(wp: Wallpaper): string {
+  return wp.canvas.toDataURL('image/jpeg', 0.85);
+}
+
+/** Rebuilds a wallpaper from a saved data URL. */
+export async function wallpaperFromDataUrl(dataUrl: string, name: string, width: number, height: number): Promise<Wallpaper> {
+  const img = new Image();
+  img.src = dataUrl;
+  await img.decode();
+  return { name, canvas: toStoredCanvas(img, img.naturalWidth, img.naturalHeight), width, height };
+}
+
+/** Draws the wallpaper over the whole canvas, "cover"-cropped around the focus point, then darkens it by dim percent. */
+export function paintWallpaper(ctx: CanvasRenderingContext2D, wp: Wallpaper, w: number, h: number, focusX: number, focusY: number, dim: number): void {
+  const c = coverCrop(wp.canvas.width, wp.canvas.height, w, h, focusX, focusY);
+  ctx.drawImage(wp.canvas, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
+  if (dim > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, dim / 100)})`;
+    ctx.fillRect(0, 0, w, h);
   }
 }
