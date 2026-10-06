@@ -154,7 +154,7 @@ export class GlitchRecoveryService implements OnModuleInit, OnModuleDestroy {
       dests.push(`${stream.ingestUrl.replace(/\/$/, '')}/${stream.streamKey}`);
     }
 
-    if (await this.mediaMtx.startSlate(streamId, dests)) {
+    if (await this.mediaMtx.startSlate(streamId, dests, stream.orientation ?? 'landscape')) {
       entry.glitchStartedAt = now;
       this.logger.warn(`Stream ${streamId} lost its publisher -- showing slate for up to ${GLITCH_WINDOW_MS / 1000}s`);
     } else {

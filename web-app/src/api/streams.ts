@@ -18,6 +18,7 @@ export function createStream(dto: {
   description?: string;
   scheduledAt?: string;
   visibility?: 'public' | 'unlisted' | 'private';
+  orientation?: 'landscape' | 'portrait';
   destinationConnectionIds: string[];
 }): Promise<Stream> {
   return api.post('/streams', dto);
@@ -43,6 +44,7 @@ export interface ScheduleStreamInput {
   durationMinutes?: number;
   guestNotes?: string;
   visibility?: 'public' | 'unlisted' | 'private';
+  orientation?: 'landscape' | 'portrait';
   destinationConnectionIds: string[];
   guestEmails?: string[];
   invitePassword?: string;
@@ -50,7 +52,7 @@ export interface ScheduleStreamInput {
   createOnPlatforms?: boolean;
 }
 
-export type UpdateScheduleInput = Partial<Omit<ScheduleStreamInput, 'guestEmails' | 'invitePassword'>> & {
+export type UpdateScheduleInput = Partial<Omit<ScheduleStreamInput, 'guestEmails' | 'invitePassword' | 'orientation'>> & {
   notifyGuests?: boolean;
 };
 

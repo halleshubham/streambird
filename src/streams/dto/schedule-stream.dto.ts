@@ -59,6 +59,11 @@ export class ScheduleStreamDto {
   @IsIn(['public', 'unlisted', 'private'])
   visibility?: 'public' | 'unlisted' | 'private';
 
+  /** 'landscape' (16:9, default) or 'portrait' (9:16 vertical), fixed once scheduled. */
+  @IsOptional()
+  @IsIn(['landscape', 'portrait'])
+  orientation?: 'landscape' | 'portrait';
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(50)

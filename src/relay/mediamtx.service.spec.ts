@@ -154,6 +154,31 @@ describe('MediaMtxService', () => {
     expect(body.runOnInit).toContain("-f tee '[f=flv]rtmp://live.twitch.tv/app/k1|[f=flv]rtmps://b.example.com/live/k2'");
   });
 
+  it('a portrait stream gets the portrait slate, cached separately from the landscape one', async () => {
+    const post = jest.fn().mockReturnValue(of({}));
+    const service = buildService({ post });
+
+    await service.startSlate('stream-1', ['rtmp://live.twitch.tv/app/k1'], 'portrait');
+
+    const [, body] = post.mock.calls[0];
+    expect(body.runOnInit).toContain("-i 'https://app.example.com/glitch-slate-portrait.mp4' -c copy -f mp4");
+    expect(body.runOnInit).toContain('-re -stream_loop -1 -i /tmp/glitch-slate-portrait.mp4');
+    expect(body.runOnInit).not.toContain('/tmp/glitch-slate.mp4');
+    // The still-image fallback is the portrait one too.
+    expect(body.runOnInit).toContain("-loop 1 -framerate 30 -i 'https://app.example.com/glitch-slate-portrait.png'");
+  });
+
+  it('a portrait slate override URL is separate from the landscape one', async () => {
+    const post = jest.fn().mockReturnValue(of({}));
+    const service = buildService({ post }, { 'mediamtx.slatePortraitUrl': 'https://cdn.example.com/tall.mp4', 'mediamtx.slateUrl': 'https://cdn.example.com/wide.mp4' });
+
+    await service.startSlate('s1', ['rtmp://a/b'], 'portrait');
+    await service.startSlate('s2', ['rtmp://a/b']);
+
+    expect(post.mock.calls[0][1].runOnInit).toContain("-i 'https://cdn.example.com/tall.mp4'");
+    expect(post.mock.calls[1][1].runOnInit).toContain("-i 'https://cdn.example.com/wide.mp4'");
+  });
+
   it('still encodes a still-image slate URL (legacy override) with libx264', async () => {
     const post = jest.fn().mockReturnValue(of({}));
     const service = buildService({ post }, { 'mediamtx.slateUrl': 'https://cdn.example.com/slate.png' });

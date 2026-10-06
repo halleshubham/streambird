@@ -5,6 +5,8 @@ import {
   LAYOUT_BY_ID,
   THEMES,
   WALLPAPER_RANGES,
+  aspectLabel,
+  canvasSizeFor,
   computeLayout,
   coverCrop,
   describeWallpaperFit,
@@ -18,11 +20,14 @@ import {
 
 // Pure geometry and registry checks for the studio canvas (no browser involved).
 
-const SIZES: [number, number][] = [
+const LANDSCAPE_SIZES: [number, number][] = [
   [640, 360],
   [1280, 720],
   [1920, 1080],
 ];
+// The same qualities for a vertical (9:16) stream.
+const PORTRAIT_SIZES: [number, number][] = LANDSCAPE_SIZES.map(([w, h]) => [h, w]);
+const SIZES: [number, number][] = [...LANDSCAPE_SIZES, ...PORTRAIT_SIZES];
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inside = (r: Rect, w: number, h: number) => r.x >= 0 && r.y >= 0 && r.x + r.w <= w && r.y + r.h <= h && r.w > 0 && r.h > 0;
 
@@ -57,7 +62,8 @@ test.describe('layouts', () => {
             expect(overlaps(all[i], all[j]), `${layout.id} ${w}x${h}: ${i} overlaps ${j}`).toBe(false);
           }
         }
-        if (geo.slide) expect(Math.abs(geo.slide.w / geo.slide.h - 16 / 9)).toBeLessThan(0.02);
+        // Slides hug a 16:9 shape, except in a vertical frame where an inset layout gives the slide the whole card.
+        if (geo.slide && !(h > w && layout.id.endsWith('-pip'))) expect(Math.abs(geo.slide.w / geo.slide.h - 16 / 9)).toBeLessThan(0.02);
       }
     });
   }
@@ -202,5 +208,40 @@ test.describe('wallpaper', () => {
   test('ranges: focus is 0-100 centred by default, dim starts at 0 so a new wallpaper is shown as it is', () => {
     expect(WALLPAPER_RANGES.focus).toEqual({ min: 0, max: 100, default: 50 });
     expect(WALLPAPER_RANGES.dim.default).toBe(0);
+  });
+});
+
+test.describe('vertical (9:16) streams', () => {
+  test('canvasSizeFor swaps width and height for portrait only', () => {
+    expect(canvasSizeFor({ width: 1280, height: 720 }, 'landscape')).toEqual({ width: 1280, height: 720 });
+    expect(canvasSizeFor({ width: 1280, height: 720 }, undefined)).toEqual({ width: 1280, height: 720 });
+    expect(canvasSizeFor({ width: 1280, height: 720 }, 'portrait')).toEqual({ width: 720, height: 1280 });
+    expect(canvasSizeFor({ width: 1920, height: 1080 }, 'portrait')).toEqual({ width: 1080, height: 1920 });
+  });
+
+  test('aspectLabel names the shapes', () => {
+    expect(aspectLabel(1280, 720)).toBe('16:9');
+    expect(aspectLabel(720, 1280)).toBe('9:16');
+    expect(aspectLabel(1000, 1000)).toBe('1000:1000');
+  });
+
+  test('every framed layout stacks rather than going side by side in a portrait frame', () => {
+    for (const layout of LAYOUTS.filter((l) => isFramedLayout(l.id))) {
+      const geo = computeLayout(layout.id, 1080, 1920);
+      // Nothing in a vertical frame is wider than the frame, and the slide (if any) is above or below the people.
+      for (const t of geo.people) expect(t.w).toBeLessThanOrEqual(1080);
+      if (geo.slide && !layout.id.endsWith('-pip')) {
+        const slide = geo.slide;
+        for (const t of geo.people) expect(t.y >= slide.y + slide.h || t.y + t.h <= slide.y, `${layout.id}`).toBe(true);
+      }
+    }
+  });
+
+  test('a wallpaper for a vertical stream is judged against the vertical canvas', () => {
+    expect(describeWallpaperFit(720, 1280, 720, 1280).message).toMatch(/Perfect fit/);
+    expect(describeWallpaperFit(1440, 2560, 720, 1280).message).toMatch(/Right shape \(9:16\)/);
+    const landscapeImage = describeWallpaperFit(1920, 1080, 720, 1280);
+    expect(landscapeImage.crop).toBe('sides');
+    expect(landscapeImage.message).toMatch(/provide 720x1280/);
   });
 });

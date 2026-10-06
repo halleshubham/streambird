@@ -12,6 +12,7 @@ export class StreamResponseDto {
   @Expose() streamKey!: string | null;
   @Expose() whipUrl!: string | null;
   @Expose() visibility!: string | null;
+  @Expose() orientation!: 'landscape' | 'portrait';
   @Expose() studioSessionId?: string;
   @Expose() description!: string | null;
   @Expose() scheduledAt!: Date | null;

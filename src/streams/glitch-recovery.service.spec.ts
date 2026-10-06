@@ -56,7 +56,14 @@ describe('GlitchRecoveryService', () => {
     expect(mediaMtx.startSlate).not.toHaveBeenCalled();
 
     await service.tick(t0 + GLITCH_DEBOUNCE_MS);
-    expect(mediaMtx.startSlate).toHaveBeenCalledWith(STREAM_ID, ['rtmp://live.twitch.tv/app/k1']);
+    expect(mediaMtx.startSlate).toHaveBeenCalledWith(STREAM_ID, ['rtmp://live.twitch.tv/app/k1'], 'landscape');
+  });
+
+  it("uses the portrait slate for a vertical stream, so the video size doesn't change mid-broadcast", async () => {
+    stream.orientation = 'portrait';
+    const t0 = await publishThenDrop();
+    await service.tick(t0 + GLITCH_DEBOUNCE_MS);
+    expect(mediaMtx.startSlate).toHaveBeenCalledWith(STREAM_ID, ['rtmp://live.twitch.tv/app/k1'], 'portrait');
   });
 
   it('stops the slate and resumes when the publisher comes back within the window', async () => {

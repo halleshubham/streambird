@@ -126,6 +126,8 @@ export interface Stream {
   streamKey: string | null;
   whipUrl: string | null;
   visibility: 'public' | 'unlisted' | 'private' | null;
+  /** 'landscape' (16:9) or 'portrait' (9:16 vertical): the shape of the studio canvas, fixed at creation. */
+  orientation: 'landscape' | 'portrait';
   studioSessionId?: string;
   description: string | null;
   scheduledAt: string | null;
@@ -149,6 +151,7 @@ export interface ScheduleDetail {
   title: string;
   description: string | null;
   visibility: 'public' | 'unlisted' | 'private' | null;
+  orientation: 'landscape' | 'portrait';
   status: StreamStatus;
   scheduledAt: string;
   timezone: string;

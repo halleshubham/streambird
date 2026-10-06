@@ -31,6 +31,8 @@ export interface AppConfig {
     whipBaseUrl: string;
     /** Override for the "technical glitch" slate image URL; defaults to `${publicBaseUrl}/glitch-slate.mp4` (a pre-encoded loop that is copied, not re-encoded; a .png/.jpg is encoded on the fly instead). */
     slateUrl: string;
+    /** Override for the portrait (9:16) slate; defaults to `${publicBaseUrl}/glitch-slate-portrait.mp4`. */
+    slatePortraitUrl: string;
   };
   twitchClientId: string;
   twitchClientSecret: string;
@@ -121,6 +123,7 @@ export default (): AppConfig => ({
     apiPassword: process.env.MEDIAMTX_API_PASSWORD ?? '',
     whipBaseUrl: process.env.MEDIAMTX_WHIP_BASE_URL ?? '',
     slateUrl: process.env.GLITCH_SLATE_URL ?? '',
+    slatePortraitUrl: process.env.GLITCH_SLATE_PORTRAIT_URL ?? '',
   },
   twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET ?? '',

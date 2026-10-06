@@ -31,7 +31,8 @@ const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
   });
   afterAll(() => void server.close());
 
-  it('streams continuously for 14s from a 10s clip', async () => {
+  /** Runs the slate command for an orientation against a real RTMP sink for 14s and returns what the sink saw. */
+  async function runSlate(orientation: 'landscape' | 'portrait'): Promise<{ frames: number; sinkLog: string; command: string }> {
     const rtmpPort = await new Promise<number>((resolve) => {
       const s = net.createServer().listen(0, '127.0.0.1', () => {
         const p = (s.address() as net.AddressInfo).port;
@@ -39,7 +40,7 @@ const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
       });
     });
     const svc = new MediaMtxService({} as any, { get: (k: string) => (k === 'publicBaseUrl' ? `http://127.0.0.1:${httpPort}` : undefined) } as any);
-    const command: string = (svc as any).buildSlateCommand([`rtmp://127.0.0.1:${rtmpPort}/live/k`], (svc as any).slateUrl);
+    const command: string = (svc as any).buildSlateCommand([`rtmp://127.0.0.1:${rtmpPort}/live/k`], (svc as any).slateUrlFor(orientation), orientation);
     expect(command).toMatch(/^if ffmpeg .*; then exec ffmpeg .*stream_loop.*; else exec ffmpeg .*libx264.*; fi$/);
 
     let sinkLog = '';
@@ -55,7 +56,20 @@ const hasFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
     slate.kill('SIGKILL');
 
     const frames = [...sinkLog.matchAll(/frame=\s*(\d+)/g)].map((m) => Number(m[1])).pop() ?? 0;
+    return { frames, sinkLog, command };
+  }
+
+  it('streams continuously for 14s from a 10s clip', async () => {
+    const { frames, sinkLog } = await runSlate('landscape');
     // 14s at 30fps ~ 420 frames; one pass of the clip is only 300.
     expect(frames).toBeGreaterThan(360);
+    expect(sinkLog).toMatch(/Video: h264.*1280x720/);
+  }, 70_000);
+
+  it('a vertical stream gets a vertical slate, so the picture keeps its shape', async () => {
+    const { frames, sinkLog } = await runSlate('portrait');
+    expect(frames).toBeGreaterThan(360);
+    expect(sinkLog).toMatch(/Video: h264.*720x1280/);
+    expect(sinkLog).not.toMatch(/Video: h264.*1280x720/);
   }, 70_000);
 });

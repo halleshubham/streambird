@@ -876,6 +876,14 @@ a.icon-btn--danger {
   display: block;
 }
 
+/* A vertical (9:16) canvas: as tall as the screen allows, centred, never full width. */
+.studio-canvas--portrait {
+  width: auto;
+  max-width: 100%;
+  max-height: 75vh;
+  margin: 0 auto;
+}
+
 .studio-local-video {
   width: 100%;
   aspect-ratio: 16 / 9;
