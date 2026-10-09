@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, CalendarPlus } from 'lucide-react';
 import { listStreams } from '../api/streams';
 import { BirdLoader } from '../components/BirdLoader';
 import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
@@ -48,7 +48,7 @@ export function UpcomingStreamsPage() {
 
       {groups.length === 0 ? (
         <p className="empty-state">
-          Nothing scheduled yet. <Link to="/streams/new">Schedule a stream</Link> and invite your guests by email.
+          Nothing scheduled yet. <Link to="/streams/new" className="chip-link chip-link--sm"><CalendarPlus size={14} /> Schedule a stream</Link> and invite your guests by email.
         </p>
       ) : (
         groups.map((g) => (

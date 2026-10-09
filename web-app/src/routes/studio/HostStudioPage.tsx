@@ -31,6 +31,8 @@ import {
   ChevronRight,
   Trash2,
   ImagePlus,
+  Lock,
+  Check,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
@@ -46,6 +48,10 @@ export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
   const [requireInvitePassword, setRequireInvitePassword] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
+  // The password that new invite links actually use. Typing in the box changes nothing until Save.
+  const [savedInvitePassword, setSavedInvitePassword] = useState('');
+  const [inviteOptionsOpen, setInviteOptionsOpen] = useState(false);
+  const [inviteOptionsNote, setInviteOptionsNote] = useState<string | null>(null);
   const [copiedDestinationId, setCopiedDestinationId] = useState<string | null>(null);
   const {
     canvasRef,
@@ -83,6 +89,36 @@ export function HostStudioPage() {
   } = useHostStudio(streamId);
   const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
   const onStageCount = participants.filter((p) => p.onStage && !p.isScreenShare).length;
+
+  const passwordUnsaved = requireInvitePassword && invitePassword.trim() !== savedInvitePassword;
+
+  function saveInvitePassword() {
+    const value = invitePassword.trim();
+    if (!value) {
+      setInviteOptionsNote('Type a password first.');
+      return;
+    }
+    setSavedInvitePassword(value);
+    setInviteOptionsNote(null);
+  }
+
+  function toggleInvitePassword(on: boolean) {
+    setRequireInvitePassword(on);
+    setInviteOptionsNote(null);
+    if (!on) {
+      setSavedInvitePassword('');
+      setInvitePassword('');
+    }
+  }
+
+  function createInvite() {
+    if (requireInvitePassword && passwordUnsaved) {
+      setInviteOptionsOpen(true);
+      setInviteOptionsNote(savedInvitePassword ? 'You changed the password but have not saved it. Press Save, then create the invite.' : 'Press Save to set the password, then create the invite.');
+      return;
+    }
+    void actions.createInviteLink(requireInvitePassword ? savedInvitePassword : undefined);
+  }
 
   async function copyWatchUrl(id: string, url: string) {
     try {
@@ -154,6 +190,178 @@ export function HostStudioPage() {
         </div>
       )}
 
+      <div className="studio-topbar" role="toolbar" aria-label="Studio controls">
+        <div className="studio-topbar-group">
+          <button
+            type="button"
+            className="tb-btn"
+            aria-label={cameraStarted ? 'Camera on' : 'Start my camera'}
+            title={cameraStarted ? 'Camera is on' : 'Start my camera'}
+            onClick={() => void actions.startCamera()}
+            disabled={cameraStarting || cameraStarted}
+          >
+            <Camera size={18} /> <span className="tb-label">{cameraStarted ? 'Camera on' : 'Camera'}</span>
+          </button>
+          <button
+            type="button"
+            className={`tb-btn${screenSharing ? ' tb-btn--on' : ''}`}
+            aria-label={screenSharing ? 'Stop sharing' : 'Share screen'}
+            title={screenSharing ? 'Stop sharing your screen' : 'Share your screen'}
+            onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
+          >
+            {screenSharing ? <MonitorOff size={18} /> : <MonitorUp size={18} />} <span className="tb-label">{screenSharing ? 'Stop' : 'Share'}</span>
+          </button>
+          <button
+            type="button"
+            className="tb-btn"
+            aria-label="Toggle layout"
+            title={`Toggle layout (now ${layoutMode})`}
+            onClick={actions.toggleLayout}
+          >
+            {layoutMode === 'grid' ? <LayoutGrid size={18} /> : <Focus size={18} />} <span className="tb-label tb-label--wide">Layout</span>
+          </button>
+        </div>
+
+        <div className="studio-topbar-group studio-invite-group">
+          <button type="button" className="tb-btn" aria-label="Create guest invite" title="Create a guest invite link and copy it" onClick={createInvite}>
+            <Copy size={18} /> <span className="tb-label">Invite</span>
+          </button>
+          <button
+            type="button"
+            className={`tb-btn tb-btn--icon${requireInvitePassword && savedInvitePassword ? ' tb-btn--on' : ''}`}
+            aria-label="Invite password options"
+            aria-expanded={inviteOptionsOpen}
+            title={requireInvitePassword && savedInvitePassword ? 'Invite links need a password' : 'Set a password for invite links'}
+            onClick={() => setInviteOptionsOpen((o) => !o)}
+          >
+            <Lock size={16} />
+          </button>
+          {inviteOptionsOpen && (
+            <div className="studio-popover" role="dialog" aria-label="Invite link settings">
+              <label className="checkbox-row">
+                <input type="checkbox" checked={requireInvitePassword} onChange={(e) => toggleInvitePassword(e.target.checked)} />
+                Require a password to join
+              </label>
+              {requireInvitePassword && (
+                <>
+                  <div className="studio-password-row">
+                    <input
+                      type="text"
+                      aria-label="Invite password"
+                      placeholder="Invite password"
+                      autoComplete="off"
+                      value={invitePassword}
+                      onChange={(e) => {
+                        setInvitePassword(e.target.value);
+                        setInviteOptionsNote(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveInvitePassword();
+                      }}
+                    />
+                    <button type="button" className="icon-btn" disabled={!invitePassword.trim() || !passwordUnsaved} onClick={saveInvitePassword}>
+                      <Save size={16} /> Save
+                    </button>
+                  </div>
+                  {savedInvitePassword && !passwordUnsaved ? (
+                    <p className="studio-popover-note studio-popover-note--ok">
+                      <Check size={14} /> Password saved. Every new guest invite asks for it.
+                    </p>
+                  ) : (
+                    <p className="studio-popover-note">Press Save (or Enter) to use this password. Nothing changes until you do.</p>
+                  )}
+                </>
+              )}
+              {inviteOptionsNote && <p className="studio-popover-note studio-popover-note--warn">{inviteOptionsNote}</p>}
+              <p className="studio-popover-note">
+                {requireInvitePassword ? 'Invite links you already copied keep the setting they were made with.' : 'Guests can join with the link alone.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="studio-topbar-group studio-topbar-selects">
+          <label className="studio-resolution-select" title={isLive ? 'Locked while live -- end the stream to change it' : 'Stream quality'}>
+            <Gauge size={16} />
+            <select
+              aria-label="Stream quality"
+              value={resolution}
+              disabled={isLive}
+              onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
+            >
+              {Object.entries(RESOLUTIONS)
+                .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
+                .map(([value, r]) => {
+                  const dims = canvasSizeFor(r, orientation);
+                  return (
+                    <option key={value} value={value}>
+                      {orientation === 'portrait' ? `${r.label.replace(/\s*\(.*\)/, '')} vertical (${dims.width}x${dims.height})` : r.label}
+                    </option>
+                  );
+                })}
+            </select>
+          </label>
+          <label className="tb-select" title="Layout">
+            <LayoutGrid size={16} />
+            <select id="layoutSelect" aria-label="Layout" value={layoutMode} onChange={(e) => actions.setLayout(e.target.value as LayoutMode)}>
+              {[...new Set(LAYOUTS.map((l) => l.group))].map((group) => (
+                <optgroup key={group} label={group}>
+                  {LAYOUTS.filter((l) => l.group === group).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label
+            className="tb-select"
+            title={
+              getTheme(themeId).id === 'vanilla'
+                ? 'Canvas style. Vanilla is the original plain look; styles show around the tiles of the framed layouts.'
+                : 'Canvas style, shown around the tiles of the framed layouts (Grid and Spotlight fill the whole frame).'
+            }
+          >
+            <Palette size={16} />
+            <select id="themeSelect" aria-label="Canvas style" value={themeId} onChange={(e) => actions.setTheme(e.target.value)}>
+              {[...new Set(THEMES.map((t) => t.group))].map((group) => (
+                <optgroup key={group} label={group}>
+                  {THEMES.filter((t) => t.group === group).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="studio-topbar-group studio-topbar-live">
+          <button
+            type="button"
+            className={`go-live-button go-live-button--bar${isLive ? ' go-live-button--live' : ''}`}
+            onClick={() => void actions.goLive()}
+            disabled={!stream.whipUrl || isLive}
+          >
+            <Radio size={18} /> {isLive ? 'Live' : 'Go live'}
+          </button>
+          <button
+            type="button"
+            className="tb-btn tb-btn--danger"
+            aria-label="End stream"
+            title="End the stream for everyone"
+            onClick={() => {
+              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
+            }}
+            disabled={ending}
+          >
+            <PhoneOff size={18} /> <span className="tb-label">End</span>
+          </button>
+        </div>
+      </div>
+
       <div className="studio-video-wrap">
         <canvas
           ref={canvasRef}
@@ -163,98 +371,14 @@ export function HostStudioPage() {
         />
       </div>
 
-      <div className="panel">
-        <div className="studio-toolbar-group">
-          <span className="studio-toolbar-group-label">Setup</span>
-          <div className="studio-toolbar">
-            <button type="button" className="icon-btn" onClick={() => void actions.startCamera()} disabled={cameraStarting || cameraStarted}>
-              <Camera size={16} /> {cameraStarted ? 'Camera on' : 'Start my camera'}
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => void actions.createInviteLink(requireInvitePassword ? invitePassword : undefined)}
-            >
-              <Copy size={16} /> Create guest invite
-            </button>
-            <label className="studio-resolution-select" title={isLive ? 'Locked while live -- end the stream to change it' : undefined}>
-              <Gauge size={16} />
-              <select
-                value={resolution}
-                disabled={isLive}
-                onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
-              >
-                {Object.entries(RESOLUTIONS)
-                  .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
-                  .map(([value, r]) => {
-                    const dims = canvasSizeFor(r, orientation);
-                    return (
-                      <option key={value} value={value}>
-                        {orientation === 'portrait' ? `${r.label.replace(/\s*\(.*\)/, '')} vertical (${dims.width}x${dims.height})` : r.label}
-                      </option>
-                    );
-                  })}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div className="studio-toolbar-group">
-          <span className="studio-toolbar-group-label">Live controls</span>
-          <div className="studio-toolbar">
-            <button type="button" className="icon-btn" onClick={actions.toggleLayout}>
-              {layoutMode === 'grid' ? <LayoutGrid size={16} /> : <Focus size={16} />} Toggle layout ({layoutMode})
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
-            >
-              {screenSharing ? <MonitorOff size={16} /> : <MonitorUp size={16} />} {screenSharing ? 'Stop sharing' : 'Share screen'}
-            </button>
-          </div>
-        </div>
-
-        <div className="studio-invite-controls">
-          <label>
-            <input
-              type="checkbox"
-              checked={requireInvitePassword}
-              onChange={(e) => setRequireInvitePassword(e.target.checked)}
-            />
-            {' '}Require a password to join
-          </label>
-          {requireInvitePassword && (
-            <input
-              type="text"
-              placeholder="Invite password"
-              value={invitePassword}
-              onChange={(e) => setInvitePassword(e.target.value)}
-            />
-          )}
-        </div>
-
-        <div className="studio-golive-row">
-          <button
-            type="button"
-            className={`go-live-button${isLive ? ' go-live-button--live' : ''}`}
-            onClick={() => void actions.goLive()}
-            disabled={!stream.whipUrl || isLive}
-          >
-            <Radio size={20} /> {isLive ? 'Live' : 'Go live'}
-          </button>
-          <button
-            type="button"
-            className="icon-btn icon-btn--small icon-btn--danger"
-            onClick={() => {
-              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
-            }}
-            disabled={ending}
-          >
-            <PhoneOff size={14} /> End stream
-          </button>
-        </div>
-      </div>
+      <p className="docs-hint studio-layout-note">
+        {LAYOUT_BY_ID[layoutMode].description}
+        {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
+          ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
+        {orientation === 'portrait' && ' Vertical stream: a landscape webcam is cropped to the middle of the frame, so keep yourself centred (a phone camera held upright fills it).'}
+        {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
+          ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
+      </p>
 
       {(status || inviteMessage) && (
         <div className="studio-status-toast">
@@ -373,50 +497,6 @@ export function HostStudioPage() {
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="panel">
-        <label className="studio-section-label" htmlFor="layoutSelect">
-          <Palette size={14} /> Layout and canvas style
-        </label>
-        <label htmlFor="layoutSelect">Layout</label>
-        <select id="layoutSelect" value={layoutMode} onChange={(e) => actions.setLayout(e.target.value as LayoutMode)}>
-          {[...new Set(LAYOUTS.map((l) => l.group))].map((group) => (
-            <optgroup key={group} label={group}>
-              {LAYOUTS.filter((l) => l.group === group).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <p className="docs-hint">
-          {LAYOUT_BY_ID[layoutMode].description}
-          {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
-            ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
-          {orientation === 'portrait' && ' Vertical stream: a landscape webcam is cropped to the middle of the frame, so keep yourself centred (a phone camera held upright fills it).'}
-          {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
-            ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
-        </p>
-
-        <label htmlFor="themeSelect">Canvas style</label>
-        <select id="themeSelect" value={themeId} onChange={(e) => actions.setTheme(e.target.value)}>
-          {[...new Set(THEMES.map((t) => t.group))].map((group) => (
-            <optgroup key={group} label={group}>
-              {THEMES.filter((t) => t.group === group).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <p className="docs-hint">
-          {getTheme(themeId).id === 'vanilla'
-            ? 'Vanilla is the original plain look. Styles show around the tiles of the framed layouts (everything except Grid and Spotlight).'
-            : 'The style shows around the tiles of the framed layouts; Grid and Spotlight fill the whole frame.'}
-        </p>
       </div>
 
       <div className="panel">

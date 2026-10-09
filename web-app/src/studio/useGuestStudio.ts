@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { resolveInvite, getTurnCredentials } from '../api/studio';
+import { resolveInvite, getTurnCredentials, checkInvitePassword } from '../api/studio';
 import { ApiError } from '../api/client';
 
 // Explicit rather than relying on browser defaults -- VDO.Ninja (a mature
@@ -229,6 +229,19 @@ export function useGuestStudio(token: string | undefined) {
       return;
     }
 
+    // A wrong password is refused here, on the form, rather than after the guest has already
+    // been shown the room (the socket would refuse them there, which looked like joining).
+    if (passwordRequired) {
+      try {
+        await checkInvitePassword(token, password);
+      } catch (err) {
+        const tooMany = err instanceof ApiError && err.status === 429;
+        setJoinError(tooMany ? 'Too many attempts. Wait a minute and try again.' : 'That password is not correct. Check it with the host and try again.');
+        setJoining(false);
+        return;
+      }
+    }
+
     // Reuse the preview's already-acquired stream when there is one (the
     // common case -- startPreview runs as soon as this screen loads) rather
     // than calling getUserMedia a second time, which would both be
@@ -312,7 +325,7 @@ export function useGuestStudio(token: string | undefined) {
 
     setJoining(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, handleRequestOffer, handlePeerOffer]);
+  }, [token, passwordRequired, handleRequestOffer, handlePeerOffer]);
 
   function toggleMic() {
     if (!localStreamRef.current) return;

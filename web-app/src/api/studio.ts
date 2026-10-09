@@ -31,3 +31,8 @@ export function resolveInvite(token: string): Promise<ResolveInviteResponse> {
 export function getTurnCredentials(): Promise<{ iceServers: RTCIceServer[] }> {
   return api.get('/studio-sessions/turn-credentials');
 }
+
+/** Public. Rejects (400) when the invite needs a password and this isn't it, so the join form can say so before the guest enters the room. */
+export function checkInvitePassword(token: string, password?: string): Promise<void> {
+  return api.post(`/studio-sessions/invites/${encodeURIComponent(token)}/check-password`, { password });
+}

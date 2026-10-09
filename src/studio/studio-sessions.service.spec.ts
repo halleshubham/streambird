@@ -183,6 +183,19 @@ describe('StudioSessionsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('checkInvitePassword refuses a wrong or missing password and passes the right one (or no password needed)', async () => {
+    const { service, inviteRepo } = await build();
+    const base = { studioSessionId: 's1', revokedAt: null, expiresAt: null };
+    inviteRepo.rows.set('i1', { id: 'i1', token: 'locked', ...base, passwordHash: crypto.createHash('sha256').update('correct-password').digest('hex') } as any);
+    inviteRepo.rows.set('i2', { id: 'i2', token: 'open', ...base, passwordHash: null } as any);
+
+    await expect(service.checkInvitePassword('locked')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.checkInvitePassword('locked', 'nope')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.checkInvitePassword('locked', 'correct-password')).resolves.toBeUndefined();
+    await expect(service.checkInvitePassword('open')).resolves.toBeUndefined();
+    await expect(service.checkInvitePassword('missing')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('joinAsGuest accepts the correct password when the invite requires one', async () => {
     const { service, inviteRepo } = await build();
     inviteRepo.rows.set('i1', {

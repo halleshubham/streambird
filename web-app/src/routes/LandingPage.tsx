@@ -10,6 +10,7 @@ import {
   Link2,
   ShieldCheck,
   CheckCircle2,
+  ArrowRight,
 } from 'lucide-react';
 import * as authApi from '../api/auth';
 import { docsUrl } from '../docs';
@@ -229,8 +230,8 @@ export function LandingPage() {
               <FacebookLogo /> Facebook
             </a>
           </span>
-          <a href="#pricing" className="link-button">
-            See pricing
+          <a href="#pricing" className="chip-link chip-link--lg">
+            See pricing <ArrowRight size={16} />
           </a>
         </div>
         <p className="landing-trust-line">
@@ -282,21 +283,15 @@ export function LandingPage() {
             ? 'Pay online by UPI, card or netbanking. Monthly plans renew by autopay and you can cancel any time.'
             : 'Billing is handled outside StreamBird for now -- these are the plans, reach out to get set up.'}
         </p>
-        <div className="landing-currency-toggle" role="group" aria-label="Currency">
-          <button
-            type="button"
-            className={`link-button${currency === 'USD' ? ' landing-currency-toggle--active' : ''}`}
-            onClick={() => setCurrency('USD')}
-          >
-            USD
-          </button>
-          <button
-            type="button"
-            className={`link-button${currency === 'INR' ? ' landing-currency-toggle--active' : ''}`}
-            onClick={() => setCurrency('INR')}
-          >
-            INR (India pricing)
-          </button>
+        <div className="landing-currency-toggle">
+          <div className="segmented" role="group" aria-label="Currency">
+            <button type="button" className={currency === 'USD' ? 'active' : ''} aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>
+              USD
+            </button>
+            <button type="button" className={currency === 'INR' ? 'active' : ''} aria-pressed={currency === 'INR'} onClick={() => setCurrency('INR')}>
+              INR <span className="segmented-sub">India pricing</span>
+            </button>
+          </div>
         </div>
         <div className="landing-pricing-grid">
           {tiers.map((t) => (
