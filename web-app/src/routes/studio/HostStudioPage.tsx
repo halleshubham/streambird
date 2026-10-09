@@ -26,15 +26,13 @@ import {
   EyeOff,
   Gauge,
   Palette,
-  Presentation,
-  ChevronLeft,
-  ChevronRight,
   Trash2,
   ImagePlus,
   Lock,
   Check,
 } from 'lucide-react';
-import { useHostStudio, RESOLUTIONS } from '../../studio/useHostStudio';
+import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
+import { SlideControls } from '../../components/SlideControls';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
@@ -380,6 +378,20 @@ export function HostStudioPage() {
           ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
       </p>
 
+      <SlideControls
+        slides={slides}
+        slideIndex={slideIndex}
+        layoutHasSlide={LAYOUT_BY_ID[layoutMode].hasSlide}
+        screenSharing={screenSharing}
+        maxSlides={MAX_SLIDES}
+        onAdd={(files) => void actions.addSlides(files)}
+        onPrev={actions.prevSlide}
+        onNext={actions.nextSlide}
+        onGoto={actions.gotoSlide}
+        onClear={actions.clearSlides}
+        onUseSlideLayout={() => actions.setLayout((LAYOUTS.find((l) => l.hasSlide) ?? LAYOUTS[0]).id as LayoutMode)}
+      />
+
       {(status || inviteMessage) && (
         <div className="studio-status-toast">
           {status && (
@@ -553,41 +565,6 @@ export function HostStudioPage() {
             </button>
           </>
         )}
-      </div>
-
-      <div className="panel">
-        <label className="studio-section-label" htmlFor="slidesInput">
-          <Presentation size={14} /> Slides
-        </label>
-        <input
-          id="slidesInput"
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(e) => {
-            void actions.addSlides(e.target.files);
-            e.target.value = '';
-          }}
-        />
-        <div className="studio-toolbar">
-          <button type="button" className="icon-btn icon-btn--small" disabled={slideIndex <= 0} onClick={actions.prevSlide}>
-            <ChevronLeft size={14} /> Previous
-          </button>
-          <span data-testid="slide-counter">{slides.length === 0 ? 'No slides' : `Slide ${slideIndex + 1} / ${slides.length}`}</span>
-          <button type="button" className="icon-btn icon-btn--small" disabled={slideIndex >= slides.length - 1} onClick={actions.nextSlide}>
-            Next <ChevronRight size={14} />
-          </button>
-          {slides.length > 0 && (
-            <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={actions.clearSlides}>
-              <Trash2 size={14} /> Clear
-            </button>
-          )}
-        </div>
-        <p className="docs-hint">
-          {slides.length > 0 ? `${slides[slideIndex]?.name ?? ''} -- ` : ''}
-          Images only (export a deck or PDF as images first). Left and right arrow keys change slide. A screen share replaces the slide while it is on.
-          {!LAYOUT_BY_ID[layoutMode].hasSlide && ' Pick a layout with slides to show them.'}
-        </p>
       </div>
 
       <div className="panel">

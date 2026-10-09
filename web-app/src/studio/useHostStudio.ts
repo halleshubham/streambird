@@ -116,6 +116,22 @@ const DEFAULT_BRANDING: Branding = {
 /** Slideshow images the host loads for the slide layouts (kept in memory for this session). */
 export const MAX_SLIDES = 40;
 
+const thumbCache = new WeakMap<HTMLCanvasElement, string>();
+
+/** A small JPEG of a slide for the controller's thumbnail strip (cached per slide, so adding slides doesn't redo the old ones). */
+function slideThumb(slide: SlideImage): string {
+  const cached = thumbCache.get(slide.canvas);
+  if (cached) return cached;
+  const w = 160;
+  const t = document.createElement('canvas');
+  t.width = w;
+  t.height = Math.max(1, Math.round((slide.canvas.height / slide.canvas.width) * w));
+  t.getContext('2d')!.drawImage(slide.canvas, 0, 0, t.width, t.height);
+  const url = t.toDataURL('image/jpeg', 0.6);
+  thumbCache.set(slide.canvas, url);
+  return url;
+}
+
 /** How a tile is drawn: the original 'contain' fit with square corners, or a rounded 'cover' fit for framed layouts. */
 interface TileStyle {
   fit: 'cover';
@@ -268,7 +284,7 @@ export function useHostStudio(streamId: string | undefined) {
   const [screenSharing, setScreenSharing] = useState(false);
   const [branding, setBranding] = useState<Branding>({ ...DEFAULT_BRANDING });
   const [themeId, setThemeIdState] = useState<string>(DEFAULT_THEME_ID);
-  const [slides, setSlides] = useState<{ name: string }[]>([]);
+  const [slides, setSlides] = useState<{ name: string; thumb: string }[]>([]);
   const [slideIndex, setSlideIndex] = useState(0);
   const [wallpaper, setWallpaperState] = useState<{ name: string; width: number; height: number } | null>(null);
   const [wallpaperFocus, setWallpaperFocusState] = useState<{ x: number; y: number }>({ x: WALLPAPER_RANGES.focus.default, y: WALLPAPER_RANGES.focus.default });
@@ -1558,7 +1574,7 @@ export function useHostStudio(streamId: string | undefined) {
     const room = Math.max(0, MAX_SLIDES - slidesRef.current.length);
     const kept = loaded.slice(0, room);
     slidesRef.current = [...slidesRef.current, ...kept];
-    setSlides(slidesRef.current.map((x) => ({ name: x.name })));
+    setSlides(slidesRef.current.map((x) => ({ name: x.name, thumb: slideThumb(x) })));
     if (kept.length < loaded.length || images.length > loaded.length) {
       setStatus({ text: `Added ${kept.length} of ${images.length} slides (limit ${MAX_SLIDES}, images only).`, isError: false });
     }
