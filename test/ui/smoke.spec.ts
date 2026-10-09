@@ -492,6 +492,55 @@ test.describe('UI polish', () => {
     await expect(bird).toHaveCount(0);
   });
 
+  test('host: the slides controller sits under the picture and explains how to run slides', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const conn = await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'T', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json();
+    const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'slides', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+    await page.goto(`/streams/${stream.id}/studio`);
+
+    const controls = page.locator('.slide-controls');
+    await expect(controls).toBeVisible();
+    // Directly below the picture, before the other panels.
+    const canvasBottom = (await page.locator('canvas.studio-canvas').boundingBox())!.y + (await page.locator('canvas.studio-canvas').boundingBox())!.height;
+    expect((await controls.boundingBox())!.y).toBeLessThan(canvasBottom + 160);
+    await expect(controls.getByText('No slides')).toBeVisible();
+    await expect(controls.locator('kbd').first()).toBeVisible(); // the key hint is on screen, not buried
+    await expect(controls.getByText(/Sharing your screen replaces the slide/)).toBeVisible();
+
+    // Grid has no slide area: say so and offer the fix.
+    await page.getByRole('button', { name: /Use a slide layout/ }).click();
+    await expect(page.locator('#layoutSelect')).not.toHaveValue('grid');
+
+    const colours = ['#ff0000', '#00ff00', '#0000ff'];
+    await page.evaluate(async (cols: string[]) => {
+      const dt = new DataTransfer();
+      for (const [i, colour] of cols.entries()) {
+        const c = document.createElement('canvas');
+        c.width = 1600;
+        c.height = 900;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = colour;
+        ctx.fillRect(0, 0, 1600, 900);
+        const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), 'image/png'));
+        dt.items.add(new File([blob], `s${i + 1}.png`, { type: 'image/png' }));
+      }
+      const input = document.querySelector<HTMLInputElement>('#slidesInput')!;
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, colours);
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 1 / 3');
+    await expect(controls.locator('.slide-thumb')).toHaveCount(3);
+    await expect(controls.locator('.slide-thumb--active')).toHaveCount(1);
+
+    await controls.locator('.slide-thumb').nth(2).click(); // jump by thumbnail
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 3 / 3');
+    await controls.getByRole('button', { name: 'Previous slide' }).click();
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 2 / 3');
+    await page.locator('h1').click();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByTestId('slide-counter')).toHaveText('Slide 3 / 3');
+  });
+
   test.describe('invite password', () => {
     async function studioWithConnection(context: BrowserContext, api: APIRequestContext) {
       const conn = await (

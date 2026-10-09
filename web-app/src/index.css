@@ -878,7 +878,12 @@ a.icon-btn--danger {
 }
 
 .studio-canvas {
-  width: 100%;
+  /* As wide as the page allows but never taller than the screen leaves room for, so the controls
+     under the picture (slides, layout note) are on screen without scrolling. */
+  width: auto;
+  max-width: 100%;
+  max-height: max(320px, calc(100svh - 330px));
+  margin: 0 auto;
   background: #000;
   border-radius: 8px;
   display: block;
@@ -886,9 +891,9 @@ a.icon-btn--danger {
 
 /* A vertical (9:16) canvas: as tall as the screen allows, centred, never full width. */
 .studio-canvas--portrait {
+  /* same height cap as above, so a tall picture also leaves the controls on screen */
   width: auto;
   max-width: 100%;
-  max-height: 75vh;
   margin: 0 auto;
 }
 
@@ -2242,4 +2247,153 @@ select:focus-visible {
 /* The layout switch is an icon on its own (its tooltip says what it does): keeps the bar on one row. */
 .tb-label--wide {
   display: none;
+}
+
+/* ---- Slides controller (under the host picture) ---- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.slide-controls {
+  margin-bottom: 16px;
+}
+
+.slide-controls-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.slide-controls-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.slide-controls-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slide-controls-buttons--end {
+  margin-left: auto;
+}
+
+.slide-controls-counter {
+  min-width: 84px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "Add images" label is styled like the buttons beside it (labels have no chrome of their own). */
+label.slide-add-btn {
+  margin: 0;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+label.slide-add-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.visually-hidden:focus-visible + * {
+  outline: 2px solid var(--accent);
+}
+
+.slide-thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+}
+
+.slide-thumb {
+  position: relative;
+  flex: none;
+  width: 112px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.slide-thumb:hover:not(:disabled) {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+
+.slide-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.slide-thumb span {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.slide-thumb--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.slide-help {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.slide-help--warn {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--card-bg);
+  color: var(--text-h);
+  font: 600 12px/1.6 var(--sans);
+  text-align: center;
 }
