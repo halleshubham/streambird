@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Radio } from 'lucide-react';
+import { ArrowRight, CalendarPlus, Plug, Radio, Settings2 } from 'lucide-react';
 import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
@@ -61,7 +61,7 @@ export function DashboardPage() {
       <section>
         <div className="section-header">
           <h2>Connections</h2>
-          <Link to="/connections">Manage</Link>
+          <Link to="/connections" className="chip-link"><Settings2 size={14} /> Manage</Link>
         </div>
         {hasConnections ? (
           <div className="connections-summary">
@@ -71,7 +71,7 @@ export function DashboardPage() {
           </div>
         ) : (
           <p className="empty-state">
-            No platforms connected yet. <Link to="/connections">Connect one</Link> before you can go
+            No platforms connected yet. <Link to="/connections" className="chip-link chip-link--sm"><Plug size={14} /> Connect one</Link> before you can go
             live.
           </p>
         )}
@@ -80,7 +80,7 @@ export function DashboardPage() {
       <section>
         <div className="section-header">
           <h2>Upcoming streams</h2>
-          {upcoming.length > 0 ? <Link to="/streams/upcoming">View all</Link> : null}
+          {upcoming.length > 0 ? <Link to="/streams/upcoming" className="chip-link">View all <ArrowRight size={14} /></Link> : null}
         </div>
         {upcoming.length > 0 ? (
           <div className="stream-list">
@@ -94,7 +94,7 @@ export function DashboardPage() {
           </div>
         ) : (
           <p className="empty-state">
-            Nothing scheduled. {hasConnections ? <Link to="/streams/new">Schedule a stream</Link> : 'Connect a platform to schedule one.'}
+            Nothing scheduled. {hasConnections ? <Link to="/streams/new" className="chip-link chip-link--sm"><CalendarPlus size={14} /> Schedule a stream</Link> : 'Connect a platform to schedule one.'}
           </p>
         )}
       </section>
@@ -111,7 +111,7 @@ export function DashboardPage() {
           <p className="empty-state">
             No streams yet.{' '}
             {hasConnections ? (
-              <Link to="/streams/new">Create your first stream</Link>
+              <Link to="/streams/new" className="chip-link chip-link--sm"><Radio size={14} /> Create your first stream</Link>
             ) : (
               'Connect a platform to get started.'
             )}

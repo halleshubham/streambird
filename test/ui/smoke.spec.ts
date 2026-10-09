@@ -428,3 +428,134 @@ test.describe('host studio', () => {
     }
   });
 });
+
+test.describe('UI polish', () => {
+  test('the currency switch is a proper segmented control and "See pricing" is a chip', async ({ page }) => {
+    await page.goto('/');
+    const group = page.getByRole('group', { name: 'Currency' });
+    const usd = group.getByRole('button', { name: 'USD' });
+    const inr = group.getByRole('button', { name: /INR/ });
+    await expect(usd).toHaveAttribute('aria-pressed', /true|false/);
+    await inr.click();
+    await expect(inr).toHaveAttribute('aria-pressed', 'true');
+    await expect(usd).toHaveAttribute('aria-pressed', 'false');
+    // Real buttons with room to click, not collapsed text.
+    for (const b of [usd, inr]) {
+      const box = (await b.boundingBox())!;
+      expect(box.height).toBeGreaterThan(30);
+      expect(box.width).toBeGreaterThan(60);
+    }
+    expect(await inr.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+
+    const chip = page.getByRole('link', { name: /See pricing/ });
+    await expect(chip).toHaveClass(/chip-link/);
+    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThan(20);
+    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth))).toBeGreaterThan(0);
+  });
+
+  test('dashboard: Go live has space between icon and text; Manage is a chip', async ({ page, context }) => {
+    await signIn(context);
+    await page.goto('/dashboard');
+    const cta = page.locator('a.go-live-cta');
+    await expect(cta).toBeVisible();
+    const [svgRight, textLeft] = await cta.evaluate((el) => {
+      const svg = el.querySelector('svg')!.getBoundingClientRect();
+      const range = document.createRange();
+      const text = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent!.trim())!;
+      range.selectNodeContents(text);
+      return [svg.right, range.getBoundingClientRect().left];
+    });
+    expect(textLeft - svgRight).toBeGreaterThanOrEqual(8);
+    const manage = page.getByRole('link', { name: /Manage/ });
+    await expect(manage).toHaveClass(/chip-link/);
+    expect(await manage.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+    const schedule = page.getByRole('link', { name: /Connect one/ });
+    await expect(schedule).toHaveClass(/chip-link/);
+  });
+
+  test('a button that is working puts a big bird in the middle of the screen', async ({ page }) => {
+    await page.route('**/api/auth/request-code', async (route) => {
+      await new Promise((r) => setTimeout(r, 1800));
+      await route.continue();
+    });
+    await page.goto('/login');
+    await page.fill('#email', `ui-${crypto.randomBytes(4).toString('hex')}@test.dev`);
+    await page.getByRole('button', { name: /Send login code/ }).click();
+    const bird = page.locator('.busy-overlay-bird');
+    await expect(bird).toBeVisible();
+    const box = (await bird.boundingBox())!;
+    const vp = page.viewportSize()!;
+    expect(box.width).toBeGreaterThanOrEqual(80);
+    expect(Math.abs(box.x + box.width / 2 - vp.width / 2)).toBeLessThan(40);
+    expect(Math.abs(box.y + box.height / 2 - vp.height / 2)).toBeLessThan(80);
+    await page.waitForSelector('#code'); // the code step arrives, the bird goes
+    await expect(bird).toHaveCount(0);
+  });
+
+  test.describe('invite password', () => {
+    async function studioWithConnection(context: BrowserContext, api: APIRequestContext) {
+      const conn = await (
+        await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'UI Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })
+      ).json();
+      return (await (await api.post(`${APP}/api/streams`, { data: { title: 'pw stream', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json()) as { id: string; studioSessionId: string };
+    }
+
+    test('host: the checkbox lines up, and the password only applies once it is saved', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const stream = await studioWithConnection(context, api);
+      await page.goto(`/streams/${stream.id}/studio`);
+      const invites: unknown[] = [];
+      await page.route('**/invites', async (route) => {
+        if (route.request().method() === 'POST') invites.push(route.request().postDataJSON());
+        await route.continue();
+      });
+
+      await page.getByRole('button', { name: 'Invite password options' }).click();
+      const check = page.getByRole('checkbox', { name: /Require a password to join/ });
+      await check.check();
+      const box = (await check.boundingBox())!;
+      expect(box.width).toBeLessThan(26); // a checkbox, not a full-width input
+      const labelBox = (await page.locator('label.checkbox-row').boundingBox())!;
+      expect(Math.abs(box.y + box.height / 2 - (labelBox.y + labelBox.height / 2))).toBeLessThan(4);
+
+      // Typed but not saved: the page says so and sends nothing.
+      const typed = crypto.randomBytes(6).toString('hex'); // generated per run, not a literal
+      await page.getByLabel('Invite password', { exact: true }).fill(typed);
+      await expect(page.getByText(/Nothing changes until you do/)).toBeVisible();
+      await page.getByRole('button', { name: 'Create guest invite' }).click();
+      await expect(page.getByText(/Press Save to set the password/)).toBeVisible();
+      expect(invites).toHaveLength(0);
+
+      // Saved: confirmation, and the invite carries the password.
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByText(/Password saved/)).toBeVisible();
+      await page.getByRole('button', { name: 'Create guest invite' }).click();
+      await expect.poll(() => invites.length).toBe(1);
+      expect(invites[0]).toMatchObject({ password: typed });
+    });
+
+    test('guest: a wrong password is refused on the join form, the right one gets in', async ({ page, context, browser }) => {
+      const { api } = await signIn(context);
+      const stream = await studioWithConnection(context, api);
+      const right = crypto.randomBytes(6).toString('hex');
+      const wrong = crypto.randomBytes(6).toString('hex');
+      const invite = await (await api.post(`${APP}/api/studio-sessions/${stream.studioSessionId}/invites`, { data: { password: right }, headers: apiHeaders })).json();
+      const guestCtx = await browser.newContext({ permissions: ['camera', 'microphone'] });
+      const guest = await guestCtx.newPage();
+      await guest.goto(`${APP}/join/${invite.token}`);
+      await guest.fill('#displayName', 'Alex');
+      await guest.fill('#invitePassword', wrong);
+      await guest.getByRole('button', { name: /^Join$/ }).click();
+      await expect(guest.getByText(/password is not correct/)).toBeVisible();
+      await expect(guest.locator('.meeting-grid')).toHaveCount(0); // never shown the room
+
+      await guest.fill('#invitePassword', right);
+      await guest.getByRole('button', { name: /^Join$/ }).click();
+      await expect(guest.locator('.meeting-grid')).toBeVisible();
+      // Alone in the room ("waiting for others to connect…") is not an action: no big bird over the call.
+      await guest.waitForTimeout(700);
+      await expect(guest.locator('.busy-overlay')).toHaveCount(0);
+      await guestCtx.close();
+    });
+  });
+});
