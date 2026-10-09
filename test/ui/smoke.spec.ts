@@ -453,6 +453,35 @@ test.describe('UI polish', () => {
     expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth))).toBeGreaterThan(0);
   });
 
+  test('home hero: animated headline cycling the platforms, a studio miniature, and no motion when reduced', async ({ page, browser }) => {
+    await page.goto('/');
+    // Screen readers get one plain sentence; the animated copy is decoration.
+    await expect(page.getByRole('heading', { level: 1, name: 'Go live on YouTube, Facebook and Twitch from one browser tab.' })).toBeAttached();
+    const words = page.locator('.hero-word');
+    await expect(words).toHaveCount(3);
+    const timing = await words.evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, dur: getComputedStyle(e).animationDuration, delay: getComputedStyle(e).animationDelay })));
+    expect(timing.every((t) => t.name === 'hero-word' && t.dur === '9s')).toBe(true);
+    expect(timing.map((t) => t.delay)).toEqual(['0s', '3s', '6s']); // one platform at a time, in turn
+
+    const studio = page.locator('.hero-studio');
+    await expect(studio).toBeVisible();
+    await expect(studio.locator('.hs-dest')).toHaveCount(3);
+    expect(await studio.getAttribute('aria-hidden')).toBe('true');
+
+    // No sideways scroll on a phone.
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    // prefers-reduced-motion: nothing animates and the first platform stays on screen.
+    const calm = await browser.newContext({ reducedMotion: 'reduce' });
+    const still = await calm.newPage();
+    await still.goto(`${APP}/`);
+    await expect(still.locator('.hero-word').first()).toHaveCSS('opacity', '1');
+    expect(await still.locator('.hero-word').first().evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
+    expect(await still.locator('.hero-studio').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
+    await calm.close();
+  });
+
   test('dashboard: Go live has space between icon and text; Manage is a chip', async ({ page, context }) => {
     await signIn(context);
     await page.goto('/dashboard');

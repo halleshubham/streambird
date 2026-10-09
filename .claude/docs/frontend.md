@@ -44,6 +44,9 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
   5. Sticky/fixed elements: the studio top bar is sticky only above 720 px wide; it is three rows tall on phones.
 - Verify layout changes with screenshots at ~1366×800 and 390×800 (skill `streambird-ui-change`).
 
+## Home page hero (`routes/LandingPage.tsx`, `components/HeroShowcase.tsx`)
+Pure-CSS motion, no JS timers: a pulsing "live" pill, an H1 whose platform name cycles YouTube → Facebook → Twitch (`.hero-word`, three words in one grid cell, 9 s loop, delays 0/3/6 s; a visually-hidden sentence gives screen readers the plain headline), drifting glow blobs, and `HeroShowcase`, a decorative (`aria-hidden`) miniature of the studio (slide, two speaking tiles, ticker, three destinations going live). Every animation is switched off under `prefers-reduced-motion` (the list at the end of the hero CSS block — **add any new animated hero class there**). To change the cycle, edit `HERO_WORDS` and the keyframe timing together.
+
 ## Loading feedback (three tools — pick by situation)
 | Tool | Use | Notes |
 |---|---|---|
