@@ -15,6 +15,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { StudioSessionsService } from './studio-sessions.service';
 import { TurnCredentialsService } from './turn-credentials.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
+import { CheckInvitePasswordDto } from './dto/check-invite-password.dto';
 import { UpdateLayoutDto } from './dto/update-layout.dto';
 import { AccountGuard } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
@@ -59,6 +60,18 @@ export class StudioSessionsController {
       expiresAt: invite.expiresAt,
       passwordRequired: !!invite.passwordHash,
     };
+  }
+
+  /**
+   * Public. Checks a guest's invite password before they enter the room, so a wrong one is
+   * refused on the join form. Throttled per IP because it is an unauthenticated password check.
+   */
+  @Post('invites/:token/check-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async checkInvitePassword(@Param('token') token: string, @Body() dto: CheckInvitePasswordDto): Promise<void> {
+    await this.studioSessionsService.checkInvitePassword(token, dto.password);
   }
 
   /**

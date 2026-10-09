@@ -209,6 +209,22 @@ export class StudioSessionsService {
   }
 
   /**
+   * Lets the join page reject a wrong password on the form itself instead of letting the guest
+   * into a room whose socket then refuses them. Same rule as joinAsGuest, which stays the
+   * authority (a guest who skips this check is still refused there).
+   */
+  async checkInvitePassword(token: string, password?: string): Promise<void> {
+    const invite = await this.resolveInviteToken(token);
+    this.assertPassword(invite, password);
+  }
+
+  private assertPassword(invite: StudioGuestInvite, password?: string): void {
+    if (invite.passwordHash && (!password || this.hash(password) !== invite.passwordHash)) {
+      throw new BadRequestException('This invite requires the correct password to join');
+    }
+  }
+
+  /**
    * Validates the token (and password, if the invite requires one) and
    * records the guest as a StudioParticipant. Unlike the old
    * consumeInviteAndJoin, this does NOT revoke the invite -- a guest whose
@@ -223,11 +239,7 @@ export class StudioSessionsService {
   ): Promise<StudioParticipant> {
     const invite = await this.resolveInviteToken(token);
 
-    if (invite.passwordHash) {
-      if (!password || this.hash(password) !== invite.passwordHash) {
-        throw new BadRequestException('This invite requires the correct password to join');
-      }
-    }
+    this.assertPassword(invite, password);
 
     const participant = this.participants.create({
       studioSessionId: invite.studioSessionId,

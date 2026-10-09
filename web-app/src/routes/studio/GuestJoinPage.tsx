@@ -120,7 +120,7 @@ export function GuestJoinPage() {
             </button>
           </div>
           <p className={`status${callIsError ? ' error' : ''}`}>
-            {isInProgress(callStatus) && <BirdBusy />}
+            {isInProgress(callStatus) && <BirdBusy overlay={false} />}
             {callStatus}
           </p>
         </div>

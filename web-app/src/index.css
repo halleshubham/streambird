@@ -586,17 +586,25 @@ input[type="range"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  gap: 10px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 35%, transparent);
   background: var(--accent);
   color: #fff;
   text-decoration: none;
   font-weight: 600;
-  padding: 14px 28px;
+  padding: 14px 30px;
   white-space: nowrap;
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .go-live-cta:hover {
   background: var(--accent-hover);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.go-live-cta:active {
+  transform: translateY(1px);
 }
 
 .go-live-cta.disabled {
@@ -859,7 +867,7 @@ a.icon-btn--danger {
 /* ---- Studio (host + guest) ---- */
 
 .studio-page {
-  max-width: 1100px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 24px 16px;
   width: 100%;
@@ -911,7 +919,8 @@ a.icon-btn--danger {
   color: var(--text);
 }
 
-.studio-resolution-select {
+.studio-resolution-select,
+.tb-select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -921,7 +930,8 @@ a.icon-btn--danger {
   background: var(--card-bg);
 }
 
-.studio-resolution-select select {
+.studio-resolution-select select,
+.tb-select select {
   width: auto;
   border: none;
   background: none;
@@ -1306,14 +1316,8 @@ a.icon-btn--danger {
 
 .landing-currency-toggle {
   display: flex;
-  gap: 8px;
   justify-content: center;
-  margin: 16px 0 24px;
-}
-
-.landing-currency-toggle--active {
-  color: var(--accent);
-  font-weight: 600;
+  margin: 16px auto 28px; /* auto, or `.landing-section--alt > *` margins are overridden and the switch sits off-centre */
 }
 
 .landing-pricing-grid {
@@ -1436,19 +1440,20 @@ a.icon-btn--danger {
 
 .bird-loader--compact {
   position: static;
-  padding: 20px 0;
+  min-height: 55vh;
+  padding: 24px 0;
   background: none;
   border-radius: 0;
 }
 
 .bird-loader-bird {
-  width: 56px;
-  height: 56px;
+  width: 88px;
+  height: 88px;
 }
 
 .bird-loader--compact .bird-loader-bird {
-  width: 36px;
-  height: 36px;
+  width: 96px;
+  height: 96px;
 }
 
 .bird-loader-bird--flying {
@@ -1461,16 +1466,17 @@ a.icon-btn--danger {
 
 .bird-loader-label {
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .bird-loader--compact .bird-loader-label {
   color: var(--text);
+  font-size: 16px;
 }
 
 @keyframes bird-loader-flap {
   0%, 100% { transform: translateY(0) rotate(-4deg); }
-  50% { transform: translateY(-10px) rotate(4deg); }
+  50% { transform: translateY(-14px) rotate(4deg); }
 }
 
 @keyframes bird-loader-fly-out {
@@ -1883,3 +1889,357 @@ a.icon-btn--danger {
 }
 .youtube-permission-note p { margin: 4px 0; }
 .youtube-permission-note ul { margin: 4px 0 8px 18px; padding: 0; }
+
+
+/* ======================================================================
+   UI polish: form controls, chips, segmented toggle, busy overlay, studio top bar
+   ====================================================================== */
+
+/* The bare `input` rule above gives every input width:100% plus padding and a bottom margin,
+   which is what pulled checkboxes out of line with their label text. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.checkbox-row,
+.create-stream-form .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button,
+a.icon-btn,
+.chip-link {
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.panel {
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+
+/* Links that are really actions ("Manage", "Schedule a stream", "See pricing"): a soft pill. */
+.chip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.chip-link:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.chip-link--sm {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.chip-link--lg {
+  padding: 12px 22px;
+  font-size: 15px;
+}
+
+.section-header {
+  align-items: center;
+}
+
+/* Two-option switch (the currency toggle). */
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+}
+
+.segmented button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.segmented button:hover:not(:disabled):not(.active) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-h);
+}
+
+.segmented button.active,
+.segmented button.active:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.segmented-sub {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* Big bird in the middle of the screen while something is happening (see BusyOverlay). */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 20, 0.22);
+  pointer-events: none;
+  animation: busy-overlay-in 0.18s ease-out;
+}
+
+.busy-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 36px 20px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card-bg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.busy-overlay-bird {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  animation: bird-loader-flap 1.1s ease-in-out infinite;
+}
+
+@keyframes busy-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .busy-overlay-bird,
+  .bird-loader-bird--flying {
+    animation: none;
+  }
+}
+
+/* ---- Host studio: controls on a bar above the picture ---- */
+
+.studio-topbar {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+}
+
+.studio-topbar-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.studio-topbar-selects .studio-resolution-select,
+.studio-topbar-selects .tb-select {
+  padding: 6px 8px;
+}
+
+.studio-topbar-selects select {
+  max-width: 120px;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.studio-topbar-live {
+  margin-left: auto;
+}
+
+.tb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tb-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, var(--card-bg));
+  border-color: var(--accent);
+  color: var(--text-h);
+}
+
+.tb-btn--on,
+.tb-btn--on:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tb-btn--icon {
+  padding: 8px 9px;
+}
+
+.tb-btn--danger {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+}
+
+.tb-btn--danger:hover:not(:disabled) {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+.go-live-button--bar {
+  padding: 9px 22px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+
+.studio-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: min(340px, calc(100vw - 48px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.studio-password-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.studio-password-row input {
+  margin-bottom: 0;
+}
+
+.studio-password-row .icon-btn {
+  flex: none;
+  padding: 10px 14px;
+}
+
+.studio-popover-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.studio-popover-note--ok {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.studio-popover-note--warn {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.studio-layout-note {
+  margin: 8px 2px 16px;
+}
+
+@media (max-width: 720px) {
+  .studio-topbar {
+    position: static; /* three rows tall here: pinning it would cover the picture */
+  }
+
+  .studio-invite-group {
+    position: static;
+  }
+
+  .studio-popover {
+    left: 10px;
+    right: 10px;
+    width: auto;
+  }
+
+  .studio-topbar-live {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .tb-label {
+    display: none;
+  }
+
+  .tb-btn {
+    padding: 9px 11px;
+  }
+}
+
+/* The layout switch is an icon on its own (its tooltip says what it does): keeps the bar on one row. */
+.tb-label--wide {
+  display: none;
+}

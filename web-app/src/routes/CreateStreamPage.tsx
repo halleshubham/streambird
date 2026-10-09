@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, Radio } from 'lucide-react';
+import { CalendarClock, Plug, Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
 import { createStream, scheduleStream, uploadScheduleThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
@@ -131,7 +131,7 @@ export function CreateStreamPage() {
       <div>
         <h1>Create a stream</h1>
         <p className="empty-state">
-          Connect at least one platform before creating a stream. <Link to="/connections">Connect one</Link>.
+          Connect at least one platform before creating a stream. <Link to="/connections" className="chip-link chip-link--sm"><Plug size={14} /> Connect one</Link>.
         </p>
       </div>
     );
