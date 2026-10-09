@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Radio,
@@ -16,9 +17,18 @@ import * as authApi from '../api/auth';
 import { docsUrl } from '../docs';
 import { getPublicPlans } from '../api/plans';
 import { getBillingConfig } from '../api/billing';
-import type { PublicPlan } from '../types/api';
+import type { Platform, PublicPlan } from '../types/api';
 import { FacebookLogo, GoogleLogo } from '../components/AuthLogos';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { PlatformLogo } from '../components/PlatformLogo';
+import { HeroShowcase } from '../components/HeroShowcase';
+
+/** The platforms the hero headline cycles through (CSS keyframes, no JS timer). */
+const HERO_WORDS: { platform: Platform; label: string; color: string }[] = [
+  { platform: 'youtube', label: 'YouTube', color: '#ff0033' },
+  { platform: 'facebook', label: 'Facebook', color: '#1877f2' },
+  { platform: 'twitch', label: 'Twitch', color: '#9146ff' },
+];
 
 const FEATURES = [
   {
@@ -211,8 +221,29 @@ export function LandingPage() {
         </div>
       </header>
 
+      <div className="landing-hero-wrap">
+      <div className="hero-glow" aria-hidden="true">
+        <span className="hero-glow-a" />
+        <span className="hero-glow-b" />
+      </div>
       <section className="landing-hero">
-        <h1>Go live everywhere, from one browser tab.</h1>
+        <p className="hero-pill">
+          <span className="hero-live-dot" aria-hidden="true" /> Live from your browser &middot; nothing to install
+        </p>
+        <h1 className="hero-title">
+          <span className="visually-hidden">Go live on YouTube, Facebook and Twitch from one browser tab.</span>
+          <span aria-hidden="true">
+            Go live on{' '}
+            <span className="hero-rotator">
+              {HERO_WORDS.map((w, i) => (
+                <span key={w.platform} className="hero-word" style={{ '--c': w.color, '--i': i } as CSSProperties}>
+                  <PlatformLogo platform={w.platform} size={34} /> {w.label}
+                </span>
+              ))}
+            </span>{' '}
+            from one browser tab.
+          </span>
+        </h1>
         <p className="landing-subhead">
           StreamBird broadcasts to YouTube, Facebook, Twitch, and more -- simultaneously -- with a built-in
           multi-guest studio, mix-minus audio, and live branding overlays. No app to install, no
@@ -238,7 +269,9 @@ export function LandingPage() {
           <ShieldCheck size={14} /> No credit card to start &middot; Free tier included &middot;
           Self-hosted relay, no vendor lock-in
         </p>
+        <HeroShowcase />
       </section>
+      </div>
 
       <section id="features" className="landing-section">
         <h2>Everything a live production needs, built in</h2>

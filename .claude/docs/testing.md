@@ -65,7 +65,7 @@ Rules of thumb:
 - **Generate passwords/secrets in tests** (`crypto.randomBytes(6).toString('hex')`). Literal passwords in test files trip GitGuardian ("Generic Password"), which fails the PR check and cannot be cleared without rewriting the commit.
 
 ### Selector contract (renaming these breaks tests — update both)
-Ids: `#layoutSelect`, `#themeSelect`, `#slidesInput`, `#wallpaperInput`, `#email`, `#code`, `#displayName`, `#invitePassword`. Test ids: `slide-counter`, `wallpaper-fit`, `youtube-permission-note`. Classes used by tests: `.studio-resolution-select option` (the **quality** menu only — do not reuse that class for other selects; layout/style use `.tb-select`), `canvas.studio-canvas`, `.busy-overlay-bird`, `.slide-controls`, `.slide-thumb(--active)`, `.meeting-grid`, `.chip-link`, `.go-live-cta`.
+Ids: `#layoutSelect`, `#themeSelect`, `#slidesInput`, `#wallpaperInput`, `#email`, `#code`, `#displayName`, `#invitePassword`. Test ids: `slide-counter`, `wallpaper-fit`, `youtube-permission-note`. Classes used by tests: `.studio-resolution-select option` (the **quality** menu only — do not reuse that class for other selects; layout/style use `.tb-select`), `canvas.studio-canvas`, `.busy-overlay-bird`, `.slide-controls`, `.slide-thumb(--active)`, `.meeting-grid`, `.chip-link`, `.go-live-cta`, `.hero-word`, `.hero-studio`, `.hs-dest` (home hero).
 Accessible names: icon buttons keep their **full** `aria-label` even when the visible text is short ("Start my camera"/"Camera on", "Create guest invite", "End stream", "Previous slide"), so tests and screen readers are unaffected by label trimming.
 
 ## Visual verification (do it for any UI change)
