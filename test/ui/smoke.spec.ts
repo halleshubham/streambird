@@ -684,3 +684,45 @@ test.describe('UI polish', () => {
     });
   });
 });
+
+test.describe('admin analytics: Force end', () => {
+  async function liveStreamAs(browser: import('@playwright/test').Browser, title: string) {
+    const ctx = await browser.newContext();
+    const { api } = await signIn(ctx);
+    const conn = await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'T', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json();
+    const stream = await (await api.post(`${APP}/api/streams`, { data: { title, destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+    return { id: stream.id as string, ctx };
+  }
+
+  test('a superadmin force-ends a live stream from the analytics page, and a failure stays on the page so it can be retried', async ({ page, context, browser }) => {
+    const title = `Stuck show ${crypto.randomBytes(4).toString('hex')}`;
+    const { id, ctx } = await liveStreamAs(browser, title);
+    await signIn(context, { superadmin: true });
+    page.on('dialog', (d) => void d.accept());
+
+    await page.goto('/admin/analytics');
+    const row = page.getByRole('row', { name: new RegExp(title) });
+    await expect(row).toBeVisible();
+
+    // First attempt fails on the server: a message above the table, the page and the row are still there.
+    let calls = 0;
+    await page.route(`**/api/superadmin/streams/${id}/force-end`, async (route) => {
+      calls++;
+      if (calls === 1) await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ statusCode: 500, message: 'Internal server error' }) });
+      else await route.continue();
+    });
+    await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await expect(page.getByTestId('force-end-note')).toContainText(`Could not end "${title}"`);
+    await expect(page.getByRole('heading', { name: 'Analytics' })).toBeVisible();
+    await expect(row).toBeVisible();
+    await expect(row.getByRole('button', { name: `Force end ${title}` })).toBeEnabled();
+
+    // Retry works: the row goes, the note says what happened, and the stream really ended.
+    await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await expect(page.getByTestId('force-end-note')).toContainText(`Ended "${title}"`);
+    await expect(page.getByRole('row', { name: new RegExp(title) })).toHaveCount(0);
+    const status = await (await ctx.request.get(`${APP}/api/streams/${id}`)).json();
+    expect(status.status).toBe('ended');
+    await ctx.close();
+  });
+});

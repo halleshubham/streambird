@@ -143,6 +143,7 @@ describe('StreamsService', () => {
       destinationRepo,
       thumbnailRows,
       relay,
+      mediaMtx: moduleRef.get(MediaMtxService),
       studioSessions: moduleRef.get(StudioSessionsService),
       accountsService: moduleRef.get(AccountsService),
     };
@@ -235,6 +236,59 @@ describe('StreamsService', () => {
     // Guest invites no longer carry their own TTL -- ending the stream is
     // now the only thing that stops an outstanding invite link from working.
     expect(studioSessions.revokeInvitesForStream).toHaveBeenCalledWith(stream.id);
+  });
+
+  describe('end() always finishes, even when the outside world does not answer', () => {
+    afterEach(() => jest.useRealTimers());
+    const hang = () => new Promise<never>(() => undefined);
+
+    it('a platform, the relay and MediaMTX that all hang cannot keep a stream from ending (force end of a stuck stream)', async () => {
+      const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+      const { service, connectionRepo, destinationRepo, relay, mediaMtx, accountsService } = await build([youtube]);
+      connectionRepo.rows.set('c1', makeConnection('c1', Platform.YOUTUBE));
+      const stream = await service.create('acc_1', { title: 'Stuck', destinationConnectionIds: ['c1'] });
+
+      (youtube.endBroadcast as jest.Mock).mockImplementation(hang);
+      jest.spyOn(relay, 'deleteLiveInput').mockImplementation(hang);
+      (mediaMtx.removeForward as jest.Mock).mockImplementation(hang);
+
+      jest.useFakeTimers();
+      const done = service.end(stream.id, 'acc_1');
+      await jest.advanceTimersByTimeAsync(40_000);
+      const ended = await done;
+
+      expect(ended.status).toBe(StreamStatus.ENDED);
+      expect(ended.endedAt).toBeTruthy();
+      const dest = [...destinationRepo.rows.values()][0] as any;
+      expect(dest.status).toBe('ended');
+      expect(dest.errorMessage).toContain('Could not confirm the end on the platform');
+      expect(dest.errorMessage).toContain('did not answer');
+      expect(accountsService.recordStreamUsage).toHaveBeenCalled(); // the time was still billed
+    });
+
+    it('a platform that errors, and a relay that errors, still let the stream end, and the failure is recorded on the destination', async () => {
+      const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+      const { service, connectionRepo, destinationRepo, relay } = await build([youtube]);
+      connectionRepo.rows.set('c1', makeConnection('c1', Platform.YOUTUBE));
+      const stream = await service.create('acc_1', { title: 'Broken', destinationConnectionIds: ['c1'] });
+      (youtube.endBroadcast as jest.Mock).mockRejectedValue(new Error('token revoked'));
+      jest.spyOn(relay, 'deleteLiveInput').mockRejectedValue(new Error('relay 500'));
+
+      const ended = await service.end(stream.id, 'acc_1');
+
+      expect(ended.status).toBe(StreamStatus.ENDED);
+      expect(([...destinationRepo.rows.values()][0] as any).errorMessage).toContain('token revoked');
+    });
+
+    it('a destination whose connection was deleted does not block the end either', async () => {
+      const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+      const { service, connectionRepo } = await build([youtube]);
+      connectionRepo.rows.set('c1', makeConnection('c1', Platform.YOUTUBE));
+      const stream = await service.create('acc_1', { title: 'Orphan', destinationConnectionIds: ['c1'] });
+      connectionRepo.rows.delete('c1');
+
+      expect((await service.end(stream.id, 'acc_1')).status).toBe(StreamStatus.ENDED);
+    });
   });
 
   it('passes visibility through to the provider and persists both it and the returned watchUrl', async () => {

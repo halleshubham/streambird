@@ -31,6 +31,8 @@ export function AdminAnalyticsPage() {
   const [liveStreams, setLiveStreams] = useState<LiveStreamRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [endingId, setEndingId] = useState<string | null>(null);
+  // Result of the last Force end: shown above the table, so a failure never replaces the page and the row stays to retry.
+  const [actionNote, setActionNote] = useState<{ text: string; isError: boolean } | null>(null);
   // Re-renders the live-duration column once a minute so "Live for" and
   // the "Possibly stuck" flag actually tick forward on their own, rather
   // than only updating whenever something else happens to re-render the
@@ -69,11 +71,16 @@ export function AdminAnalyticsPage() {
       return;
     }
     setEndingId(stream.id);
+    setActionNote(null);
     try {
       await superadminApi.forceEndStream(stream.id);
+      setActionNote({ text: `Ended "${stream.title}" (${stream.accountName}).`, isError: false });
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to end that stream.');
+      setActionNote({
+        text: `Could not end "${stream.title}": ${err instanceof ApiError ? err.message : 'the request failed. Try again, and check your connection.'}`,
+        isError: true,
+      });
     } finally {
       setEndingId(null);
     }
@@ -103,6 +110,11 @@ export function AdminAnalyticsPage() {
 
       <section>
         <h2>Live streams</h2>
+        {actionNote && (
+          <p className={actionNote.isError ? 'error' : 'success'} role={actionNote.isError ? 'alert' : 'status'} data-testid="force-end-note">
+            {actionNote.text}
+          </p>
+        )}
         {liveStreams.length === 0 ? (
           <p className="empty-state">Nothing is currently live.</p>
         ) : (
@@ -138,9 +150,10 @@ export function AdminAnalyticsPage() {
                           type="button"
                           className="danger-button"
                           disabled={endingId !== null}
+                          aria-label={`Force end ${s.title}`}
                           onClick={() => void handleForceEnd(s)}
                         >
-                          {endingId === s.id && <BirdBusy />} Force end
+                          {endingId === s.id ? <BirdBusy /> : null} {endingId === s.id ? 'Ending…' : 'Force end'}
                         </button>
                       </td>
                     </tr>

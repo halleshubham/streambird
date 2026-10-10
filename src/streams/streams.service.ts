@@ -20,6 +20,11 @@ import { RELAY_PROVIDER, RelayProvider, RelayLiveInput } from '../relay/relay-pr
 import { MediaMtxService } from '../relay/mediamtx.service';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { withTimeout } from '../common/with-timeout';
+
+/** How long ending a stream waits on each outside call before giving up on it (see StreamsService.end). */
+const PLATFORM_END_TIMEOUT_MS = 12_000;
+const CLEANUP_TIMEOUT_MS = 8_000;
 
 @Injectable()
 export class StreamsService {
@@ -539,25 +544,37 @@ export class StreamsService {
   async end(id: string, accountId: string): Promise<LiveStream> {
     const stream = await this.findByIdOrThrow(id, accountId);
 
-    await Promise.allSettled(
+    // Ending must always finish. Each outside call (the platform, the relay, MediaMTX) has no timeout of its own, so
+    // one that hangs used to hang the whole end -- worst for a superadmin's "Force end" of a stuck stream. Every step
+    // is now bounded and best-effort: whatever cannot be reached is logged and the stream still ends here.
+    await Promise.all(
       stream.destinations
-        .filter((d) => d.status === DestinationStatus.LIVE && d.platformBroadcastId)
+        .filter((d) => d.status === DestinationStatus.LIVE)
         .map(async (d) => {
-          const conn = await this.platformConnections.findOneOrFail({
-            where: { id: d.platformConnectionId },
-          });
-          const provider = this.resolveProvider(conn);
-          await provider.endBroadcast(conn, d.platformBroadcastId!);
+          try {
+            if (d.platformBroadcastId) {
+              const conn = await this.platformConnections.findOneOrFail({ where: { id: d.platformConnectionId } });
+              const provider = this.resolveProvider(conn);
+              await withTimeout(provider.endBroadcast(conn, d.platformBroadcastId), PLATFORM_END_TIMEOUT_MS, `Ending the ${conn.platform} broadcast`);
+            }
+          } catch (err) {
+            this.logger.warn(`Stream ${id}: could not confirm the end on destination ${d.id}: ${this.describeError(err)}`);
+            d.errorMessage = `Could not confirm the end on the platform: ${this.describeError(err)}`;
+          }
           d.status = DestinationStatus.ENDED;
           await this.destinations.save(d);
         }),
     );
 
     if (stream.relayLiveInputId) {
-      await this.relay.deleteLiveInput(stream.relayLiveInputId);
+      await withTimeout(this.relay.deleteLiveInput(stream.relayLiveInputId), CLEANUP_TIMEOUT_MS, 'Removing the relay input').catch((err) =>
+        this.logger.warn(`Stream ${id}: relay cleanup failed: ${this.describeError(err)}`),
+      );
     }
     if (stream.whipUrl) {
-      await this.mediaMtx.removeForward(stream.id);
+      await withTimeout(this.mediaMtx.removeForward(stream.id), CLEANUP_TIMEOUT_MS, 'Removing the MediaMTX path').catch((err) =>
+        this.logger.warn(`Stream ${id}: MediaMTX cleanup failed: ${this.describeError(err)}`),
+      );
     }
 
     // A host token can't outlive the stream it authenticates studio access

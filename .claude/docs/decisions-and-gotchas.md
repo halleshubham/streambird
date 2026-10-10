@@ -42,6 +42,7 @@ Short "why" records. When code looks odd, check here before "fixing" it. Add a l
 | Google refuses headless/automated sign-in silently | record OAuth demos by hand |
 | `git push --delete` / force push in the sandbox | not possible; use UI / new branch |
 | Coolify token expired (401) | ask the user for a fresh one |
+| An outside call with no timeout (platform API, relay, MediaMTX) inside something that must finish (ending a stream) | wrap it in `withTimeout` and make it best-effort; log what failed |
 | Docs/skills claim something the code no longer does | update `.claude/` in the same PR |
 
 ## Known gaps / ideas not built
