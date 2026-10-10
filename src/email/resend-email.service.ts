@@ -6,6 +6,9 @@ import { EmailService, PaymentReceiptData } from './email.interface';
 import { StreamInviteData, buildStreamInviteEmail } from './stream-invite.template';
 import { PendingApprovalsDigestData, buildApprovalDigest } from './approval-digest.template';
 import { ApprovalDecisionData, buildApprovalDecisionEmail } from './approval-decision.template';
+import { buildLoginCodeEmail } from './login-code.template';
+import { buildTeamInviteEmail } from './team-invite.template';
+import { buildPaymentReceiptEmail } from './payment-receipt.template';
 
 @Injectable()
 export class ResendEmailService implements EmailService {
@@ -14,91 +17,40 @@ export class ResendEmailService implements EmailService {
     private readonly config: ConfigService,
   ) {}
 
-  async sendLoginCode(to: string, code: string): Promise<void> {
+  /** One place for the Resend call, so every mail is sent the same way (same sender, same auth). */
+  private async send(payload: { to: string; subject: string; text: string; html?: string }): Promise<void> {
     const apiKey = this.config.get<string>('resendApiKey');
     const from = this.config.get<string>('emailFrom');
+    await firstValueFrom(this.http.post('https://api.resend.com/emails', { from, ...payload }, { headers: { Authorization: `Bearer ${apiKey}` } }));
+  }
 
-    await firstValueFrom(
-      this.http.post(
-        'https://api.resend.com/emails',
-        {
-          from,
-          to,
-          subject: `${code} is your StreamBird login code`,
-          text: `Your StreamBird login code is ${code}. It expires in 10 minutes.`,
-        },
-        { headers: { Authorization: `Bearer ${apiKey}` } },
-      ),
-    );
+  private baseUrl(): string | undefined {
+    return this.config.get<string>('publicBaseUrl');
+  }
+
+  async sendLoginCode(to: string, code: string): Promise<void> {
+    await this.send({ to, ...buildLoginCodeEmail({ code, baseUrl: this.baseUrl() }) });
   }
 
   async sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void> {
-    const apiKey = this.config.get<string>('resendApiKey');
-    const from = this.config.get<string>('emailFrom');
-    const until = data.validUntil.toUTCString();
-    await firstValueFrom(
-      this.http.post(
-        'https://api.resend.com/emails',
-        {
-          from,
-          to,
-          subject: `Payment received -- StreamBird ${data.planName}`,
-          text: [
-            `Thanks! We received ₹${data.amountInr.toLocaleString('en-IN')} for StreamBird ${data.planName}${data.kind === 'day_pass' ? ' (day pass)' : ''}.`,
-            '',
-            `Active until: ${until}`,
-            `Payment reference: ${data.paymentId}`,
-            '',
-            'Questions or need a GST invoice? Reply to this email or write to support@shackyapps.in.',
-          ].join('\n'),
-        },
-        { headers: { Authorization: `Bearer ${apiKey}` } },
-      ),
-    );
+    await this.send({ to, ...buildPaymentReceiptEmail({ ...data, baseUrl: this.baseUrl() }) });
   }
 
   async sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void> {
-    const apiKey = this.config.get<string>('resendApiKey');
-    const from = this.config.get<string>('emailFrom');
-    const { subject, text, html } = buildApprovalDigest(data);
-    await firstValueFrom(
-      this.http.post('https://api.resend.com/emails', { from, to, subject, text, html }, { headers: { Authorization: `Bearer ${apiKey}` } }),
-    );
+    await this.send({ to, ...buildApprovalDigest({ ...data, baseUrl: data.baseUrl ?? this.baseUrl() }) });
   }
 
   async sendApprovalDecision(to: string, data: ApprovalDecisionData): Promise<void> {
-    const apiKey = this.config.get<string>('resendApiKey');
-    const from = this.config.get<string>('emailFrom'); // the same sender as login codes
-    const { subject, text, html } = buildApprovalDecisionEmail(data);
-    await firstValueFrom(
-      this.http.post('https://api.resend.com/emails', { from, to, subject, text, html }, { headers: { Authorization: `Bearer ${apiKey}` } }),
-    );
+    // The same sender as login codes.
+    await this.send({ to, ...buildApprovalDecisionEmail({ ...data, baseUrl: data.baseUrl ?? this.baseUrl() }) });
   }
 
   async sendBillingNotice(to: string, subject: string, text: string): Promise<void> {
-    const apiKey = this.config.get<string>('resendApiKey');
-    const from = this.config.get<string>('emailFrom');
-    await firstValueFrom(
-      this.http.post('https://api.resend.com/emails', { from, to, subject, text }, { headers: { Authorization: `Bearer ${apiKey}` } }),
-    );
+    await this.send({ to, subject, text });
   }
 
   async sendTeamInvite(to: string, companyName: string): Promise<void> {
-    const apiKey = this.config.get<string>('resendApiKey');
-    const from = this.config.get<string>('emailFrom');
-
-    await firstValueFrom(
-      this.http.post(
-        'https://api.resend.com/emails',
-        {
-          from,
-          to,
-          subject: `You've been invited to join ${companyName} on StreamBird`,
-          text: `You've been added to ${companyName}'s StreamBird account. Log in at any time with this email address to get started -- no separate invite link needed.`,
-        },
-        { headers: { Authorization: `Bearer ${apiKey}` } },
-      ),
-    );
+    await this.send({ to, ...buildTeamInviteEmail({ companyName, baseUrl: this.baseUrl() }) });
   }
 
   async sendStreamInvite(to: string, data: StreamInviteData): Promise<void> {
