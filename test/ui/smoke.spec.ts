@@ -495,6 +495,7 @@ test.describe('UI polish', () => {
 
     await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
     await expect(page.getByText(`as ${email}`)).toBeVisible();
+    await expect(page.getByText(`we will email you at ${email}`)).toBeVisible();
     await expect(page.getByRole('list', { name: 'Setup progress' }).locator('li')).toHaveCount(4);
     const mail = page.getByRole('link', { name: /support@shackyapps\.in/ });
     await expect(mail).toHaveAttribute('href', /^mailto:support@shackyapps\.in\?subject=/);

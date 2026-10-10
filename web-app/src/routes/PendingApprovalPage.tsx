@@ -77,7 +77,8 @@ export function PendingApprovalPage() {
         </ol>
 
         <p className="pending-note">
-          Check back in a little while. This page updates by itself the moment you are in.
+          Check back in a little while. This page updates by itself the moment you are in, and we will email you
+          {user ? ` at ${user.email}` : ''} as soon as your studio is ready.
         </p>
 
         <button type="button" className="pending-check" disabled={checking} onClick={() => void checkAgain()}>

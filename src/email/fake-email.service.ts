@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EmailService, PaymentReceiptData } from './email.interface';
 import { StreamInviteData } from './stream-invite.template';
 import { PendingApprovalsDigestData } from './approval-digest.template';
+import { ApprovalDecisionData } from './approval-decision.template';
 
 /**
  * Logs the code instead of sending it. Default outside production so
@@ -34,5 +35,9 @@ export class FakeEmailService implements EmailService {
 
   async sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void> {
     this.logger.log(`[fake email] approvals digest to ${to}: ${data.totalPending} waiting (${data.newSinceLast} new)`);
+  }
+
+  async sendApprovalDecision(to: string, data: ApprovalDecisionData): Promise<void> {
+    this.logger.log(`[fake email] sign-up ${data.decision} notice to ${to}`);
   }
 }

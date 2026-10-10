@@ -48,7 +48,7 @@ Gotchas that have each cost time:
 - `h.mailbox.codes.get(email)` is the "emailed" login code; `receipts`, `notices` capture other mail. Review accounts and nothing else skip the code.
 - `MockRazorpay` (`mock-razorpay.ts`) records every call and signs webhooks like Razorpay.
 - `ids('prefix')(n)` makes unique ids so a re-run on the same DB never collides.
-- `h.mailbox.digests` captures the superadmin approval digests; the harness sets `APPROVAL_DIGEST_INTERVAL_HOURS=0` so the timers are off and a test calls `app.get(ApprovalDigestService).run({ now, intervalHours })`.
+- `h.mailbox.decisions` captures the approve/reject emails to users; `h.mailbox.digests` captures the superadmin approval digests; the harness sets `APPROVAL_DIGEST_INTERVAL_HOURS=0` so the timers are off and a test calls `app.get(ApprovalDigestService).run({ now, intervalHours })`.
 - `describeE2E(name, fn)` wraps `describe` so the file skips without a DB.
 
 Rules of thumb:

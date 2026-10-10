@@ -27,6 +27,7 @@ export class Mailbox {
   receipts: Array<{ to: string; data: any }> = [];
   notices: Array<{ to: string; subject: string; text: string }> = [];
   digests: Array<{ to: string; data: any }> = [];
+  decisions: Array<{ to: string; data: any }> = [];
 
   sendLoginCode = async (to: string, code: string) => void this.codes.set(to, code);
   sendTeamInvite = async () => undefined;
@@ -34,6 +35,7 @@ export class Mailbox {
   sendPaymentReceipt = async (to: string, data: any) => void this.receipts.push({ to, data });
   sendBillingNotice = async (to: string, subject: string, text: string) => void this.notices.push({ to, subject, text });
   sendPendingApprovalsDigest = async (to: string, data: any) => void this.digests.push({ to, data });
+  sendApprovalDecision = async (to: string, data: any) => void this.decisions.push({ to, data });
 }
 
 export interface Reply<T = any> {
@@ -174,6 +176,7 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
     sendPaymentReceipt: mailbox.sendPaymentReceipt,
     sendBillingNotice: mailbox.sendBillingNotice,
     sendPendingApprovalsDigest: mailbox.sendPendingApprovalsDigest,
+    sendApprovalDecision: mailbox.sendApprovalDecision,
   });
   await app.listen(port, '127.0.0.1');
 
