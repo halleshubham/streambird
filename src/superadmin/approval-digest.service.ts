@@ -109,6 +109,7 @@ export class ApprovalDigestService implements OnModuleInit, OnModuleDestroy {
         totalPending: pending.length,
         newSinceLast,
         adminUrl: `${this.config.get<string>('publicBaseUrl')}/admin`,
+        baseUrl: this.config.get<string>('publicBaseUrl'),
         now,
       });
     } catch (err) {

@@ -1,3 +1,5 @@
+import { BRAND, brandedEmail } from './brand-email';
+
 /** Where a user writes to about their account; also what the pending-approval page shows. */
 export const SUPPORT_EMAIL = 'support@shackyapps.in';
 
@@ -5,18 +7,16 @@ export interface ApprovalDecisionData {
   decision: 'approved' | 'rejected';
   /** Where the user logs in (PUBLIC_BASE_URL/login). */
   loginUrl: string;
+  /** Public origin of the site (for the logo); defaults to https://streambird.app. */
+  baseUrl?: string;
 }
+
+const li = (icon: string, text: string): string =>
+  `<tr><td valign="top" width="30" style="padding:6px 0;font-size:18px">${icon}</td><td style="padding:6px 0;font-size:14px;line-height:1.5;color:${BRAND.ink}">${text}</td></tr>`;
 
 /** Subject, plain text and HTML for the email a user gets when a superadmin approves or rejects their sign-up. */
 export function buildApprovalDecisionEmail(data: ApprovalDecisionData): { subject: string; text: string; html: string } {
-  const shell = (title: string, paragraphs: string[], button?: { label: string; url: string }) =>
-    `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.55;color:#222;max-width:520px">` +
-    `<h2 style="margin:0 0 12px;font-size:20px">${title}</h2>` +
-    paragraphs.map((p) => `<p style="margin:0 0 12px">${p}</p>`).join('') +
-    (button
-      ? `<p style="margin:18px 0"><a href="${button.url}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:11px 22px;border-radius:8px;font-weight:bold">${button.label}</a></p>`
-      : '') +
-    `<p style="margin:18px 0 0;color:#777;font-size:13px">StreamBird &middot; <a href="mailto:${SUPPORT_EMAIL}" style="color:#7c3aed">${SUPPORT_EMAIL}</a></p></div>`;
+  const support = `<a href="mailto:${SUPPORT_EMAIL}" style="color:${BRAND.violet};font-weight:700">${SUPPORT_EMAIL}</a>`;
 
   if (data.decision === 'approved') {
     return {
@@ -30,15 +30,24 @@ export function buildApprovalDecisionEmail(data: ApprovalDecisionData): { subjec
         '',
         `Questions? Reply to this email or write to ${SUPPORT_EMAIL}.`,
       ].join('\n'),
-      html: shell(
-        'Your StreamBird studio is ready',
-        [
-          'Good news: your studio is set up. Log in with this email address and you can go live in minutes.',
-          'A good first step: connect YouTube, Facebook or Twitch under <b>Connections</b>, then press <b>Go live</b>. Invite guests with a link, no downloads needed.',
-          `Questions? Write to <a href="mailto:${SUPPORT_EMAIL}" style="color:#7c3aed">${SUPPORT_EMAIL}</a>.`,
-        ],
-        { label: 'Log in to StreamBird', url: data.loginUrl },
-      ),
+      html: brandedEmail({
+        baseUrl: data.baseUrl,
+        preheader: 'Log in and go live in minutes.',
+        badge: 'STUDIO READY',
+        headline: 'Your studio is ready.',
+        accent: "Let's go live!",
+        bodyHtml:
+          `<p style="margin:0 0 14px">Good news: our team has set everything up. Log in with this email address and you can be live in minutes.</p>` +
+          `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${BRAND.soft};border:1px solid ${BRAND.softBorder};border-radius:12px"><tr><td style="padding:12px 16px">` +
+          `<div style="font-size:12px;font-weight:800;letter-spacing:0.08em;color:${BRAND.violet};margin-bottom:4px">YOUR FIRST SHOW IN 3 STEPS</div>` +
+          `<table role="presentation" cellpadding="0" cellspacing="0" width="100%">` +
+          li('&#128279;', '<b>Connect</b> YouTube, Facebook or Twitch under Connections') +
+          li('&#127909;', 'Press <b>Go live</b> and start your camera') +
+          li('&#128101;', '<b>Invite guests</b> with a link, no downloads needed') +
+          `</table></td></tr></table>`,
+        cta: { label: 'Log in to StreamBird', url: data.loginUrl },
+        supportEmail: SUPPORT_EMAIL,
+      }),
     };
   }
 
@@ -49,9 +58,17 @@ export function buildApprovalDecisionEmail(data: ApprovalDecisionData): { subjec
       '',
       `If you think this is a mistake, or you'd like to tell us more about what you plan to stream, write to ${SUPPORT_EMAIL} and we'll take another look.`,
     ].join('\n'),
-    html: shell('About your StreamBird sign-up', [
-      "Thanks for your interest in StreamBird. We're not able to set up an account for this email address right now.",
-      `If you think this is a mistake, or you'd like to tell us more about what you plan to stream, write to <a href="mailto:${SUPPORT_EMAIL}" style="color:#7c3aed">${SUPPORT_EMAIL}</a> and we'll take another look.`,
-    ]),
+    html: brandedEmail({
+      baseUrl: data.baseUrl,
+      preheader: "We can't set up an account for this address right now.",
+      badge: 'ABOUT YOUR SIGN-UP',
+      headline: 'Thanks for your interest',
+      accent: 'in StreamBird.',
+      bodyHtml:
+        `<p style="margin:0 0 14px">We're not able to set up an account for this email address right now.</p>` +
+        `<p style="margin:0">If you think this is a mistake, or you'd like to tell us more about what you plan to stream, write to ${support} and we'll take another look.</p>`,
+      supportEmail: SUPPORT_EMAIL,
+    }),
   };
 }
+

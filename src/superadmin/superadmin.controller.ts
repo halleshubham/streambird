@@ -89,7 +89,8 @@ export class SuperadminController {
   /** Tells the person the outcome. Best-effort: an email problem must never undo or fail the decision. */
   private async notifyDecision(to: string, decision: 'approved' | 'rejected'): Promise<void> {
     try {
-      await this.email.sendApprovalDecision(to, { decision, loginUrl: `${this.config.get<string>('publicBaseUrl')}/login` });
+      const baseUrl = this.config.get<string>('publicBaseUrl');
+      await this.email.sendApprovalDecision(to, { decision, loginUrl: `${baseUrl}/login`, baseUrl });
     } catch (err) {
       this.logger.warn(`Could not email the ${decision} notice to ${to}: ${(err as Error).message}`);
     }

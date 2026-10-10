@@ -17,6 +17,8 @@ describe('buildApprovalDigest', () => {
     expect(text).toContain('1 waiting in total, 1 new since the last email.');
     expect(text).toContain('Approve or reject: https://x.test/admin');
     expect(html).toContain('href="https://x.test/admin"');
+    expect(html).toContain('Review in the admin console');
+    expect(html).toContain('NEEDS YOUR OK');
   });
 
   it('pluralises, names company admins and their company, and reports none new', () => {

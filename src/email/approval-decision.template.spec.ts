@@ -7,6 +7,8 @@ describe('buildApprovalDecisionEmail', () => {
     expect(text).toContain('https://streambird.test/login');
     expect(html).toContain('href="https://streambird.test/login"');
     expect(html).toContain('Log in to StreamBird');
+    expect(html).toContain('STUDIO READY');
+    expect(html).toContain('/icon-192.png');
     expect(text).toContain(SUPPORT_EMAIL);
   });
 

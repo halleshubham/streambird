@@ -1,3 +1,5 @@
+import { BRAND, brandedEmail, escapeHtml, pill } from './brand-email';
+
 /** One account waiting for approval, as listed in the superadmin's digest email. */
 export interface PendingApprovalRow {
   email: string;
@@ -15,12 +17,11 @@ export interface PendingApprovalsDigestData {
   newSinceLast: number;
   /** Where the superadmin approves or rejects them. */
   adminUrl: string;
+  /** Public origin of the site (for the logo); defaults to https://streambird.app. */
+  baseUrl?: string;
   /** "Now" for the "waiting for" column; injectable so tests are exact. */
   now?: Date;
 }
-
-const escapeHtml = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const kind = (role: string): string => (role === 'company_admin' ? 'Company admin' : 'Solo user');
 
@@ -54,18 +55,25 @@ export function buildApprovalDigest(data: PendingApprovalsDigestData): { subject
   const rows = data.users
     .map(
       (u) =>
-        `<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">${escapeHtml(u.email)}</td>` +
-        `<td style="padding:6px 10px;border-bottom:1px solid #eee">${kind(u.role)}${u.companyName ? `<br><span style="color:#777">${escapeHtml(u.companyName)}</span>` : ''}</td>` +
-        `<td style="padding:6px 10px;border-bottom:1px solid #eee;white-space:nowrap">${waited(u.createdAt, now)}</td></tr>`,
+        `<tr>` +
+        `<td style="padding:10px 12px;border-bottom:1px solid ${BRAND.softBorder};font-size:14px;color:${BRAND.ink}"><b>${escapeHtml(u.email)}</b><br>` +
+        `${pill(kind(u.role), u.role === 'company_admin' ? 'violet' : 'grey')}${u.companyName ? ` <span style="color:${BRAND.muted};font-size:12px">${escapeHtml(u.companyName)}</span>` : ''}</td>` +
+        `<td align="right" valign="top" style="padding:10px 12px;border-bottom:1px solid ${BRAND.softBorder};font-size:13px;white-space:nowrap;color:${BRAND.muted}">waiting<br><b style="color:${BRAND.ink};font-size:14px">${waited(u.createdAt, now)}</b></td></tr>`,
     )
     .join('');
-  const html =
-    `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;max-width:560px">` +
-    `<h2 style="margin:0 0 6px;font-size:18px">${n} ${n === 1 ? 'account is' : 'accounts are'} waiting for approval</h2>` +
-    `<p style="margin:0 0 12px;color:#555">${escapeHtml(intro)}</p>` +
-    `<table style="border-collapse:collapse;width:100%"><tr style="text-align:left;color:#777;font-size:12px"><th style="padding:6px 10px">Email</th><th style="padding:6px 10px">Type</th><th style="padding:6px 10px">Waiting</th></tr>${rows}</table>` +
-    (more ? `<p style="color:#555">${escapeHtml(more)}</p>` : '') +
-    `<p><a href="${escapeHtml(data.adminUrl)}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:bold">Review in the admin console</a></p>` +
-    `<p style="color:#888;font-size:12px">You get this email at most every few hours, and only while someone is waiting.</p></div>`;
+  const html = brandedEmail({
+    baseUrl: data.baseUrl,
+    preheader: intro,
+    badge: 'NEEDS YOUR OK',
+    headline: `${n} ${n === 1 ? 'account is' : 'accounts are'}`,
+    accent: 'waiting for approval.',
+    bodyHtml:
+      `<p style="margin:0 0 14px;color:${BRAND.muted}">${escapeHtml(intro)}</p>` +
+      `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${BRAND.soft};border:1px solid ${BRAND.softBorder};border-radius:12px">${rows}</table>` +
+      (more ? `<p style="margin:12px 0 0;color:${BRAND.muted};font-size:14px">${escapeHtml(more)}</p>` : '') +
+      `<p style="margin:16px 0 0;color:#8a87a0;font-size:12px">You get this email at most every few hours, and only while someone is waiting.</p>`,
+    cta: { label: 'Review in the admin console', url: data.adminUrl },
+    supportEmail: 'support@shackyapps.in',
+  });
   return { subject, text, html };
 }
