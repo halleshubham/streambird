@@ -29,7 +29,7 @@ describeE2E('approval decisions: the user is emailed when a superadmin approves 
     expect(res.status).toBe(201);
     expect(h.mailbox.decisions).toHaveLength(1);
     expect(h.mailbox.decisions[0].to).toBe(u.email);
-    expect(h.mailbox.decisions[0].data).toEqual({ decision: 'approved', loginUrl: `${h.baseUrl}/login` });
+    expect(h.mailbox.decisions[0].data).toEqual({ decision: 'approved', loginUrl: `${h.baseUrl}/login`, baseUrl: h.baseUrl });
     expect((await u.client.get('/auth/me')).body.user.approvedAt).not.toBeNull();
   });
 
