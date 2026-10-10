@@ -1,5 +1,7 @@
 import {
   Controller,
+  Inject,
+  Logger,
   Get,
   HttpCode,
   NotFoundException,
@@ -21,6 +23,8 @@ import { User } from '../users/entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { StreamsService } from '../streams/streams.service';
 import { LiveStream } from '../streams/entities/live-stream.entity';
+import { ConfigService } from '@nestjs/config';
+import { EMAIL_SERVICE, EmailService } from '../email/email.interface';
 
 /**
  * Superadmin-only. AccountGuard resolves the session as usual; its
@@ -34,10 +38,14 @@ import { LiveStream } from '../streams/entities/live-stream.entity';
 @UseGuards(AccountGuard, RolesGuard)
 @Roles(Role.SUPERADMIN)
 export class SuperadminController {
+  private readonly logger = new Logger(SuperadminController.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly auditLog: AuditLogService,
     private readonly streamsService: StreamsService,
+    private readonly config: ConfigService,
+    @Inject(EMAIL_SERVICE) private readonly email: EmailService,
     @InjectRepository(LiveStream)
     private readonly liveStreams: Repository<LiveStream>,
   ) {}
@@ -64,14 +72,28 @@ export class SuperadminController {
   async approve(@CurrentUser() admin: User, @Param('userId', ParseUUIDPipe) userId: string) {
     const user = await this.usersService.approveUser(userId, admin.id);
     await this.auditLog.log(admin, 'approve_user', 'user', user.id);
+    await this.notifyDecision(user.email, 'approved');
     return { id: user.id, approvedAt: user.approvedAt };
   }
 
   @Post('users/:userId/reject')
   @HttpCode(204)
   async reject(@CurrentUser() admin: User, @Param('userId', ParseUUIDPipe) userId: string): Promise<void> {
+    // The account (and its email) is deleted by the rejection, so read the address first.
+    const { email } = await this.usersService.findByIdOrThrow(userId);
     await this.usersService.rejectUser(userId);
     await this.auditLog.log(admin, 'reject_user', 'user', userId);
+    await this.notifyDecision(email, 'rejected');
+  }
+
+  /** Tells the person the outcome. Best-effort: an email problem must never undo or fail the decision. */
+  private async notifyDecision(to: string, decision: 'approved' | 'rejected'): Promise<void> {
+    try {
+      const baseUrl = this.config.get<string>('publicBaseUrl');
+      await this.email.sendApprovalDecision(to, { decision, loginUrl: `${baseUrl}/login`, baseUrl });
+    } catch (err) {
+      this.logger.warn(`Could not email the ${decision} notice to ${to}: ${(err as Error).message}`);
+    }
   }
 
   /**

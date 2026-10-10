@@ -1,4 +1,6 @@
 import { StreamInviteData } from './stream-invite.template';
+import { PendingApprovalsDigestData } from './approval-digest.template';
+import { ApprovalDecisionData } from './approval-decision.template';
 
 export interface PaymentReceiptData {
   planName: string;
@@ -26,4 +28,8 @@ export interface EmailService {
   sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void>;
   /** Plain billing notice (autopay failed, autopay cancelled...). Best-effort. */
   sendBillingNotice(to: string, subject: string, text: string): Promise<void>;
+  /** One consolidated "accounts waiting for approval" email to the superadmin (see ApprovalDigestService). */
+  sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void>;
+  /** Tells a user their sign-up was approved ("studio is ready") or declined. Best-effort: never fails the approval itself. */
+  sendApprovalDecision(to: string, data: ApprovalDecisionData): Promise<void>;
 }

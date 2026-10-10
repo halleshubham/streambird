@@ -17,7 +17,7 @@ NestJS 10 + TypeORM on Postgres. Global prefix `/api` (only `/health` is outside
 | `relay` | `MediaMtxService` (**the real delivery path**: paths, ffmpeg `runOnReady`, slate), optional `RelayProvider`s (`CloudflareRelayService`, `MuxRelayService`, token `RELAY_PROVIDER`), `fake-relay-provider.ts` for tests |
 | `plans` | `PlansService` (`effectiveLimits`, pure `computeLimits`, `syncAccountHoursMirror`). `plans`. `GET plans/public|me` |
 | `billing` | `BillingService`, `RazorpayClient`, `SuperadminBillingController`. `payments`, `subscriptions`, `app_settings`. See `billing-and-plans.md` |
-| `superadmin` | everything `@Roles(SUPERADMIN)`: approvals, users, accounts, plans, analytics, audit log, force-end; `SuperadminSeedService` seeds the admin on boot |
+| `superadmin` | everything `@Roles(SUPERADMIN)`: approvals, users, accounts, plans, analytics, audit log, force-end; `SuperadminSeedService` seeds the admin on boot; `ApprovalDigestService` emails the configured superadmin one list of accounts waiting for approval (see below) |
 | `audit-log` | `AuditLogService` → `superadmin_audit_log` |
 | `email` | `EMAIL_SERVICE` token: `ResendEmailService` when `RESEND_API_KEY` is set, else `FakeEmailService` (logs codes). `stream-invite.template.ts` builds invitation emails + `.ics` |
 | `encryption` | `EncryptionService` AES-256-GCM (`nonce(12)‖ciphertext‖tag(16)`), key must be 32 bytes or boot fails |
@@ -36,6 +36,12 @@ NestJS 10 + TypeORM on Postgres. Global prefix `/api` (only `/health` is outside
 **End** (`StreamsService.end`): `provider.endBroadcast` per live destination → `relay.deleteLiveInput` → `mediaMtx.removeForward` (stops the slate first) → revoke host tokens + invites → ENDED → `recordStreamUsage(hours)` (best-effort).
 
 **Glitch recovery** (`GlitchRecoveryService`): polls `MediaMtxService.listPaths()` every 2 s; only UUID-named paths whose publisher was once ready. After 10 s with no publisher → `startSlate(streamId, dests, orientation)` on path `<id>-slate` (ffmpeg looping `glitch-slate[-portrait].mp4`); publisher back → `stopSlate` within ~2 s; after 5 min → `StreamsService.end`. State is in memory; `reconcile()` rebuilds it from MediaMTX after a restart. The studio gateway's 60 s host-disconnect auto-end skips streams being watched here. **Session limit**: `SessionLimitService` every 60 s ends LIVE streams over `maxSessionHours`.
+
+## Approval decisions
+`POST superadmin/users/:id/approve|reject` (`SuperadminController`) emails the **user** the outcome via `EmailService.sendApprovalDecision` (template `email/approval-decision.template.ts`; approved = "Your StreamBird studio is ready" + login link, rejected = polite decline, no reason given; same sender as login codes). **Both approval emails use the shared branded layout** `email/brand-email.ts` (`brandedEmail`, `pill`, `escapeHtml`; the flyer look: dark-purple header with the 192 px icon from `PUBLIC_BASE_URL/icon-192.png`, white body, violet button, purple footer; tables + inline styles with solid colours under gradients) — use it for any new transactional email. Best-effort (`notifyDecision` catches and logs, so a mail outage never undoes a decision). Reject reads the address **before** `rejectUser` deletes the account. Review accounts and invited team members are auto-approved and get no such email.
+
+## Approval digest (`superadmin/approval-digest.service.ts`)
+Every `APPROVAL_DIGEST_INTERVAL_HOURS` (default 12, `0` = off) the **configured superadmin** (`SUPERADMIN_EMAIL`) gets ONE email (`EmailService.sendPendingApprovalsDigest`, template `email/approval-digest.template.ts`, HTML escaped) listing everyone in `UsersService.listPendingApprovals()`; **nothing is sent while none are waiting**. A check runs 30 s after boot and every 15 min. When the last digest went out is stored in `app_settings` (`approval_digest_last_sent`), claimed with one conditional upsert *before* sending (so overlapping processes during a deploy cannot double-send) and released if the send fails. `run({ now, intervalHours })` is public for tests; the e2e harness sets the interval to 0 so timers stay off.
 
 ## Auth and access
 - **Session cookie** `sb_session`: httpOnly, `sameSite=lax`, `secure` when `NODE_ENV=production`, 30 days; random 32-byte token stored as sha256 in `user_sessions`.

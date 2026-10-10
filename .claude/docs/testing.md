@@ -48,6 +48,7 @@ Gotchas that have each cost time:
 - `h.mailbox.codes.get(email)` is the "emailed" login code; `receipts`, `notices` capture other mail. Review accounts and nothing else skip the code.
 - `MockRazorpay` (`mock-razorpay.ts`) records every call and signs webhooks like Razorpay.
 - `ids('prefix')(n)` makes unique ids so a re-run on the same DB never collides.
+- `h.mailbox.decisions` captures the approve/reject emails to users; `h.mailbox.digests` captures the superadmin approval digests; the harness sets `APPROVAL_DIGEST_INTERVAL_HOURS=0` so the timers are off and a test calls `app.get(ApprovalDigestService).run({ now, intervalHours })`.
 - `describeE2E(name, fn)` wraps `describe` so the file skips without a DB.
 
 Rules of thumb:
@@ -65,7 +66,7 @@ Rules of thumb:
 - **Generate passwords/secrets in tests** (`crypto.randomBytes(6).toString('hex')`). Literal passwords in test files trip GitGuardian ("Generic Password"), which fails the PR check and cannot be cleared without rewriting the commit.
 
 ### Selector contract (renaming these breaks tests — update both)
-Ids: `#layoutSelect`, `#themeSelect`, `#slidesInput`, `#wallpaperInput`, `#email`, `#code`, `#displayName`, `#invitePassword`. Test ids: `slide-counter`, `wallpaper-fit`, `youtube-permission-note`. Classes used by tests: `.studio-resolution-select option` (the **quality** menu only — do not reuse that class for other selects; layout/style use `.tb-select`), `canvas.studio-canvas`, `.busy-overlay-bird`, `.slide-controls`, `.slide-thumb(--active)`, `.meeting-grid`, `.chip-link`, `.go-live-cta`, `.hero-word`, `.hero-studio`, `.hs-dest` (home hero).
+Ids: `#layoutSelect`, `#themeSelect`, `#slidesInput`, `#wallpaperInput`, `#email`, `#code`, `#displayName`, `#invitePassword`. Test ids: `slide-counter`, `wallpaper-fit`, `youtube-permission-note`. Classes used by tests: `.studio-resolution-select option` (the **quality** menu only — do not reuse that class for other selects; layout/style use `.tb-select`), `canvas.studio-canvas`, `.busy-overlay-bird`, `.slide-controls`, `.slide-thumb(--active)`, `.meeting-grid`, `.chip-link`, `.go-live-cta`, `.hero-word`, `.hero-studio`, `.hs-dest` (home hero), `.pending-bird`, `.pending-ring--1`, heading "Your studio is being set up!" and the "Setup progress" list (approval page).
 Accessible names: icon buttons keep their **full** `aria-label` even when the visible text is short ("Start my camera"/"Camera on", "Create guest invite", "End stream", "Previous slide"), so tests and screen readers are unaffected by label trimming.
 
 ## Visual verification (do it for any UI change)

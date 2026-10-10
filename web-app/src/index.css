@@ -2841,3 +2841,224 @@ kbd {
     gap: 6px 22px;
   }
 }
+
+/* ---- Waiting for approval: "Your studio is being set up!" ---- */
+
+.pending-page {
+  background:
+    radial-gradient(600px 360px at 85% -5%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+    radial-gradient(520px 320px at 5% 105%, color-mix(in srgb, #ff2d55 12%, transparent), transparent 70%),
+    var(--bg);
+}
+
+.pending-card {
+  width: 100%;
+  max-width: 460px;
+  padding: 28px 28px 24px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card-bg);
+  box-shadow: 0 18px 50px rgba(60, 20, 120, 0.14);
+  animation: hero-rise 0.6s ease-out both;
+}
+
+.pending-card h1 {
+  margin: 4px 0 8px;
+  text-wrap: balance;
+  font-size: clamp(22px, 6vw, 28px);
+  letter-spacing: -0.02em;
+}
+
+.pending-lead {
+  margin: 0 0 16px;
+}
+
+.pending-scene {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 150px;
+  margin-bottom: 16px;
+}
+
+.pending-glow {
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 38%, transparent), transparent 68%);
+  animation: pending-breathe 3.2s ease-in-out infinite;
+}
+
+.pending-ring {
+  position: absolute;
+  border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 50%;
+}
+
+.pending-ring--1 {
+  width: 118px;
+  height: 118px;
+  animation: pending-spin 14s linear infinite;
+}
+
+.pending-ring--2 {
+  width: 146px;
+  height: 146px;
+  border-style: dotted;
+  animation: pending-spin 22s linear infinite reverse;
+}
+
+.pending-bird {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+  animation: bird-loader-flap 2.4s ease-in-out infinite;
+}
+
+.pending-spark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: pending-spark 3.6s ease-in-out infinite;
+}
+
+.pending-spark--1 { top: 22px; left: calc(50% + 52px); }
+.pending-spark--2 { top: 96px; left: calc(50% - 74px); background: #ff2d55; animation-delay: 1.2s; }
+.pending-spark--3 { top: 40px; left: calc(50% - 64px); background: #f59e0b; animation-delay: 2.3s; }
+
+/* Three little frames filling in, like the studio being laid out. */
+.pending-frames {
+  position: absolute;
+  bottom: -2px;
+  display: flex;
+  gap: 6px;
+}
+
+.pending-frames i {
+  display: block;
+  width: 34px;
+  height: 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 35%, var(--border));
+  transform-origin: left;
+  animation: pending-fill 3.6s ease-in-out infinite;
+}
+
+.pending-frames i:nth-child(2) { animation-delay: 0.4s; }
+.pending-frames i:nth-child(3) { animation-delay: 0.8s; }
+
+@keyframes pending-breathe {
+  50% { transform: scale(1.12); opacity: 0.75; }
+}
+
+@keyframes pending-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pending-spark {
+  0%, 100% { opacity: 0; transform: translateY(6px) scale(0.6); }
+  40%, 60% { opacity: 1; transform: translateY(-6px) scale(1); }
+}
+
+@keyframes pending-fill {
+  0%, 10% { transform: scaleX(0.15); opacity: 0.5; }
+  45%, 85% { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(0.15); opacity: 0.5; }
+}
+
+.pending-steps {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  font-size: 15px;
+}
+
+.pending-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+
+.pending-steps .done {
+  color: var(--text-h);
+}
+
+.pending-steps .done svg {
+  color: #16a34a;
+}
+
+.pending-steps .doing {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.pending-dot {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  animation: pending-spin 0.9s linear infinite;
+}
+
+.pending-ring-dot {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+}
+
+.pending-note {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+
+.pending-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.pending-checked {
+  margin: 12px auto 0;
+  max-width: 340px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pending-help {
+  margin: 18px 0 6px;
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-card,
+  .pending-glow,
+  .pending-ring,
+  .pending-bird,
+  .pending-spark,
+  .pending-frames i,
+  .pending-dot {
+    animation: none;
+  }
+
+  .pending-spark {
+    opacity: 0;
+  }
+}

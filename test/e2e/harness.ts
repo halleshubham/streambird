@@ -26,12 +26,16 @@ export class Mailbox {
   codes = new Map<string, string>();
   receipts: Array<{ to: string; data: any }> = [];
   notices: Array<{ to: string; subject: string; text: string }> = [];
+  digests: Array<{ to: string; data: any }> = [];
+  decisions: Array<{ to: string; data: any }> = [];
 
   sendLoginCode = async (to: string, code: string) => void this.codes.set(to, code);
   sendTeamInvite = async () => undefined;
   sendStreamInvite = async () => undefined;
   sendPaymentReceipt = async (to: string, data: any) => void this.receipts.push({ to, data });
   sendBillingNotice = async (to: string, subject: string, text: string) => void this.notices.push({ to, subject, text });
+  sendPendingApprovalsDigest = async (to: string, data: any) => void this.digests.push({ to, data });
+  sendApprovalDecision = async (to: string, data: any) => void this.decisions.push({ to, data });
 }
 
 export interface Reply<T = any> {
@@ -155,6 +159,8 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
     RAZORPAY_WEBHOOK_SECRET: razorpay ? RZP.webhookSecret : '',
     RAZORPAY_API_BASE: razorpay ? razorpay.url : 'https://api.razorpay.com/v1',
     RAZORPAY_GRACE_DAYS: '3',
+    // The digest's own timers stay off in tests (a test calls ApprovalDigestService.run itself).
+    APPROVAL_DIGEST_INTERVAL_HOURS: '0',
     MEDIAMTX_API_URL: mtxUrl,
     MEDIAMTX_WHIP_BASE_URL: mtxUrl,
   });
@@ -169,6 +175,8 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
     sendLoginCode: mailbox.sendLoginCode,
     sendPaymentReceipt: mailbox.sendPaymentReceipt,
     sendBillingNotice: mailbox.sendBillingNotice,
+    sendPendingApprovalsDigest: mailbox.sendPendingApprovalsDigest,
+    sendApprovalDecision: mailbox.sendApprovalDecision,
   });
   await app.listen(port, '127.0.0.1');
 
