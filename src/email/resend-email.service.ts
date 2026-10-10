@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { EmailService, PaymentReceiptData } from './email.interface';
 import { StreamInviteData, buildStreamInviteEmail } from './stream-invite.template';
+import { PendingApprovalsDigestData, buildApprovalDigest } from './approval-digest.template';
 
 @Injectable()
 export class ResendEmailService implements EmailService {
@@ -52,6 +53,15 @@ export class ResendEmailService implements EmailService {
         },
         { headers: { Authorization: `Bearer ${apiKey}` } },
       ),
+    );
+  }
+
+  async sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void> {
+    const apiKey = this.config.get<string>('resendApiKey');
+    const from = this.config.get<string>('emailFrom');
+    const { subject, text, html } = buildApprovalDigest(data);
+    await firstValueFrom(
+      this.http.post('https://api.resend.com/emails', { from, to, subject, text, html }, { headers: { Authorization: `Bearer ${apiKey}` } }),
     );
   }
 

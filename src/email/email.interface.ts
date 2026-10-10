@@ -1,4 +1,5 @@
 import { StreamInviteData } from './stream-invite.template';
+import { PendingApprovalsDigestData } from './approval-digest.template';
 
 export interface PaymentReceiptData {
   planName: string;
@@ -26,4 +27,6 @@ export interface EmailService {
   sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void>;
   /** Plain billing notice (autopay failed, autopay cancelled...). Best-effort. */
   sendBillingNotice(to: string, subject: string, text: string): Promise<void>;
+  /** One consolidated "accounts waiting for approval" email to the superadmin (see ApprovalDigestService). */
+  sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void>;
 }

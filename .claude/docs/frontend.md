@@ -47,6 +47,9 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 ## Home page hero (`routes/LandingPage.tsx`, `components/HeroShowcase.tsx`)
 Pure-CSS motion, no JS timers: a pulsing "live" pill, an H1 whose platform name cycles YouTube → Facebook → Twitch (`.hero-word`, three words in one grid cell, 9 s loop, delays 0/3/6 s; a visually-hidden sentence gives screen readers the plain headline), drifting glow blobs, and `HeroShowcase`, a decorative (`aria-hidden`) miniature of the studio (slide, two speaking tiles, ticker, three destinations going live). Every animation is switched off under `prefers-reduced-motion` (the list at the end of the hero CSS block — **add any new animated hero class there**). To change the cycle, edit `HERO_WORDS` and the keyframe timing together.
 
+## Waiting-for-approval page (`routes/PendingApprovalPage.tsx`)
+Rendered by `ProtectedRoute` for any non-superadmin without `approvedAt`: "Your studio is being set up!" with a CSS-animated bird/rings scene, a four-step progress list, a support mailto (prefilled with the user's email), **Check again** (shows `BirdBusy`, then says what it found) and a 30 s poll of `/auth/me` so the page becomes the dashboard by itself. Motion is off under `prefers-reduced-motion`. Tests: `smoke.spec.ts` "waiting for approval" (uses `page.clock` to fast-forward the poll). The superadmin side of approvals: Admin dashboard + the 12-hourly email (`backend.md`).
+
 ## Loading feedback (three tools — pick by situation)
 | Tool | Use | Notes |
 |---|---|---|

@@ -10,6 +10,9 @@ import { UsersModule } from '../users/users.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { CommonModule } from '../common/common.module';
 import { SuperadminSeedService } from './superadmin-seed.service';
+import { ApprovalDigestService } from './approval-digest.service';
+import { AppSetting } from '../billing/entities/app-setting.entity';
+import { EmailModule } from '../email/email.module';
 import { SuperadminController } from './superadmin.controller';
 import { SuperadminAnalyticsController } from './superadmin-analytics.controller';
 import { SuperadminAnalyticsService } from './superadmin-analytics.service';
@@ -23,7 +26,8 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Account, Company, LiveStream, LiveStreamDestination, PlatformConnection]),
+    TypeOrmModule.forFeature([User, Account, Company, LiveStream, LiveStreamDestination, PlatformConnection, AppSetting]),
+    EmailModule,
     UsersModule,
     AccountsModule,
     CommonModule,
@@ -38,6 +42,6 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
     SuperadminAccountsController,
     SuperadminPlansController,
   ],
-  providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService],
+  providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService, ApprovalDigestService],
 })
 export class SuperadminModule {}

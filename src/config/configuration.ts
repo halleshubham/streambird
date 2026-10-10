@@ -49,6 +49,8 @@ export interface AppConfig {
    * login available yet). */
   superadminEmail: string;
   superadminPassword: string;
+  /** Hours between "accounts waiting for approval" emails to the superadmin (APPROVAL_DIGEST_INTERVAL_HOURS, default 12; 0 turns them off). */
+  approvalDigestIntervalHours: number;
   google: {
     clientId: string;
     clientSecret: string;
@@ -107,6 +109,12 @@ export interface AppConfig {
   };
 }
 
+function parseHours(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 export default (): AppConfig => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
@@ -139,6 +147,7 @@ export default (): AppConfig => ({
   emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.app>',
   superadminEmail: process.env.SUPERADMIN_EMAIL ?? '',
   superadminPassword: process.env.SUPERADMIN_PASSWORD ?? '',
+  approvalDigestIntervalHours: parseHours(process.env.APPROVAL_DIGEST_INTERVAL_HOURS, 12),
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',

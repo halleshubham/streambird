@@ -54,7 +54,7 @@ test.describe('signed-in user', () => {
     const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.fill('#code', code);
     await page.getByRole('button', { name: /Log in/ }).click();
-    await expect(page.getByText('Almost there')).toBeVisible(); // new accounts wait for approval
+    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible(); // new accounts wait for approval
 
     await page.request.post(`${CONTROL}/approve?email=${email}`);
     await page.getByRole('button', { name: 'Check again' }).click();
@@ -479,6 +479,52 @@ test.describe('UI polish', () => {
     await expect(still.locator('.hero-word').first()).toHaveCSS('opacity', '1');
     expect(await still.locator('.hero-word').first().evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     expect(await still.locator('.hero-studio').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
+    await calm.close();
+  });
+
+  test('waiting for approval: a friendly "studio is being set up" page that says what it found and lets you in by itself', async ({ page, context }) => {
+    const email = `ui-${crypto.randomBytes(5).toString('hex')}@test.dev`;
+    await page.clock.install();
+    await page.goto('/login');
+    await page.fill('#email', email);
+    await page.getByRole('button', { name: /Send login code/ }).click();
+    await page.waitForSelector('#code');
+    const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
+    await page.fill('#code', code);
+    await page.getByRole('button', { name: /Log in/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
+    await expect(page.getByText(`as ${email}`)).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Setup progress' }).locator('li')).toHaveCount(4);
+    const mail = page.getByRole('link', { name: /support@shackyapps\.in/ });
+    await expect(mail).toHaveAttribute('href', /^mailto:support@shackyapps\.in\?subject=/);
+    expect(decodeURIComponent((await mail.getAttribute('href'))!)).toContain(email);
+    expect(await page.locator('.pending-bird').evaluate((e) => getComputedStyle(e).animationName)).not.toBe('none');
+
+    // "Check again" answers instead of looking idle.
+    await page.getByRole('button', { name: /Check again/ }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'still being set up' })).toBeVisible();
+
+    // Approved while the page is open: it moves on by itself within one poll, no click needed.
+    await page.request.post(`${CONTROL}/approve?email=${email}`);
+    await page.clock.fastForward(35_000);
+    await expect(page).toHaveURL(/\/dashboard/);
+  });
+
+  test('waiting for approval: no motion when the visitor asks for reduced motion', async ({ browser }) => {
+    const calm = await browser.newContext({ reducedMotion: 'reduce' });
+    const p = await calm.newPage();
+    const email = `ui-${crypto.randomBytes(5).toString('hex')}@test.dev`;
+    await p.goto(`${APP}/login`);
+    await p.fill('#email', email);
+    await p.getByRole('button', { name: /Send login code/ }).click();
+    await p.waitForSelector('#code');
+    const { code } = await (await p.request.get(`${CONTROL}/code?email=${email}`)).json();
+    await p.fill('#code', code);
+    await p.getByRole('button', { name: /Log in/ }).click();
+    await expect(p.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
+    expect(await p.locator('.pending-bird').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
+    expect(await p.locator('.pending-ring--1').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     await calm.close();
   });
 

@@ -29,7 +29,7 @@ Required: `DATABASE_URL`, `ENCRYPTION_KEY_BASE64` (base64 of 32 bytes: `openssl 
 |---|---|
 | Core | `PORT` (3000), `NODE_ENV`, `PUBLIC_BASE_URL`, `LEGACY_HOSTS` (old hostnames to redirect/accept) |
 | Email | `RESEND_API_KEY`, `EMAIL_FROM` |
-| Admin/review | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `REVIEW_ACCOUNT_EMAILS` (read in `users/review-accounts.ts`), `REVIEW_ACCOUNT_PLAN` (pro) |
+| Admin/review | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `APPROVAL_DIGEST_INTERVAL_HOURS` (12; 0 = no "waiting for approval" emails to `SUPERADMIN_EMAIL`), `REVIEW_ACCOUNT_EMAILS` (read in `users/review-accounts.ts`), `REVIEW_ACCOUNT_PLAN` (pro) |
 | Google/YouTube | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (= `PUBLIC_BASE_URL/api/auth/google/callback`), `GOOGLE_YOUTUBE_REDIRECT_URI` (= `…/api/platform-connections/youtube/callback`), `GOOGLE_YOUTUBE_SCOPE` (default `youtube.force-ssl`) |
 | Facebook | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_REDIRECT_URI` (page connect callback), `FACEBOOK_LOGIN_REDIRECT_URI`, `FACEBOOK_LOGIN_CONFIG_ID`, `FACEBOOK_CONNECT_CONFIG_ID` |
 | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` (status/viewer read; ingest key is pasted manually) |
