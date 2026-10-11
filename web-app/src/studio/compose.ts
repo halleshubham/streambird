@@ -14,7 +14,7 @@ export interface Rect {
   h: number;
 }
 
-export type LayoutGroup = 'Classic' | 'Podcast' | 'Podcast + slides' | 'Anchor + slides' | 'Panel + slides';
+export type LayoutGroup = 'Classic' | 'Podcast' | 'Podcast + slides' | 'Anchor + slides' | 'Panel + slides' | 'Panel: 4 to 8' | 'Panel + slides: 4 to 8';
 
 export interface LayoutDef {
   id: string;
@@ -22,6 +22,11 @@ export interface LayoutDef {
   group: LayoutGroup;
   /** How many people tiles the layout has. Anyone beyond that stays in the audio mix but isn't drawn. */
   maxPeople: number;
+  /**
+   * Set on layouts designed for a range of people (4 to 8): their tiles are re-arranged for however many are
+   * on stage right now (computeLayout's `count`), between 1 and maxPeople, so there are never empty holes.
+   */
+  minPeople?: number;
   /** Whether the layout has a slide area (slideshow images, or the screen share when one is active). */
   hasSlide: boolean;
   description: string;
@@ -45,6 +50,15 @@ export const LAYOUTS = [
 
   { id: 'panel-slide-left', name: 'Host + 3 guests + slides: slide left', group: 'Panel + slides', maxPeople: 4, hasSlide: true, description: 'Slide on the left, four people in a 2x2 block on the right.' },
   { id: 'panel-slide-top', name: 'Host + 3 guests + slides: slide on top', group: 'Panel + slides', maxPeople: 4, hasSlide: true, description: 'Slide across the top, four people in a row below.' },
+
+  // Designed for 4 to 8 people on stage (host + 3 to 7 guests). The arrangement adapts to who is there.
+  { id: 'panel-gallery', name: 'Panel: gallery', group: 'Panel: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: false, description: 'Everyone in the same size, rows centred, sized to fill the frame. Adapts as people join or leave.' },
+  { id: 'panel-featured', name: 'Panel: featured speaker', group: 'Panel: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: false, description: 'One large speaker (you, or whoever you pin) with everyone else beside them.' },
+  { id: 'panel-stage', name: 'Panel: host on top, guests below', group: 'Panel: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: false, description: 'The host across the top, the guests in one or two rows beneath.' },
+
+  { id: 'panel-slide-side', name: 'Panel + slides: slide left, guests right', group: 'Panel + slides: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: true, description: 'A large slide on the left, up to eight people in two columns on the right.' },
+  { id: 'panel-slide-strip', name: 'Panel + slides: slide on top, guests below', group: 'Panel + slides: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: true, description: 'The slide across the top, up to eight people in one or two rows below.' },
+  { id: 'panel-slide-centre', name: 'Panel + slides: slide in the middle', group: 'Panel + slides: 4 to 8', maxPeople: 8, minPeople: 4, hasSlide: true, description: 'The slide in the centre with the panel split into a column on each side.' },
 ] as const satisfies readonly LayoutDef[];
 
 export type LayoutId = (typeof LAYOUTS)[number]['id'];
@@ -79,8 +93,17 @@ export function gutterFor(w: number, h: number): number {
   return Math.round(Math.min(w, h) * 0.035);
 }
 
-/** Where the slide area and the people tiles go for a layout on a w x h canvas. 'grid'/'spotlight' have no fixed geometry. */
-export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometry {
+/**
+ * Where the slide area and the people tiles go for a layout on a w x h canvas. 'grid'/'spotlight' have no fixed
+ * geometry. `count` is how many people are on stage: only the 4-to-8 panel layouts use it (they re-arrange for it,
+ * 1 to 8, default 8); every other layout has a fixed number of tiles.
+ */
+export function computeLayout(id: LayoutId, w: number, h: number, count?: number): LayoutGeometry {
+  const def = LAYOUT_BY_ID[id];
+  if (def?.minPeople !== undefined) {
+    const n = Math.max(1, Math.min(def.maxPeople, Math.round(count ?? def.maxPeople)));
+    return h > w ? computePortraitPanel(id, w, h, n) : computeLandscapePanel(id, w, h, n);
+  }
   if (h > w) return computePortraitLayout(id, w, h);
   const m = gutterFor(w, h);
   switch (id) {
@@ -177,6 +200,152 @@ export function computeLayout(id: LayoutId, w: number, h: number): LayoutGeometr
   }
 }
 
+
+// ---- The 4-to-8 panel layouts --------------------------------------------
+
+/** Splits n tiles into rows of at most `maxPerRow`, as evenly as possible, bigger rows first (7 in fours: 4+3). */
+export function balancedRows(n: number, maxPerRow: number): number[] {
+  const rows = Math.ceil(n / maxPerRow);
+  const base = Math.floor(n / rows);
+  const extra = n % rows;
+  return Array.from({ length: rows }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/**
+ * Tiles in rows of the given sizes inside a region: every tile the same size, each row centred, the whole block
+ * centred. With a `ratio` (width / height) the tiles keep that shape and are as big as fit; without one they
+ * fill their cells.
+ */
+function tileRows(region: Rect, counts: number[], gap: number, ratio: number | null): Rect[] {
+  const cols = Math.max(...counts);
+  const cellW = (region.w - (cols - 1) * gap) / cols;
+  const cellH = (region.h - (counts.length - 1) * gap) / counts.length;
+  const tw = ratio ? Math.min(cellW, cellH * ratio) : cellW;
+  const th = ratio ? tw / ratio : cellH;
+  const blockH = counts.length * th + (counts.length - 1) * gap;
+  const y0 = region.y + (region.h - blockH) / 2;
+  const out: Rect[] = [];
+  counts.forEach((c, row) => {
+    const rowW = c * tw + (c - 1) * gap;
+    const x0 = region.x + (region.w - rowW) / 2;
+    for (let i = 0; i < c; i++) out.push(r(x0 + i * (tw + gap), y0 + row * (th + gap), tw, th));
+  });
+  return out;
+}
+
+/** A column of `count` equal tiles filling the region's height. */
+const column = (region: Rect, count: number, gap: number): Rect[] => (count === 0 ? [] : tileRows(region, Array(count).fill(1), gap, null));
+
+function computeLandscapePanel(id: LayoutId, w: number, h: number, n: number): LayoutGeometry {
+  const m = gutterFor(w, h);
+  const inner = r(m, m, w - 2 * m, h - 2 * m);
+  switch (id) {
+    case 'panel-gallery': {
+      // Pick the row count that gives the biggest 16:9 tiles for this frame shape.
+      let best: Rect[] = [];
+      let bestW = -1;
+      for (let perRow = 1; perRow <= n; perRow++) {
+        const tiles = tileRows(inner, balancedRows(n, perRow), m, 16 / 9);
+        if (tiles[0].w > bestW + 0.5) {
+          best = tiles;
+          bestW = tiles[0].w;
+        }
+      }
+      return { slide: null, people: best };
+    }
+    case 'panel-featured': {
+      if (n === 1) return { slide: null, people: [inner] };
+      const others = n - 1;
+      const featW = (inner.w - m) * (others <= 3 ? 0.62 : 0.56);
+      const rest = r(inner.x + featW + m, inner.y, inner.w - featW - m, inner.h);
+      const cols = others <= 3 ? 1 : 2;
+      return { slide: null, people: [r(inner.x, inner.y, featW, inner.h), ...tileRows(rest, balancedRows(others, cols), m, null)] };
+    }
+    case 'panel-stage': {
+      if (n === 1) return { slide: null, people: [fit16x9(inner)] };
+      const others = n - 1;
+      const rows = balancedRows(others, others <= 4 ? 4 : 4);
+      const hostH = (inner.h - m) * (rows.length === 1 ? 0.56 : 0.5);
+      const host = fit16x9(r(inner.x, inner.y, inner.w, hostH));
+      const below = r(inner.x, inner.y + hostH + m, inner.w, inner.h - hostH - m);
+      return { slide: null, people: [r(host.x, inner.y + (hostH - host.h) / 2, host.w, host.h), ...tileRows(below, rows, m, 16 / 9)] };
+    }
+    case 'panel-slide-side': {
+      const leftW = (inner.w - m) * 0.56;
+      const slide = fit16x9(r(inner.x, inner.y, leftW, inner.h));
+      const right = r(inner.x + leftW + m, inner.y, inner.w - leftW - m, inner.h);
+      return { slide, people: tileRows(right, balancedRows(n, 2), m, null) };
+    }
+    case 'panel-slide-strip': {
+      const topH = (inner.h - m) * (n <= 4 ? 0.58 : 0.5);
+      const slide = fit16x9(r(inner.x, inner.y, inner.w, topH));
+      const below = r(inner.x, inner.y + topH + m, inner.w, inner.h - topH - m);
+      const counts = n <= 5 ? [n] : balancedRows(n, 4);
+      return { slide: r(slide.x, inner.y + (topH - slide.h) / 2, slide.w, slide.h), people: tileRows(below, counts, m, 4 / 3) };
+    }
+    case 'panel-slide-centre': {
+      const left = Math.ceil(n / 2);
+      const slideW = (inner.w - 2 * m) * 0.5;
+      const colW = (inner.w - 2 * m - slideW) / 2;
+      const slide = fit16x9(r(inner.x + colW + m, inner.y, slideW, inner.h));
+      return {
+        slide,
+        people: [...column(r(inner.x, inner.y, colW, inner.h), left, m), ...column(r(inner.x + colW + m + slideW + m, inner.y, colW, inner.h), n - left, m)],
+      };
+    }
+    default:
+      return { slide: null, people: [] };
+  }
+}
+
+/** The 4-to-8 panels on a vertical (9:16) canvas: everything stacks. */
+function computePortraitPanel(id: LayoutId, w: number, h: number, n: number): LayoutGeometry {
+  const m = gutterFor(w, h);
+  const inner = r(m, m, w - 2 * m, h - 2 * m);
+  const twoCols = (region: Rect, count: number) => tileRows(region, balancedRows(count, 2), m, null);
+  switch (id) {
+    case 'panel-gallery':
+      return { slide: null, people: tileRows(inner, balancedRows(n, n <= 1 ? 1 : 2), m, null) };
+    case 'panel-featured': {
+      if (n === 1) return { slide: null, people: [inner] };
+      const featH = (inner.h - m) * 0.4;
+      return { slide: null, people: [r(inner.x, inner.y, inner.w, featH), ...twoCols(r(inner.x, inner.y + featH + m, inner.w, inner.h - featH - m), n - 1)] };
+    }
+    case 'panel-stage': {
+      if (n === 1) return { slide: null, people: [inner] };
+      const host = band(w, m, m, (h - 3 * m) * 0.3);
+      const below = r(inner.x, host.y + host.h + m, inner.w, h - m - (host.y + host.h + m));
+      return { slide: null, people: [host, ...twoCols(below, n - 1)] };
+    }
+    case 'panel-slide-side': {
+      const slide = band(w, m, m, (h - 3 * m) * 0.28);
+      return { slide, people: twoCols(r(inner.x, slide.y + slide.h + m, inner.w, h - m - (slide.y + slide.h + m)), n) };
+    }
+    case 'panel-slide-strip': {
+      // the slide at the bottom, the people above it
+      const b = band(w, m, 0, (h - 3 * m) * 0.28);
+      const slide = r(b.x, h - m - b.h, b.w, b.h);
+      return { slide, people: twoCols(r(inner.x, inner.y, inner.w, h - 3 * m - b.h), n) };
+    }
+    case 'panel-slide-centre': {
+      // some of the people above the slide, the rest below it
+      const top = Math.ceil(n / 2);
+      const bottom = n - top;
+      const slideH = (h - 3 * m) * 0.26;
+      const b = band(w, m, 0, slideH);
+      const rowsTop = Math.ceil(top / 2);
+      const rowsBottom = Math.ceil(bottom / 2);
+      const regionH = h - 2 * m - 2 * m - b.h; // minus the two gaps around the slide
+      const topH = bottom === 0 ? regionH : (regionH * rowsTop) / (rowsTop + rowsBottom);
+      const topRegion = r(inner.x, inner.y, inner.w, topH);
+      const slide = r(b.x, inner.y + topH + m, b.w, b.h);
+      const bottomRegion = r(inner.x, slide.y + slide.h + m, inner.w, h - m - (slide.y + slide.h + m));
+      return { slide, people: [...twoCols(topRegion, top), ...twoCols(bottomRegion, bottom)] };
+    }
+    default:
+      return { slide: null, people: [] };
+  }
+}
 
 /** A 16:9 band across the full width at the given y, no taller than maxH. */
 function band(w: number, m: number, y: number, maxH: number): Rect {
@@ -290,6 +459,11 @@ export function orderPeople<T extends { id: string }>(layout: LayoutId, entries:
   // The screen share goes last so a guest who joins after it started still gets a tile (and never the large one).
   const rest = [...entries.filter((e) => e.id !== HOST_ID && e.id !== SCREEN_SHARE_ID), ...entries.filter((e) => e.id === SCREEN_SHARE_ID)];
   const ordered = host ? [host, ...rest] : rest;
+  if (layout === 'panel-featured' && ordered.length > 1) {
+    // The featured speaker is whoever is pinned, else the host.
+    const main = ordered.find((e) => e.id === pinnedId) ?? ordered[0];
+    return [main, ...ordered.filter((e) => e !== main)];
+  }
   if (layout !== 'podcast-pip' || ordered.length < 2) return ordered;
   const main = ordered.find((e) => e.id === pinnedId) ?? ordered[1];
   return [main, ...ordered.filter((e) => e !== main)];

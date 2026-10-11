@@ -748,13 +748,14 @@ export function useHostStudio(streamId: string | undefined) {
     const theme = getTheme(themeIdRef.current);
     // Tiles stop above the ticker bar when one is showing.
     const reserve = brandingRef.current.newsText ? newsBarHeight(brandingRef.current.newsFontSize) : 0;
-    const geo = computeLayout(layout, w, h - reserve);
     const screen = def.hasSlide ? (entries.find((p) => p.id === SCREEN_SHARE_ID) ?? null) : null;
     const people = orderPeople(
       layout,
       def.hasSlide ? entries.filter((p) => p.id !== SCREEN_SHARE_ID) : entries,
       pinnedIdRef.current,
     );
+    // The 4-to-8 panel layouts arrange themselves for the number of people actually on stage.
+    const geo = computeLayout(layout, w, h - reserve, people.length);
     if (geo.slide) drawSlideArea(geo.slide, screen, theme);
     const style: TileStyle = { fit: 'cover', radius: theme.radius, theme };
     people.slice(0, geo.people.length).forEach((p, i) => {
