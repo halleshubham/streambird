@@ -31,7 +31,7 @@ Short "why" records. When code looks odd, check here before "fixing" it. Add a l
 | New select reusing `.studio-resolution-select` breaks the quality-menu tests | use `.tb-select` |
 | `input { width:100% }` global rule | override per control type |
 | `.landing-section--alt > *` margin override | use `margin: X auto Y` |
-| `BirdBusy` mounted forever shows the full-screen bird forever | `overlay={false}` for open-ended waits |
+| `BirdBusy` mounted forever shows the full-screen bird forever (a host status like "X joined — requesting their video…" that nothing replaced did exactly this) | `overlay={false}` for open-ended waits; every "…" status must be replaced when it resolves; `BusyOverlay` hides after 45 s |
 | `bootApp()` resets env vars | set env after it for call-time reads |
 | Throttle limits are per IP, shared across a test file | put exhausting tests last |
 | New entity but no `database.module.ts` entry | add to the explicit list |

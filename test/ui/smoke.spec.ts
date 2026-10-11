@@ -617,6 +617,19 @@ test.describe('UI polish', () => {
     await expect(page.getByTestId('slide-counter')).toHaveText('Slide 3 / 3');
   });
 
+  test('the big bird is only a safety-limited hint: it stops covering the page after a while, while the small one stays on the button', async ({ page }) => {
+    await page.clock.install();
+    await page.route('**/api/auth/request-code', () => undefined); // never answered
+    await page.goto('/login');
+    await page.fill('#email', `ui-${crypto.randomBytes(4).toString('hex')}@test.dev`);
+    await page.getByRole('button', { name: /Send login code/ }).click();
+    await page.clock.fastForward(1_000);
+    await expect(page.locator('.busy-overlay-bird')).toBeVisible();
+    await page.clock.fastForward(50_000);
+    await expect(page.locator('.busy-overlay-bird')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Send login code/ }).locator('.bird-busy')).toBeVisible();
+  });
+
   test.describe('invite password', () => {
     async function studioWithConnection(context: BrowserContext, api: APIRequestContext) {
       const conn = await (
@@ -724,5 +737,33 @@ test.describe('admin analytics: Force end', () => {
     const status = await (await ctx.request.get(`${APP}/api/streams/${id}`)).json();
     expect(status.status).toBe('ended');
     await ctx.close();
+  });
+});
+
+test.describe('host studio: a guest joining', () => {
+  test('the host is told the guest is connected, and no loader bird is left spinning over the studio', async ({ page, context, browser }) => {
+    const { api } = await signIn(context);
+    const conn = await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'T', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json();
+    const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'guest joins', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+    const invite = await (await api.post(`${APP}/api/studio-sessions/${stream.studioSessionId}/invites`, { data: {}, headers: apiHeaders })).json();
+
+    await page.goto(`/streams/${stream.id}/studio`);
+    await expect(page.getByText('Connected to the studio as host.')).toBeVisible();
+
+    const guestCtx = await browser.newContext({ permissions: ['camera', 'microphone'] });
+    const guest = await guestCtx.newPage();
+    await guest.goto(`${APP}/join/${invite.token}`);
+    await guest.fill('#displayName', 'Alex');
+    await guest.getByRole('button', { name: /^Join$/ }).click();
+    await expect(guest.locator('.meeting-grid')).toBeVisible();
+
+    // The host first sees the guest arrive, then that their video is connected.
+    await expect(page.locator('.studio-status-toast')).toContainText(/Alex (joined|is connected)/);
+    await expect(page.locator('.studio-status-toast')).toContainText('Alex is connected', { timeout: 20_000 });
+    // Nothing is "working" any more: no big bird over the page, no "…" status.
+    await page.waitForTimeout(800);
+    await expect(page.locator('.busy-overlay')).toHaveCount(0);
+    await expect(page.locator('.studio-status-toast .bird-busy')).toHaveCount(0);
+    await guestCtx.close();
   });
 });

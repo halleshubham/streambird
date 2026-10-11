@@ -36,7 +36,7 @@ test.describe('layouts', () => {
 
   test('cover the four show types, with at least 10 framed layouts plus the two classic ones', () => {
     expect(framed.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(framed.map((l) => l.group))).toEqual(new Set(['Podcast', 'Podcast + slides', 'Anchor + slides', 'Panel + slides']));
+    expect(new Set(framed.map((l) => l.group))).toEqual(new Set(['Podcast', 'Podcast + slides', 'Anchor + slides', 'Panel + slides', 'Panel: 4 to 8', 'Panel + slides: 4 to 8']));
     expect(LAYOUTS.filter((l) => l.group === 'Classic').map((l) => l.id)).toEqual(['grid', 'spotlight']);
     expect(new Set(LAYOUTS.map((l) => l.id)).size).toBe(LAYOUTS.length);
     // 1 host + 1 guest, with and without a slideshow; an anchor with slides; 1 host + 3 guests with slides.
@@ -44,7 +44,33 @@ test.describe('layouts', () => {
     expect(framed.filter((l) => l.group === 'Podcast + slides').every((l) => l.maxPeople === 2 && l.hasSlide)).toBe(true);
     expect(framed.filter((l) => l.group === 'Anchor + slides').every((l) => l.maxPeople === 1 && l.hasSlide)).toBe(true);
     expect(framed.filter((l) => l.group === 'Panel + slides').every((l) => l.maxPeople === 4 && l.hasSlide)).toBe(true);
+    // 4 to 8 people, scalable, with and without a slideshow.
+    const big = framed.filter((l) => l.group === 'Panel: 4 to 8');
+    const bigSlides = framed.filter((l) => l.group === 'Panel + slides: 4 to 8');
+    expect(big.length).toBeGreaterThanOrEqual(3);
+    expect(bigSlides.length).toBeGreaterThanOrEqual(3);
+    expect(big.every((l) => l.maxPeople === 8 && 'minPeople' in l && l.minPeople === 4 && !l.hasSlide)).toBe(true);
+    expect(bigSlides.every((l) => l.maxPeople === 8 && 'minPeople' in l && l.minPeople === 4 && l.hasSlide)).toBe(true);
   });
+
+  for (const layout of framed.filter((l) => 'minPeople' in l)) {
+    test(`${layout.id}: adapts to 1 to 8 people on stage at every resolution`, () => {
+      for (const [w, h] of SIZES) {
+        for (let n = 1; n <= 8; n++) {
+          const geo = computeLayout(layout.id, w, h, n);
+          const tag = `${layout.id} ${w}x${h} n=${n}`;
+          expect(geo.people.length, tag).toBe(n);
+          expect(!!geo.slide, tag).toBe(layout.hasSlide);
+          const all = [...(geo.slide ? [geo.slide] : []), ...geo.people];
+          for (const r of all) expect(inside(r, w, h), `${tag} ${JSON.stringify(r)}`).toBe(true);
+          for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(overlaps(all[i], all[j]), `${tag}: ${i} overlaps ${j}`).toBe(false);
+          if (geo.slide) expect(Math.abs(geo.slide.w / geo.slide.h - 16 / 9), tag).toBeLessThan(0.02);
+          // Nobody is reduced to a sliver.
+          for (const r of geo.people) expect(Math.min(r.w, r.h), tag).toBeGreaterThan(Math.min(w, h) * 0.06);
+        }
+      }
+    });
+  }
 
   for (const layout of framed) {
     test(`${layout.id}: tiles fit the canvas at every resolution and do not collide`, () => {
@@ -98,6 +124,10 @@ test.describe('layouts', () => {
     const withShare = [{ id: 'local' }, { id: 'screen-share' }, { id: 'g1' }];
     expect(orderPeople('podcast-split', withShare, null).map((x) => x.id)).toEqual(['local', 'g1', 'screen-share']);
     expect(orderPeople('podcast-pip', withShare, null).map((x) => x.id)).toEqual(['g1', 'local', 'screen-share']);
+    // The panel "featured" layout gives the big tile to the pinned person, else the host.
+    const six = [{ id: 'local' }, { id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(orderPeople('panel-featured', six, null).map((x) => x.id)).toEqual(['local', 'a', 'b', 'c']);
+    expect(orderPeople('panel-featured', six, 'b').map((x) => x.id)).toEqual(['b', 'local', 'a', 'c']);
   });
 
   test('layout ids are validated (a stale saved layout is ignored)', () => {

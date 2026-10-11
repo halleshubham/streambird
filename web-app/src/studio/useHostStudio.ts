@@ -265,7 +265,9 @@ export function useHostStudio(streamId: string | undefined) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [stream, setStream] = useState<Stream | null>(null);
-  const [status, setStatus] = useState<{ text: string; isError: boolean } | null>(null);
+  // `busy` marks a status for an ACTION the host is waiting on (going live, ending): only those get the big bird in
+  // the middle of the screen. Other "…" statuses (a guest joining, reconnecting) are information, never a blocker.
+  const [status, setStatus] = useState<{ text: string; isError: boolean; busy?: boolean } | null>(null);
   const [inviteMessage, setInviteMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [participantsView, setParticipantsView] = useState<ParticipantView[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
@@ -746,13 +748,14 @@ export function useHostStudio(streamId: string | undefined) {
     const theme = getTheme(themeIdRef.current);
     // Tiles stop above the ticker bar when one is showing.
     const reserve = brandingRef.current.newsText ? newsBarHeight(brandingRef.current.newsFontSize) : 0;
-    const geo = computeLayout(layout, w, h - reserve);
     const screen = def.hasSlide ? (entries.find((p) => p.id === SCREEN_SHARE_ID) ?? null) : null;
     const people = orderPeople(
       layout,
       def.hasSlide ? entries.filter((p) => p.id !== SCREEN_SHARE_ID) : entries,
       pinnedIdRef.current,
     );
+    // The 4-to-8 panel layouts arrange themselves for the number of people actually on stage.
+    const geo = computeLayout(layout, w, h - reserve, people.length);
     if (geo.slide) drawSlideArea(geo.slide, screen, theme);
     const style: TileStyle = { fit: 'cover', radius: theme.radius, theme };
     people.slice(0, geo.people.length).forEach((p, i) => {
@@ -901,6 +904,8 @@ export function useHostStudio(streamId: string | undefined) {
 
     pc.ontrack = (event) => {
       const p = participantsRef.current.get(fromSocketId);
+      // Their media is here: swap the "requesting their video…" message for a final one.
+      setStatus((cur) => (cur?.text.startsWith(`${displayName} joined — requesting`) ? { text: `${displayName} is connected.`, isError: false } : cur));
       if (event.track.kind === 'video') {
         videoEl.srcObject = event.streams[0];
         videoEl.play().catch(() => {});
@@ -996,7 +1001,11 @@ export function useHostStudio(streamId: string | undefined) {
     });
 
     socket.on('peer-joined', ({ socketId, displayName }: { socketId: string; displayName: string }) => {
-      setStatus({ text: `${displayName} joined — requesting their video…`, isError: false });
+      const joiningText = `${displayName} joined — requesting their video…`;
+      setStatus({ text: joiningText, isError: false });
+      // This message used to stay forever (nothing replaced it once the video arrived), so it kept a loader on
+      // screen. It is replaced when their media arrives (ontrack), and here as a fallback if it never does.
+      setTimeout(() => setStatus((cur) => (cur?.text === joiningText ? { text: `${displayName} joined.`, isError: false } : cur)), 15_000);
       // The server replays every already-connected guest to a (re)connecting
       // host. A guest we still hold a healthy connection to (just a
       // signaling blip) must be left alone; a dead or missing one (host
@@ -1668,7 +1677,7 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: 'This stream has no publish URL yet.', isError: true });
       return;
     }
-    setStatus({ text: 'Starting publish…', isError: false });
+    setStatus({ text: 'Starting publish…', isError: false, busy: true });
 
     try {
       // No camera/mic yet is fine: the mix destination exists (silent) so the
@@ -1763,7 +1772,7 @@ export function useHostStudio(streamId: string | undefined) {
   const endStream = useCallback(async () => {
     setEnding(true);
     endingStreamRef.current = true;
-    setStatus({ text: 'Ending stream…', isError: false });
+    setStatus({ text: 'Ending stream…', isError: false, busy: true });
 
     forceKeyFrameRef.current = null;
     if (keyFrameIntervalRef.current) {
@@ -1872,8 +1881,10 @@ export function useHostStudio(streamId: string | undefined) {
     if (!loadPersisted(stream.id).wentLive) return;
     autoResumeTriedRef.current = true;
     setResumeAttempted(true);
-    setStatus({ text: 'Stream is still live — restoring your studio…', isError: false });
-    void resumeLive();
+    const restoring = 'Stream is still live — restoring your studio…';
+    setStatus({ text: restoring, isError: false, busy: true });
+    // Whatever resuming ends up doing, this message must not outlive it.
+    void resumeLive().finally(() => setStatus((cur) => (cur?.text === restoring ? { text: 'Studio restored.', isError: false } : cur)));
   }, [stream, loading, resumeLive]);
 
   // "Leave this page? You're live" -- a reload/close mid-show drops the
