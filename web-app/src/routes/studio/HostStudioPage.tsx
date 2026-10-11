@@ -40,7 +40,7 @@ import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
-const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd'];
+const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();

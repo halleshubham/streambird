@@ -39,7 +39,7 @@ CI (`.github/workflows/ci.yml`) runs exactly typecheck → unit → build → e2
 1. **Test before you claim done.** Add/adjust tests at the right layer (unit / e2e / UI) for every behaviour change, run the full set (`testing.md` pre-PR checklist), and say which tests you added. For UI changes also look at screenshots (desktop 1366×800 + phone 390×800).
 2. **Never commit or print secrets**, including password-like literals in tests (GitGuardian fails the PR; generate with `crypto.randomBytes`). User-pasted tokens/passwords are used for the asked task only, passed inline as env vars, never written to files; remind the user to rotate them.
 3. **The user decides when to merge and deploy.** Open a PR for each change; merge (squash) and deploy only when told. Deploy only after the image build for the merge commit succeeded (`streambird-deploy`).
-4. **Migrations are hand-written SQL** in `migrations/` (next number after 0016), backward compatible, with an existing-data case in `test/e2e/migrations.e2e-spec.ts`. They run on every container start.
+4. **Migrations are hand-written SQL** in `migrations/` (next number after 0017), backward compatible, with an existing-data case in `test/e2e/migrations.e2e-spec.ts`. They run on every container start.
 5. **Env vars are read only in `src/config/configuration.ts`** (+ update `.env.example` and `operations.md`).
 6. **Keep the YouTube scope `youtube.force-ssl`** and do not call new YouTube APIs without checking `backend.md` — Google's verification is approved for exactly that set.
 7. **Do not break test contracts**: ids/test ids/accessible names listed in `testing.md` ("Selector contract"). Shortened UI labels keep their full `aria-label`.

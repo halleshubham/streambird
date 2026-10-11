@@ -28,7 +28,7 @@ Server side of this lives in `src/studio/` (signaling, invites, host tokens, TUR
 4. **Draw loop** (`frame`): `paintBackground` (theme) → `paintWallpaper` (if set) → `drawFramed` | `drawSpotlight` | `drawGrid` (or `drawBrandSlide` when nobody is on camera and the layout has no slide area) → `drawLogo` → `drawNewsline` (ticker) → crossfade snapshot (`beginTransition`). Timing comes from a **Web Worker tick** (33 ms) so a backgrounded tab does not freeze the broadcast; rAF/setInterval is the fallback.
 5. **Audio**: `ensureAudioMix()` builds an `AudioContext` + `MediaStreamDestination` with a constant-zero source (keeps Opus flowing so the relay never sees a video-only stream). Only on-stage participants are mixed; the host's own mic is not fed back. Each guest also receives a **mix-minus** (everyone except themselves).
 6. `goLive()`: capture `canvas.captureStream(30)` + the mix track, sendonly `RTCPeerConnection` with **H264 first**, POST the SDP to `stream.whipUrl` (non-trickle: waits, capped, for ICE gathering), remember the `Location` resource, set the `wentLive` flag. `endStream()` clears it.
-7. Orientation comes from `stream.orientation` (immutable): portrait = 720×1280 (HD) / 1080×1920, layouts stack, text scales with `min(w/1280, h/720)`.
+7. Orientation comes from `stream.orientation` (immutable): portrait = 720×1280 (HD) / 1080×1920 / 1440×2560 (2K), layouts stack, text scales with `min(w/1280, h/720)`.
 
 ## Persistence and recovery
 - `localStorage` per stream: `streambird:studio:<streamId>:v1` (layout, resolution, branding, theme, scenes, logo data URL, `wentLive`) and a **separate** `…:wallpaper:v1` key (a full quota must not drop the rest; saves are best-effort). **Slides are memory-only.**

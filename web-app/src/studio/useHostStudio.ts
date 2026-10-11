@@ -55,8 +55,8 @@ const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, auto
 /** 'grid' and 'spotlight' are the original layouts; the rest are framed (see compose.ts). */
 export type LayoutMode = LayoutId;
 
-export type StreamResolution = 'sd' | 'hd' | 'fhd';
-const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd'];
+export type StreamResolution = 'sd' | 'hd' | 'fhd' | 'qhd';
+const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
 /** Compositing canvas size + the encoder bitrate cap that goes with it --
  * one shared encode fans out via MediaMTX to every destination at once
@@ -70,6 +70,7 @@ export const RESOLUTIONS: Record<StreamResolution, { width: number; height: numb
   sd: { width: 640, height: 360, maxBitrate: 1_000_000, label: 'SD (360p)' },
   hd: { width: 1280, height: 720, maxBitrate: 3_000_000, label: 'HD (720p)' },
   fhd: { width: 1920, height: 1080, maxBitrate: 6_000_000, label: 'Full HD (1080p)' },
+  qhd: { width: 2560, height: 1440, maxBitrate: 10_000_000, label: '2K (1440p)' },
 };
 
 interface Participant {
