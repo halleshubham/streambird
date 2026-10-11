@@ -396,7 +396,7 @@ export function HostStudioPage() {
         <div className="studio-status-toast">
           {status && (
             <p className={`status${status.isError ? ' error' : ''}`}>
-              {isInProgress(status.text) && <BirdBusy />}
+              {isInProgress(status.text) && <BirdBusy overlay={!!status.busy} />}
               {status.text}
             </p>
           )}
