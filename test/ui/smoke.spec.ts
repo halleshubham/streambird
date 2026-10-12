@@ -591,13 +591,34 @@ test.describe('admin console', () => {
     await expect(page.locator('pre.audit-log-metadata').first()).toBeHidden(); // collapsed until "View"
   });
 
-  test('users: suspending asks first, and cancelling changes nothing', async ({ page, context, browser }) => {
+  test('there is no separate Users page: the nav has none, an old /admin/users link lands on Companies', async ({ page, context }) => {
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/plans');
+    await expect(page.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'Users' })).toHaveCount(0);
+    await page.goto('/admin/users');
+    await expect(page).toHaveURL(/\/admin\/accounts$/);
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+  });
+
+  test('companies: a user\'s email finds the company it belongs to, and says which user matched', async ({ page, context, browser }) => {
     const { email } = await signIn(await browser.newContext());
     await signIn(context, { superadmin: true });
-    await page.goto('/admin/users');
-    await page.getByLabel('Search users by email').fill(email);
+    await page.goto('/admin/accounts');
+    // (A solo account is named after its email; the e2e test covers a company whose name differs from its user's email.)
+    await page.getByLabel('Search companies').fill(email);
+    await expect(page.locator('.admin-toolbar-count')).toHaveText('1 account');
+    await expect(page.getByRole('row', { name: new RegExp(email) })).toBeVisible();
+  });
+
+  test('company page: suspend a single user (asks first), then reactivate; the account itself stays active', async ({ page, context, browser }) => {
+    const { email } = await signIn(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/accounts');
+    await page.getByLabel('Search companies').fill(email);
+    await page.getByRole('link', { name: email }).click();
     const row = page.getByRole('row', { name: new RegExp(email) });
-    await expect(row.getByText('Active')).toBeVisible();
+    await expect(row.getByText('Approved')).toBeVisible();
+
     let asked = '';
     page.once('dialog', (d) => {
       asked = d.message();
@@ -605,8 +626,14 @@ test.describe('admin console', () => {
     });
     await row.getByRole('button', { name: 'Suspend' }).click();
     await expect.poll(() => asked).toContain(email);
+    await expect(row.getByText('Suspended')).toHaveCount(0); // cancelled: nothing changed
+
+    page.once('dialog', (d) => void d.accept());
+    await row.getByRole('button', { name: 'Suspend' }).click();
+    await expect(row.getByText('Suspended')).toBeVisible();
+    await row.getByRole('button', { name: 'Reactivate' }).click();
     await expect(row.getByText('Suspended')).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Suspend' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 }).getByText('Active')).toBeVisible();
   });
 });
 
