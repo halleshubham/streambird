@@ -114,13 +114,56 @@ test.describe('admin login', () => {
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill('correct-horse');
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(page.getByText(/We emailed a 6-digit code/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+    await expect(page.getByText(new RegExp(`Step 2 of 2.*6-digit code.*${email}`))).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/login/); // not signed in yet
 
     const { code } = await (await context.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.getByLabel('Code').fill(code);
     await page.getByRole('button', { name: 'Verify and log in' }).click();
     await expect(page).toHaveURL(/\/admin$/);
+  });
+});
+
+test.describe('admin login page', () => {
+  test('wears the admin identity, and a wrong password is an alert on step 1 (no code step)', async ({ page, context }) => {
+    const { email } = await signIn(context);
+    await context.request.post(`${CONTROL}/make-superadmin?email=${email}&password=correct-horse`);
+    await context.clearCookies();
+    await page.goto('/admin/login');
+    await expect(page.locator('.admin-auth-card .admin-badge')).toHaveText('ADMIN');
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByText(/Step 1 of 2/)).toBeVisible();
+    await expect(page.getByText(/audit log/i)).toBeVisible();
+    // The card carries the same amber rule as the admin header.
+    const top = await page.locator('.admin-auth-card').evaluate((el) => getComputedStyle(el).borderTopWidth);
+    expect(top).toBe('3px');
+
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('not-the-password');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByLabel('Code')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  });
+
+  test('phone: the card fits the screen, and "Start over" returns to step 1', async ({ page, context }) => {
+    const { email } = await signIn(context);
+    await context.request.post(`${CONTROL}/make-superadmin?email=${email}&password=correct-horse`);
+    await context.clearCookies();
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/admin/login');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('correct-horse');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByLabel('Code')).toBeVisible();
+    const box = await page.locator('.admin-auth-card').boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('button', { name: 'Start over' }).click();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeEnabled();
   });
 });
 
