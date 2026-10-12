@@ -34,8 +34,8 @@ export class CreatePlanDto {
   @IsInt() @Min(0) @Max(50)
   maxGuests!: number;
 
-  @IsOptional() @IsIn(['sd', 'hd', 'fhd'])
-  maxResolution?: 'sd' | 'hd' | 'fhd';
+  @IsOptional() @IsIn(['sd', 'hd', 'fhd', 'qhd'])
+  maxResolution?: 'sd' | 'hd' | 'fhd' | 'qhd';
 
   /** null = no per-session cap. */
   @ValidateIf((_, v) => v !== null && v !== undefined)
@@ -85,8 +85,8 @@ export class UpdatePlanDto {
   @IsOptional() @IsInt() @Min(0) @Max(50)
   maxGuests?: number;
 
-  @IsOptional() @IsIn(['sd', 'hd', 'fhd'])
-  maxResolution?: 'sd' | 'hd' | 'fhd';
+  @IsOptional() @IsIn(['sd', 'hd', 'fhd', 'qhd'])
+  maxResolution?: 'sd' | 'hd' | 'fhd' | 'qhd';
 
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsNumber() @Min(0.25) @Max(168)

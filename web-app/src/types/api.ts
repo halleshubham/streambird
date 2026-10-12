@@ -318,7 +318,7 @@ export interface UpdateSubscriptionPayload {
   maxGuestsOverride?: number | null;
 }
 
-export type Resolution = 'sd' | 'hd' | 'fhd';
+export type Resolution = 'sd' | 'hd' | 'fhd' | 'qhd';
 
 /** A plan as the public pricing page sees it (GET /plans/public). */
 export interface PublicPlan {

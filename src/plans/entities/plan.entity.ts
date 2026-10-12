@@ -1,8 +1,8 @@
 import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
 export type PlanKind = 'monthly' | 'day_pass';
-export type Resolution = 'sd' | 'hd' | 'fhd';
-export const RESOLUTION_ORDER: Resolution[] = ['sd', 'hd', 'fhd'];
+export type Resolution = 'sd' | 'hd' | 'fhd' | 'qhd';
+export const RESOLUTION_ORDER: Resolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
 /** One row per plan; see migrations/0012_configurable_plans.sql. numeric columns arrive as strings from pg. */
 @Entity('plans')

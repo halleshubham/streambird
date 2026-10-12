@@ -24,6 +24,7 @@ const LANDSCAPE_SIZES: [number, number][] = [
   [640, 360],
   [1280, 720],
   [1920, 1080],
+  [2560, 1440],
 ];
 // The same qualities for a vertical (9:16) stream.
 const PORTRAIT_SIZES: [number, number][] = LANDSCAPE_SIZES.map(([w, h]) => [h, w]);
@@ -247,6 +248,7 @@ test.describe('vertical (9:16) streams', () => {
     expect(canvasSizeFor({ width: 1280, height: 720 }, undefined)).toEqual({ width: 1280, height: 720 });
     expect(canvasSizeFor({ width: 1280, height: 720 }, 'portrait')).toEqual({ width: 720, height: 1280 });
     expect(canvasSizeFor({ width: 1920, height: 1080 }, 'portrait')).toEqual({ width: 1080, height: 1920 });
+    expect(canvasSizeFor({ width: 2560, height: 1440 }, 'portrait')).toEqual({ width: 1440, height: 2560 });
   });
 
   test('aspectLabel names the shapes', () => {

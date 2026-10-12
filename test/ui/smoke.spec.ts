@@ -427,6 +427,27 @@ test.describe('host studio', () => {
       await adminCtx.close();
     }
   });
+
+  test('a plan that allows 2K lists the 2K (1440p) quality, one that stops at Full HD does not', async ({ page, context, browser }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    try {
+      await page.goto(`/streams/${id}/studio`);
+      const options = page.locator('.studio-resolution-select option');
+      await expect(options.last()).toHaveText(/Full HD/);
+      await expect(page.locator('.studio-resolution-select option', { hasText: '2K' })).toHaveCount(0);
+
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { maxResolution: 'qhd' }, headers: apiHeaders });
+      await page.reload();
+      await expect(page.locator('.studio-resolution-select option', { hasText: '2K (1440p)' })).toHaveCount(1);
+      await expect(options.last()).toHaveText(/2K/);
+    } finally {
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { maxResolution: 'fhd' }, headers: apiHeaders });
+      await adminCtx.close();
+    }
+  });
 });
 
 test.describe('UI polish', () => {

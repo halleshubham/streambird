@@ -66,6 +66,17 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     const edited = await db.query(`SELECT included_hours_per_month AS h, price_inr AS p FROM plans WHERE key = 'starter'`);
     expect([Number(edited.rows[0].h), edited.rows[0].p]).toEqual([25, 1099]);
 
+    // 2K tier (0017): Pro and Business move up from the seeded Full HD; the rest stay; an admin-edited plan is left alone.
+    const q = await db.query(`SELECT key, max_resolution FROM plans ORDER BY sort_order`);
+    expect(q.rows.map((r) => [r.key, r.max_resolution])).toEqual([['free', 'fhd'], ['starter', 'fhd'], ['pro', 'qhd'], ['enterprise', 'qhd'], ['day_pass', 'hd']]);
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0017%'`);
+    await db.query(`UPDATE plans SET max_resolution = 'hd' WHERE key = 'pro'`);
+    await db.query(`UPDATE plans SET max_resolution = 'fhd' WHERE key = 'enterprise'`);
+    await runMigrations(url, { quiet: true });
+    const q2 = await db.query(`SELECT key, max_resolution FROM plans WHERE key IN ('pro', 'enterprise') ORDER BY sort_order`);
+    expect(q2.rows.map((r) => [r.key, r.max_resolution])).toEqual([['pro', 'hd'], ['enterprise', 'qhd']]);
+    await expect(db.query(`UPDATE plans SET max_resolution = 'bogus' WHERE key = 'free'`)).rejects.toThrow();
+
     const settings = await db.query(`SELECT value FROM app_settings WHERE key = 'payments_enabled'`);
     expect(settings.rows[0].value).toBe(false); // payments ship OFF
     await expect(db.query(`SELECT razorpay_plan_id, razorpay_plan_amount_paise FROM plans LIMIT 1`)).resolves.toBeDefined();

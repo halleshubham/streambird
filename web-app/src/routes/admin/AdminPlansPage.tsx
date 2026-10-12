@@ -206,6 +206,7 @@ export function AdminPlansPage() {
                 <option value="sd">SD (360p)</option>
                 <option value="hd">HD (720p)</option>
                 <option value="fhd">Full HD (1080p)</option>
+                <option value="qhd">2K (1440p)</option>
               </select>
             </label>
             <label>Max session hours (blank = no cap)
