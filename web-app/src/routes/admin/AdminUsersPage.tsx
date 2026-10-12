@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { BirdBusy } from '../../components/BirdBusy';
 import * as superadminApi from '../../api/superadmin';
 import { BirdLoader } from '../../components/BirdLoader';
 import { ApiError } from '../../api/client';
+import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, When } from '../../components/admin/adminKit';
 import type { UserSearchResult } from '../../types/api';
 
 const MIN_QUERY_LENGTH = 2;
@@ -50,27 +53,14 @@ export function AdminUsersPage() {
     }
   }
 
-  async function handleSuspend(id: string) {
+  async function act(id: string, run: () => Promise<unknown>, failure: string) {
     setBusyId(id);
     setError(null);
     try {
-      await superadminApi.suspendUser(id);
+      await run();
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to suspend.');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleReactivate(id: string) {
-    setBusyId(id);
-    setError(null);
-    try {
-      await superadminApi.reactivateUser(id);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to reactivate.');
+      setError(err instanceof ApiError ? err.message : failure);
     } finally {
       setBusyId(null);
     }
@@ -78,33 +68,34 @@ export function AdminUsersPage() {
 
   return (
     <>
-      <h1>Users</h1>
-      <p>Search for any user across every company by email.</p>
-      <input
-        type="search"
-        placeholder="Search by email…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{ marginBottom: 16, maxWidth: 360 }}
-      />
-      {error && <p className="error">{error}</p>}
+      <PageHeader title="Users" subtitle="Find any user across every company by email." />
+      <div className="admin-toolbar">
+        <input
+          type="search"
+          aria-label="Search users by email"
+          placeholder="Search by email…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
 
       {trimmedQuery.length < MIN_QUERY_LENGTH ? (
-        <p className="empty-state">Type at least {MIN_QUERY_LENGTH} characters to search.</p>
+        <Empty>Type at least {MIN_QUERY_LENGTH} characters to search.</Empty>
       ) : results === null ? (
         <BirdLoader loading compact label="Searching…" />
       ) : results.length === 0 ? (
-        <p className="empty-state">No users match "{trimmedQuery}".</p>
+        <Empty>No users match "{trimmedQuery}".</Empty>
       ) : (
-        <div className="table-scroll">
-          <table className="data-table">
+        <DataTable caption="Users">
           <thead>
             <tr>
-              <th>Email</th>
-              <th>Company</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th />
+              <th scope="col">Email</th>
+              <th scope="col" className="hide-sm">Company</th>
+              <th scope="col" className="hide-sm">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col" className="hide-sm">Joined</th>
+              <th scope="col" />
             </tr>
           </thead>
           <tbody>
@@ -112,34 +103,34 @@ export function AdminUsersPage() {
               const pendingApproval = u.role !== 'superadmin' && !u.approvedAt;
               return (
                 <tr key={u.id}>
-                  <td>{u.email}</td>
-                  <td>{u.companyName ?? '—'}</td>
                   <td>
-                    <span className="badge">{u.role}</span>
+                    <Link to={`/admin/accounts/${u.accountId}`} className="admin-link">{u.email}</Link>
+                    {u.displayName && <span className="admin-cell-sub">{u.displayName}</span>}
                   </td>
+                  <td className="hide-sm">{u.companyName ?? '—'}</td>
+                  <td className="hide-sm">{ROLE_LABEL[u.role]}</td>
                   <td>
-                    {pendingApproval && <span className="badge">Pending approval</span>}{' '}
-                    {u.suspendedAt && <span className="badge badge-danger">Suspended</span>}
-                    {!pendingApproval && !u.suspendedAt && '—'}
+                    {u.suspendedAt ? <Badge tone="danger">Suspended</Badge> : pendingApproval ? <Badge tone="warning">Pending approval</Badge> : <Badge tone="success">Active</Badge>}
                   </td>
-                  <td>
+                  <td className="nowrap hide-sm">{u.createdAt ? <When iso={u.createdAt} /> : '—'}</td>
+                  <td className="actions">
                     {u.role !== 'superadmin' &&
                       (u.suspendedAt ? (
-                        <button
-                          type="button"
-                          disabled={busyId === u.id}
-                          onClick={() => void handleReactivate(u.id)}
-                        >
-                          Reactivate
+                        <button type="button" className="btn-sm" disabled={busyId === u.id} onClick={() => void act(u.id, () => superadminApi.reactivateUser(u.id), 'Failed to reactivate.')}>
+                          {busyId === u.id && <BirdBusy />} Reactivate
                         </button>
                       ) : (
                         <button
                           type="button"
-                          className="danger-button"
+                          className="btn-sm danger-button"
                           disabled={busyId === u.id}
-                          onClick={() => void handleSuspend(u.id)}
+                          onClick={() => {
+                            if (window.confirm(`Suspend ${u.email}? They are signed out and cannot log in until reactivated.`)) {
+                              void act(u.id, () => superadminApi.suspendUser(u.id), 'Failed to suspend.');
+                            }
+                          }}
                         >
-                          Suspend
+                          {busyId === u.id && <BirdBusy />} Suspend
                         </button>
                       ))}
                   </td>
@@ -147,8 +138,7 @@ export function AdminUsersPage() {
               );
             })}
           </tbody>
-        </table>
-        </div>
+        </DataTable>
       )}
     </>
   );

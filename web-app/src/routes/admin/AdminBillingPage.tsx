@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as billingApi from '../../api/billing';
 import { ApiError } from '../../api/client';
 import { BirdBusy } from '../../components/BirdBusy';
 import { BirdLoader } from '../../components/BirdLoader';
+import { Badge, DataTable, Empty, PageHeader, Section, ShowMore, When, planLabel, statusTone } from '../../components/admin/adminKit';
 import type { AdminBilling } from '../../types/api';
 
-const dt = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '—');
+const ROWS = 20;
 
 /** The payments on/off switch, Razorpay setup status, and recent payments. Keys live in the server environment, never here. */
 export function AdminBillingPage() {
   const [data, setData] = useState<AdminBilling | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [paymentRows, setPaymentRows] = useState(ROWS);
+  const [subRows, setSubRows] = useState(ROWS);
 
   async function load() {
     try {
@@ -41,95 +45,113 @@ export function AdminBillingPage() {
 
   const live = data.enabled && data.keysConfigured;
   const setup: Array<[string, boolean, string]> = [
-    ['API keys (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)', data.keysConfigured, data.mode ? `${data.mode} mode` : 'missing'],
-    ['Webhook secret (RAZORPAY_WEBHOOK_SECRET)', data.webhookSecretConfigured, data.webhookSecretConfigured ? 'set' : 'missing -- webhooks are rejected'],
+    ['API keys', data.keysConfigured, data.keysConfigured ? (data.mode ? `${data.mode} mode` : 'set') : 'missing: set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET'],
+    ['Webhook secret', data.webhookSecretConfigured, data.webhookSecretConfigured ? 'set' : 'missing: set RAZORPAY_WEBHOOK_SECRET (webhooks are rejected without it)'],
   ];
 
   return (
     <>
-      <h1>Billing</h1>
-      <div className="panel">
-        <h2>Online payments: {live ? 'ON' : 'OFF'}</h2>
-        <p>
-          When on, signed-in users see Buy buttons (Razorpay Checkout) for paid plans and the Day Pass. When off, those buttons are hidden
-          and no order can be created; plans are then assigned by hand on the company page.
-        </p>
+      <PageHeader title="Billing" subtitle="The payments switch, Razorpay setup, autopay subscriptions and recent payments." />
+
+      <Section
+        title={`Online payments: ${live ? 'ON' : 'OFF'}`}
+        hint="When on, signed-in users see Buy buttons (Razorpay Checkout) for paid plans and the Day Pass. When off, those buttons are hidden and no order can be created; plans are then assigned by hand on the company page."
+      >
         <button type="button" disabled={saving || (!data.enabled && !data.keysConfigured)} onClick={() => void toggle(!data.enabled)}>
           {saving && <BirdBusy />} {data.enabled ? 'Turn payments off' : 'Turn payments on'}
         </button>
         {!data.keysConfigured && <p className="error">Add the Razorpay keys to the server environment first.</p>}
         {data.enabled && data.mode === 'test' && <p className="docs-hint">Test mode: no real money moves. Switch to live keys when ready.</p>}
-        {error && <p className="error">{error}</p>}
-      </div>
+        {error && <p className="error" role="alert">{error}</p>}
+      </Section>
 
-      <h2>Setup</h2>
-      <table className="data-table">
-        <tbody>
+      <Section title="Razorpay setup">
+        <dl className="admin-kv">
           {setup.map(([label, ok, note]) => (
-            <tr key={label}>
-              <td>{label}</td>
-              <td>{ok ? '✓' : '✗'} {note}</td>
-            </tr>
+            <div key={label} style={{ display: 'contents' }}>
+              <dt>{label}</dt>
+              <dd>
+                <Badge tone={ok ? 'success' : 'danger'}>{ok ? 'OK' : 'Missing'}</Badge> {note}
+              </dd>
+            </div>
           ))}
-          <tr>
-            <td>Webhook URL (add in Razorpay → Webhooks)</td>
-            <td><code>{data.webhookUrl}</code></td>
-          </tr>
-          <tr>
-            <td>Webhook events to enable</td>
-            <td>{data.webhookEvents.join(', ')}</td>
-          </tr>
-        </tbody>
-      </table>
+          <dt>Webhook URL (add in Razorpay → Webhooks)</dt>
+          <dd><code>{data.webhookUrl}</code></dd>
+          <dt>Webhook events to enable</dt>
+          <dd>{data.webhookEvents.join(', ')}</dd>
+        </dl>
+      </Section>
 
-      <h2>Autopay subscriptions</h2>
+      <h2 className="admin-list-title">Autopay subscriptions</h2>
       {data.subscriptions.length === 0 ? (
-        <p className="empty-state">No subscriptions yet.</p>
+        <Empty>No subscriptions yet.</Empty>
       ) : (
-        <div className="table-scroll">
-          <table className="data-table">
+        <>
+          <DataTable caption="Autopay subscriptions">
             <thead>
-              <tr><th>Company</th><th>Plan</th><th>₹ / month</th><th>Status</th><th>Next renewal / ends</th><th>Charges</th></tr>
+              <tr>
+                <th scope="col">Company</th>
+                <th scope="col">Plan</th>
+                <th scope="col" className="num">₹ / month</th>
+                <th scope="col">Status</th>
+                <th scope="col">Next renewal / ends</th>
+                <th scope="col" className="num">Charges</th>
+              </tr>
             </thead>
             <tbody>
-              {data.subscriptions.map((sub) => (
+              {data.subscriptions.slice(0, subRows).map((sub) => (
                 <tr key={sub.id}>
                   <td>{sub.accountName ?? '—'}</td>
-                  <td>{sub.planKey}</td>
-                  <td>{sub.amountInr}</td>
-                  <td>{sub.status}{sub.cancelAtCycleEnd ? ' (cancelling)' : ''}</td>
-                  <td>{dt(sub.currentEnd)}</td>
-                  <td>{sub.paidCount}</td>
+                  <td>{planLabel(sub.planKey)}</td>
+                  <td className="num">{sub.amountInr}</td>
+                  <td>
+                    <Badge tone={statusTone(sub.status)}>{sub.status}</Badge>
+                    {sub.cancelAtCycleEnd && <> <Badge tone="warning">cancelling</Badge></>}
+                  </td>
+                  <td className="nowrap"><When iso={sub.currentEnd} /></td>
+                  <td className="num">{sub.paidCount}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </DataTable>
+          <ShowMore shown={Math.min(subRows, data.subscriptions.length)} total={data.subscriptions.length} step={ROWS} onMore={() => setSubRows((n) => n + ROWS)} />
+        </>
       )}
 
-      <h2>Recent payments</h2>
+      <h2 className="admin-list-title">Recent payments</h2>
       {data.payments.length === 0 ? (
-        <p className="empty-state">No payments yet.</p>
+        <Empty>No payments yet.</Empty>
       ) : (
-        <div className="table-scroll">
-          <table className="data-table">
+        <>
+          <DataTable caption="Recent payments">
             <thead>
-              <tr><th>When</th><th>Company</th><th>Plan</th><th>₹</th><th>Status</th><th>Razorpay payment</th></tr>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Company</th>
+                <th scope="col">Plan</th>
+                <th scope="col" className="num">₹</th>
+                <th scope="col">Status</th>
+                <th scope="col">Razorpay payment</th>
+              </tr>
             </thead>
             <tbody>
-              {data.payments.map((p) => (
+              {data.payments.slice(0, paymentRows).map((p) => (
                 <tr key={p.id}>
-                  <td>{dt(p.paidAt ?? p.createdAt)}</td>
-                  <td>{p.accountName ?? p.accountId.slice(0, 8)}</td>
-                  <td>{p.planKey}{p.kind === 'day_pass' ? ' (pass)' : ''}</td>
-                  <td>{p.amountInr}</td>
-                  <td>{p.status}{p.failureReason ? ` -- ${p.failureReason}` : ''}</td>
+                  <td className="nowrap"><When iso={p.paidAt ?? p.createdAt} /></td>
+                  <td><Link to={`/admin/accounts/${p.accountId}`} className="admin-link">{p.accountName ?? p.accountId.slice(0, 8)}</Link></td>
+                  <td>{planLabel(p.planKey)}{p.kind === 'day_pass' ? ' (pass)' : ''}</td>
+                  <td className="num">{p.amountInr}</td>
+                  <td>
+                    <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+                    {p.failureReason && <span className="admin-cell-sub">{p.failureReason}</span>}
+                  </td>
                   <td><code>{p.razorpayPaymentId ?? '—'}</code></td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </DataTable>
+          <ShowMore shown={Math.min(paymentRows, data.payments.length)} total={data.payments.length} step={ROWS} onMore={() => setPaymentRows((n) => n + ROWS)} />
+        </>
       )}
     </>
   );

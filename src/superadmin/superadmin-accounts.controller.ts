@@ -20,10 +20,10 @@ export class SuperadminAccountsController {
   constructor(private readonly accountsService: SuperadminAccountsService) {}
 
   @Get()
-  async list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
+  async list(@Query('limit') limit?: string, @Query('offset') offset?: string, @Query('q') q?: string) {
     const parsedLimit = Math.min(parseInt(limit ?? '50', 10) || 50, 200);
     const parsedOffset = parseInt(offset ?? '0', 10) || 0;
-    return this.accountsService.list(parsedLimit, parsedOffset);
+    return this.accountsService.list(parsedLimit, parsedOffset, q);
   }
 
   @Get(':id')

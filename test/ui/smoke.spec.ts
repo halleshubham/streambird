@@ -450,6 +450,123 @@ test.describe('host studio', () => {
   });
 });
 
+/** A signup that is waiting for approval: the email-code login creates it, nobody approves it. */
+async function pendingSignup(context: BrowserContext): Promise<string> {
+  const email = `pend-${crypto.randomBytes(5).toString('hex')}@test.dev`;
+  const headers = { Origin: APP };
+  await context.request.post(`${APP}/api/auth/request-code`, { data: { email }, headers });
+  const { code } = await (await context.request.get(`${CONTROL}/code?email=${email}`)).json();
+  await context.request.post(`${APP}/api/auth/verify-code`, { data: { email, code }, headers });
+  return email;
+}
+
+test.describe('admin console', () => {
+  test('nav: labelled, shows how many signups wait, and the count drops when one is approved', async ({ page, context, browser }) => {
+    const email = await pendingSignup(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/plans');
+    const nav = page.getByRole('navigation', { name: 'Admin' });
+    await expect(nav.getByRole('link', { name: /Approvals/ })).toBeVisible();
+    const badge = nav.locator('.admin-nav-count');
+    await expect(badge).toBeVisible();
+    const before = Number(await badge.textContent());
+    expect(before).toBeGreaterThan(0);
+
+    await page.goto('/admin');
+    const row = page.getByRole('row', { name: new RegExp(email) });
+    await expect(row).toBeVisible();
+    await row.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByRole('row', { name: new RegExp(email) })).toHaveCount(0);
+    if (before > 1) await expect(badge).toHaveText(String(before - 1));
+    else await expect(badge).toHaveCount(0);
+  });
+
+  test('phone: the Approve and Reject buttons stay on screen (secondary columns are folded under the email)', async ({ page, context, browser }) => {
+    const email = await pendingSignup(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.goto('/admin');
+    const row = page.getByRole('row', { name: new RegExp(email) });
+    await expect(row).toBeVisible();
+    for (const name of ['Approve', 'Reject']) {
+      const box = await row.getByRole('button', { name }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.x + box!.width, `${name} inside the 390px screen`).toBeLessThanOrEqual(390);
+    }
+    await expect(row.locator('.show-sm')).toContainText('Solo user');
+    // The page itself never scrolls sideways.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test('companies: search narrows the list on the server and shows the count; plan and status read as words', async ({ page, context, browser }) => {
+    const { email } = await signIn(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/accounts');
+    const search = page.getByLabel('Search companies');
+    await search.fill(email);
+    await expect(page.locator('.admin-toolbar-count')).toHaveText('1 account');
+    const row = page.getByRole('row', { name: new RegExp(email) });
+    await expect(row).toContainText('Free');
+    await expect(row).toContainText('Active');
+    await row.getByRole('link', { name: email }).click();
+    await expect(page).toHaveURL(/\/admin\/accounts\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole('heading', { name: new RegExp(email) })).toBeVisible();
+    await page.getByRole('link', { name: /Companies/ }).first().click();
+    await search.fill('zzz-no-such-company');
+    await expect(page.getByText('No companies match "zzz-no-such-company".')).toBeVisible();
+  });
+
+  test('plans: quality and recording read as words, not codes', async ({ page, context }) => {
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/plans');
+    const pro = page.getByRole('row', { name: /^Pro / });
+    await expect(pro).toContainText('2K 1440p');
+    await expect(pro.getByText('Yes')).toBeVisible();
+    const free = page.getByRole('row', { name: /^Free / });
+    await expect(free).toContainText('Full HD 1080p');
+    await expect(free.getByText('Yes')).toHaveCount(0);
+  });
+
+  test('audit log: actions are readable, the JSON is tucked away, and it can be filtered', async ({ page, context, browser }) => {
+    const email = await pendingSignup(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin');
+    await page.getByRole('row', { name: new RegExp(email) }).getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByRole('row', { name: new RegExp(email) })).toHaveCount(0);
+
+    await page.goto('/admin/audit-log');
+    const select = page.getByLabel('Filter by action');
+    await expect(select).toBeVisible();
+    const options = await select.locator('option').allTextContents();
+    expect(options.every((o) => !o.includes('_'))).toBe(true); // "Approve user", not approve_user
+    const approve = options.find((o) => /approve/i.test(o))!;
+    expect(approve, JSON.stringify(options)).toBeTruthy();
+    await select.selectOption({ label: approve });
+    const rows = page.locator('tbody tr');
+    expect(await rows.count()).toBeGreaterThan(0);
+    for (const t of await rows.locator('td:nth-child(2)').allTextContents()) expect(t).toBe(approve);
+    await expect(page.locator('pre.audit-log-metadata').first()).toBeHidden(); // collapsed until "View"
+  });
+
+  test('users: suspending asks first, and cancelling changes nothing', async ({ page, context, browser }) => {
+    const { email } = await signIn(await browser.newContext());
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin/users');
+    await page.getByLabel('Search users by email').fill(email);
+    const row = page.getByRole('row', { name: new RegExp(email) });
+    await expect(row.getByText('Active')).toBeVisible();
+    let asked = '';
+    page.once('dialog', (d) => {
+      asked = d.message();
+      void d.dismiss();
+    });
+    await row.getByRole('button', { name: 'Suspend' }).click();
+    await expect.poll(() => asked).toContain(email);
+    await expect(row.getByText('Suspended')).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Suspend' })).toBeVisible();
+  });
+});
+
 test.describe('recording to this computer (Pro)', () => {
   test('Free plan: the Record button is locked and points to billing', async ({ page, context }) => {
     const { api } = await signIn(context);

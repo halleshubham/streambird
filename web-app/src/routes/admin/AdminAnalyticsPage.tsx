@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
 import type { AnalyticsOverview, LiveStreamRow, UsageAlert } from '../../types/api';
 import { BirdBusy } from '../../components/BirdBusy';
+import { Badge, DataTable, Empty, PageHeader, Section, planLabel } from '../../components/admin/adminKit';
+
+const TOP_ROWS = 10;
 
 // A legitimate broadcast running this long is rare -- past this, a stream
 // still marked LIVE is more likely a hung row (host's browser closed/
@@ -30,6 +34,7 @@ export function AdminAnalyticsPage() {
   const [alerts, setAlerts] = useState<UsageAlert[] | null>(null);
   const [liveStreams, setLiveStreams] = useState<LiveStreamRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [endingId, setEndingId] = useState<string | null>(null);
   // Result of the last Force end: shown above the table, so a failure never replaces the page and the row stays to retry.
   const [actionNote, setActionNote] = useState<{ text: string; isError: boolean } | null>(null);
@@ -94,38 +99,50 @@ export function AdminAnalyticsPage() {
     return <BirdLoader loading compact label="Loading analytics…" />;
   }
 
+  async function refresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
+
+  const failurePct = overview.destinationFailureRate * 100;
+
   return (
     <>
-      <h1>Analytics</h1>
+      <PageHeader
+        title="Analytics"
+        subtitle="What is live right now, who is close to their hours, and how destinations are doing."
+        actions={
+          <button type="button" className="btn-sm btn-ghost" disabled={refreshing} onClick={() => void refresh()}>
+            {refreshing && <BirdBusy />} Refresh
+          </button>
+        }
+      />
 
-      <div className="stat-card-row">
+      <div className="admin-stats">
+        <StatCard label="Currently live" value={overview.currentlyLive} />
         <StatCard label="Streams today" value={overview.streamsToday} />
         <StatCard label="Streams this week" value={overview.streamsThisWeek} />
-        <StatCard label="Currently live" value={overview.currentlyLive} />
-        <StatCard
-          label="Destination failure rate (7d)"
-          value={`${(overview.destinationFailureRate * 100).toFixed(1)}%`}
-        />
+        <StatCard label="Destination failure rate (7d)" value={`${failurePct.toFixed(1)}%`} tone={failurePct >= 10 ? 'danger' : failurePct >= 3 ? 'warning' : undefined} />
       </div>
 
-      <section>
-        <h2>Live streams</h2>
+      <Section title="Live streams">
         {actionNote && (
           <p className={actionNote.isError ? 'error' : 'success'} role={actionNote.isError ? 'alert' : 'status'} data-testid="force-end-note">
             {actionNote.text}
           </p>
         )}
         {liveStreams.length === 0 ? (
-          <p className="empty-state">Nothing is currently live.</p>
+          <Empty>Nothing is currently live.</Empty>
         ) : (
-          <div className="table-scroll">
-            <table className="data-table">
+          <>
+            <DataTable caption="Live streams" tall>
               <thead>
                 <tr>
-                  <th>Company</th>
-                  <th>Title</th>
-                  <th>Live for</th>
-                  <th />
+                  <th scope="col">Company</th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Live for</th>
+                  <th scope="col" />
                 </tr>
               </thead>
               <tbody>
@@ -134,21 +151,21 @@ export function AdminAnalyticsPage() {
                   const likelyStuck = ms > LIKELY_STUCK_HOURS * 3_600_000;
                   return (
                     <tr key={s.id}>
-                      <td>{s.accountName}</td>
+                      <td><Link to={`/admin/accounts/${s.accountId}`} className="admin-link">{s.accountName}</Link></td>
                       <td>{s.title}</td>
-                      <td>
+                      <td className="nowrap">
                         {formatLiveDuration(s.startedAt, now)}
                         {likelyStuck && (
                           <>
                             {' '}
-                            <span className="badge badge-warning">Possibly stuck</span>
+                            <Badge tone="warning">Possibly stuck</Badge>
                           </>
                         )}
                       </td>
-                      <td>
+                      <td className="actions">
                         <button
                           type="button"
-                          className="danger-button"
+                          className="btn-sm danger-button"
                           disabled={endingId !== null}
                           aria-label={`Force end ${s.title}`}
                           onClick={() => void handleForceEnd(s)}
@@ -160,45 +177,14 @@ export function AdminAnalyticsPage() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+            </DataTable>
+          </>
         )}
-      </section>
+      </Section>
 
-      <section>
-        <h2>Top accounts by usage</h2>
-        {overview.topAccountsByUsage.length === 0 ? (
-          <p className="empty-state">No accounts yet.</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="data-table">
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Tier</th>
-                <th>Stream hours used</th>
-                <th>Included hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.topAccountsByUsage.map((a) => (
-                <tr key={a.accountId}>
-                  <td>{a.accountName}</td>
-                  <td>{a.currentTier}</td>
-                  <td>{Number(a.streamHourUsageCurrentPeriod).toFixed(1)}</td>
-                  <td>{Number(a.includedHoursPerMonth).toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2>Usage alerts</h2>
+      <Section title="Usage alerts" hint="Accounts at 80% of their included hours or more.">
         {alerts.length === 0 ? (
-          <p className="empty-state">No accounts are near or over their included hours.</p>
+          <Empty>No accounts are near or over their included hours.</Empty>
         ) : (
           <div className="usage-alert-list">
             {alerts.map((a) => (
@@ -206,15 +192,45 @@ export function AdminAnalyticsPage() {
             ))}
           </div>
         )}
-      </section>
+      </Section>
+
+      <Section title="Top accounts by usage">
+        {overview.topAccountsByUsage.length === 0 ? (
+          <Empty>No accounts yet.</Empty>
+        ) : (
+          <DataTable caption="Top accounts by usage">
+            <thead>
+              <tr>
+                <th scope="col">Company</th>
+                <th scope="col">Plan</th>
+                <th scope="col" className="num">Hours used</th>
+                <th scope="col" className="num">Included</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.topAccountsByUsage.slice(0, TOP_ROWS).map((a) => {
+                const included = Number(a.includedHoursPerMonth);
+                return (
+                  <tr key={a.accountId}>
+                    <td><Link to={`/admin/accounts/${a.accountId}`} className="admin-link">{a.accountName}</Link></td>
+                    <td>{planLabel(a.currentTier)}</td>
+                    <td className="num">{Number(a.streamHourUsageCurrentPeriod).toFixed(1)}</td>
+                    <td className="num">{included > 0 ? included.toFixed(1) : 'Unlimited'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )}
+      </Section>
     </>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
+function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: 'warning' | 'danger' }) {
   return (
     <div className="stat-card">
-      <span className="stat-card-value">{value}</span>
+      <span className={`stat-card-value${tone ? ` stat-card-value--${tone}` : ''}`}>{value}</span>
       <span className="stat-card-label">{label}</span>
     </div>
   );
@@ -228,12 +244,12 @@ function UsageAlertRow({ alert }: { alert: UsageAlert }) {
   return (
     <div className="usage-alert-row">
       <div className="usage-alert-row-header">
-        <span className="usage-alert-account">
-          {alert.accountName} <span className="usage-alert-tier">({alert.currentTier})</span>
-        </span>
-        <span className={`badge ${isOverLimit ? 'badge-danger' : 'badge-warning'}`}>
+        <Link to={`/admin/accounts/${alert.accountId}`} className="usage-alert-account admin-link">
+          {alert.accountName} <span className="usage-alert-tier">({planLabel(alert.currentTier)})</span>
+        </Link>
+        <Badge tone={isOverLimit ? 'danger' : 'warning'}>
           {isOverLimit ? 'Over limit' : 'Near limit'} · {(alert.ratio * 100).toFixed(0)}%
-        </span>
+        </Badge>
       </div>
       <UsageBar used={used} included={included} />
     </div>

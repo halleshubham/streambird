@@ -78,12 +78,28 @@ export class SuperadminAccountsService {
     private readonly plans: PlansService,
   ) {}
 
-  async list(limit: number, offset: number): Promise<{ items: AccountSummary[]; total: number }> {
-    const [accounts, total] = await this.accounts.findAndCount({
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
+  /** `search` matches the account name or the company name, case-insensitively (LIKE wildcards in it are literal). */
+  async list(limit: number, offset: number, search?: string): Promise<{ items: AccountSummary[]; total: number }> {
+    const term = search?.trim();
+    let accounts: Account[];
+    let total: number;
+    if (term) {
+      const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      [accounts, total] = await this.accounts
+        .createQueryBuilder('a')
+        .leftJoin(Company, 'c', 'c.accountId = a.id')
+        .where(`a.name ILIKE :like ESCAPE '\\' OR c.name ILIKE :like ESCAPE '\\'`, { like })
+        .orderBy('a.createdAt', 'DESC')
+        .take(limit)
+        .skip(offset)
+        .getManyAndCount();
+    } else {
+      [accounts, total] = await this.accounts.findAndCount({
+        order: { createdAt: 'DESC' },
+        take: limit,
+        skip: offset,
+      });
+    }
 
     if (accounts.length === 0) {
       return { items: [], total };

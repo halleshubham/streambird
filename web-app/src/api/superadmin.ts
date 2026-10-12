@@ -58,8 +58,8 @@ export function reactivateUser(userId: string): Promise<{ id: string; suspendedA
   return api.post(`/superadmin/users/${userId}/reactivate`);
 }
 
-export function listAccounts(limit = 50, offset = 0): Promise<AccountListResponse> {
-  return api.get(`/superadmin/accounts?limit=${limit}&offset=${offset}`);
+export function listAccounts(limit = 50, offset = 0, q = ''): Promise<AccountListResponse> {
+  return api.get(`/superadmin/accounts?limit=${limit}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ''}`);
 }
 
 export function getAccountDetail(id: string): Promise<AccountDetail> {

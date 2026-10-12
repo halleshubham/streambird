@@ -22,7 +22,7 @@ export function UsageBar({ used, included, compact = false }: { used: number; in
         />
       </div>
       <p className="usage-meter-tier">
-        {used.toFixed(1)} / {included.toFixed(1)} hrs
+        {included > 0 ? `${used.toFixed(1)} / ${included.toFixed(1)} hrs` : `${used.toFixed(1)} hrs · unlimited`}
       </p>
     </div>
   );

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
 import { BirdBusy } from '../../components/BirdBusy';
 import { BirdLoader } from '../../components/BirdLoader';
+import { Badge, DataTable, PageHeader, RESOLUTION_LABEL } from '../../components/admin/adminKit';
 import type { AdminPlan, PlanPayload, Resolution } from '../../types/api';
 
 /** Form state: strings so inputs stay editable; converted by toPayload(). Blank = unlimited / none where allowed. */
@@ -79,6 +80,7 @@ export function AdminPlansPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   async function load() {
     try {
@@ -126,54 +128,63 @@ export function AdminPlansPage() {
     }
   }
 
+  useEffect(() => {
+    if (form) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Only when the form opens or switches plan, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form === null, creating, form?.key]);
+
   const set = <K extends keyof PlanForm>(k: K, v: PlanForm[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
 
   if (!plans) return error ? <p className="error">{error}</p> : <BirdLoader loading compact />;
 
   return (
     <>
-      <h1>Plans</h1>
-      <p className="docs-hint">
-        These limits are enforced everywhere: hours when a stream starts, destinations when it is created or scheduled, guests when
-        they join the studio, and the session length while live. Editing a plan applies to every account on it immediately.
-        Per-account exceptions are set on the company page.
-      </p>
-      {saved && <p className="status">{saved}</p>}
-      {error && <p className="error">{error}</p>}
+      <PageHeader
+        title="Plans"
+        subtitle="These limits are enforced everywhere: hours when a stream starts, destinations when it is created or scheduled, guests when they join the studio, and the session length while live. Editing a plan applies to every account on it immediately. Per-account exceptions are set on the company page."
+        actions={!form && <button type="button" onClick={startCreate}>New plan</button>}
+      />
+      {saved && <p className="status" role="status">{saved}</p>}
+      {error && <p className="error" role="alert">{error}</p>}
 
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Plan</th><th>Type</th><th>Hours</th><th>Destinations</th><th>Guests</th><th>Quality</th><th>Session cap</th><th>₹ / $</th><th>Shown</th><th />
+      <DataTable caption="Plans">
+        <thead>
+          <tr>
+            <th scope="col">Plan</th>
+            <th scope="col">Type</th>
+            <th scope="col">Hours</th>
+            <th scope="col" className="num">Destinations</th>
+            <th scope="col" className="num">Guests</th>
+            <th scope="col">Quality</th>
+            <th scope="col">Recording</th>
+            <th scope="col">Session cap</th>
+            <th scope="col">₹ / $</th>
+            <th scope="col">Visibility</th>
+            <th scope="col" />
+          </tr>
+        </thead>
+        <tbody>
+          {plans.map((p) => (
+            <tr key={p.key} className={p.isActive ? undefined : 'row-muted'}>
+              <td><span className="admin-cell-main">{p.name}</span><span className="admin-cell-sub"><code>{p.key}</code></span></td>
+              <td>{p.kind === 'day_pass' ? `Day pass (${p.validityHours ?? '?'} h)` : 'Monthly'}</td>
+              <td>{hoursLabel(p)}</td>
+              <td className="num">{p.maxDestinations}</td>
+              <td className="num">{p.maxGuests}</td>
+              <td className="nowrap">{RESOLUTION_LABEL[p.maxResolution]}</td>
+              <td>{p.canRecord ? <Badge tone="success">Yes</Badge> : '—'}</td>
+              <td>{p.maxSessionHours === null ? '—' : `${Number(p.maxSessionHours)} h`}</td>
+              <td className="nowrap">{p.priceInr ?? '—'} / {p.priceUsd ?? '—'}</td>
+              <td>{!p.isActive ? <Badge>Inactive</Badge> : p.isPublic ? <Badge tone="info">Public</Badge> : <Badge tone="warning">Hidden</Badge>}</td>
+              <td className="actions"><button type="button" className="btn-sm btn-ghost" onClick={() => edit(p)}>Edit</button></td>
             </tr>
-          </thead>
-          <tbody>
-            {plans.map((p) => (
-              <tr key={p.key} className={p.isActive ? undefined : 'row-muted'}>
-                <td><strong>{p.name}</strong> <code>{p.key}</code></td>
-                <td>{p.kind === 'day_pass' ? `Day pass (${p.validityHours ?? '?'} h)` : 'Monthly'}</td>
-                <td>{hoursLabel(p)}</td>
-                <td>{p.maxDestinations}</td>
-                <td>{p.maxGuests}</td>
-                <td>{p.maxResolution.toUpperCase()}</td>
-                <td>{p.maxSessionHours === null ? '—' : `${Number(p.maxSessionHours)} h`}</td>
-                <td>{p.priceInr ?? '—'} / {p.priceUsd ?? '—'}</td>
-                <td>{p.isActive ? (p.isPublic ? 'Public' : 'Hidden') : 'Inactive'}</td>
-                <td><button type="button" className="link-button" onClick={() => edit(p)}>Edit</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!form && (
-        <p>
-          <button type="button" onClick={startCreate}>New plan</button>
-        </p>
-      )}
+          ))}
+        </tbody>
+      </DataTable>
 
       {form && (
-        <form className="panel plan-form" onSubmit={(e) => void handleSave(e)}>
+        <form ref={formRef} className="panel plan-form" onSubmit={(e) => void handleSave(e)}>
           <h2>{creating ? 'New plan' : `Edit ${form.name}`}</h2>
           <div className="plan-form-grid">
             <label>Key {creating ? '' : '(fixed)'}

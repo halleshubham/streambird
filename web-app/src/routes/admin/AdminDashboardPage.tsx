@@ -1,19 +1,13 @@
 import { useEffect, useState } from 'react';
 import * as superadminApi from '../../api/superadmin';
 import { BirdLoader } from '../../components/BirdLoader';
+import { BirdBusy } from '../../components/BirdBusy';
+import { PENDING_CHANGED_EVENT } from '../../lib/adminEvents';
+import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, When } from '../../components/admin/adminKit';
 import { ApiError } from '../../api/client';
 import type { PendingApproval } from '../../types/api';
 
-const ROLE_LABELS: Record<PendingApproval['role'], string> = {
-  superadmin: 'Superadmin',
-  company_admin: 'Company Admin',
-  user: 'Solo user',
-};
-
-/** A table of every account awaiting approval -- both a new Company Admin
- * signup and a brand-new solo user's first login -- with approve/reject
- * buttons. Shell/nav is AdminShell (see App.tsx) -- not nested under
- * AppShell/ProtectedRoute, see SuperadminRoute. */
+/** Everyone waiting for approval -- a new Company Admin signup or a brand-new solo user's first login. */
 export function AdminDashboardPage() {
   const [pending, setPending] = useState<PendingApproval[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -28,90 +22,76 @@ export function AdminDashboardPage() {
   }
 
   useEffect(() => {
-    // Fetching pending approvals on mount -- the textbook useEffect+setState
-    // case ("synchronizing with an external system"), not a synchronous
-    // mirror of a prop/derivable value: this can only happen via an async
-    // network call, never during render itself.
+    // Fetching on mount -- an async network call, never derivable during render.
     // oxlint-disable-next-line react/set-state-in-effect
     void load();
   }, []);
 
-  async function handleApprove(id: string) {
+  async function decide(id: string, run: () => Promise<unknown>, failure: string) {
     setBusyId(id);
     setError(null);
     try {
-      await superadminApi.approveUser(id);
+      await run();
       await load();
+      window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to approve.');
+      setError(err instanceof ApiError ? err.message : failure);
     } finally {
       setBusyId(null);
     }
   }
 
-  async function handleReject(id: string, email: string) {
+  function handleReject(id: string, email: string) {
     if (!window.confirm(`Reject and permanently delete the signup for ${email}? This cannot be undone.`)) return;
-    setBusyId(id);
-    setError(null);
-    try {
-      await superadminApi.rejectUser(id);
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to reject.');
-    } finally {
-      setBusyId(null);
-    }
+    void decide(id, () => superadminApi.rejectUser(id), 'Failed to reject.');
   }
 
   return (
     <>
-      <h1>Pending approvals</h1>
-      {error && <p className="error">{error}</p>}
+      <PageHeader
+        title="Pending approvals"
+        subtitle="New signups can't use StreamBird until you approve them. They get an email either way."
+      />
+      {error && <p className="error" role="alert">{error}</p>}
       {pending === null ? (
         <BirdLoader loading compact label="Loading pending approvals…" />
       ) : pending.length === 0 ? (
-        <p>No accounts pending approval.</p>
+        <Empty>Nobody is waiting. New signups will appear here.</Empty>
       ) : (
-        <div className="table-scroll">
-          <table className="data-table">
+        <DataTable caption="Signups waiting for approval">
           <thead>
             <tr>
-              <th>Type</th>
-              <th>Company</th>
-              <th>Email</th>
-              <th>Signed up</th>
-              <th />
+              <th scope="col">Email</th>
+              <th scope="col" className="hide-sm">Type</th>
+              <th scope="col" className="hide-sm">Company</th>
+              <th scope="col" className="hide-sm">Signed up</th>
+              <th scope="col" />
             </tr>
           </thead>
           <tbody>
             {pending.map((p) => (
               <tr key={p.id}>
-                <td>{ROLE_LABELS[p.role]}</td>
-                <td>{p.companyName ?? '—'}</td>
-                <td>{p.email}</td>
-                <td>{new Date(p.createdAt).toLocaleString()}</td>
                 <td>
-                  <button
-                    type="button"
-                    disabled={busyId === p.id}
-                    onClick={() => void handleApprove(p.id)}
-                  >
-                    Approve
-                  </button>{' '}
-                  <button
-                    type="button"
-                    className="danger-button"
-                    disabled={busyId === p.id}
-                    onClick={() => void handleReject(p.id, p.email)}
-                  >
+                  <span className="admin-cell-main">{p.email}</span>
+                  <span className="admin-cell-sub show-sm">
+                    {ROLE_LABEL[p.role]}{p.role === 'company_admin' && p.companyName ? ` · ${p.companyName}` : ''} · <When iso={p.createdAt} />
+                  </span>
+                </td>
+                <td className="hide-sm"><Badge tone={p.role === 'company_admin' ? 'info' : 'neutral'}>{ROLE_LABEL[p.role]}</Badge></td>
+                <td className="hide-sm">{p.role === 'company_admin' ? (p.companyName ?? '—') : '—'}</td>
+                <td className="nowrap hide-sm"><When iso={p.createdAt} /></td>
+                <td className="actions">
+                  <button type="button" className="btn-sm" disabled={busyId === p.id} onClick={() => void decide(p.id, () => superadminApi.approveUser(p.id), 'Failed to approve.')}>
+                    {busyId === p.id && <BirdBusy />} Approve
+                  </button>
+                  <button type="button" className="btn-sm danger-button" disabled={busyId === p.id} onClick={() => handleReject(p.id, p.email)}>
                     Reject
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
-        </div>
+        </DataTable>
       )}
     </>
   );
