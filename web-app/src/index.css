@@ -3068,3 +3068,484 @@ kbd {
   color: var(--error);
   fill: var(--error);
 }
+
+/* ======================================================================
+   Superadmin
+   Shared look for every /admin page (see components/admin/adminKit.tsx):
+   page header, cards, dense tables, status badges, small buttons.
+   Colours come only from the theme variables, so dark mode just works.
+   ====================================================================== */
+
+/* Admin pages use the width: tables need it more than reading text does. */
+.admin-shell .app-main {
+  max-width: 1200px;
+}
+
+.admin-header {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.admin-header .brand-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.admin-header nav {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.admin-header nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-bottom: none;
+}
+
+.admin-header nav a:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.admin-header nav a.active {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--text-h);
+}
+
+.admin-nav-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--error);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.admin-header .user-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .admin-header {
+    gap: 8px 12px;
+    padding: 10px 16px;
+  }
+  .admin-header nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -4px;
+  }
+  .admin-header nav a {
+    white-space: nowrap;
+  }
+  .admin-header .app-header-right {
+    margin-left: auto;
+  }
+  .admin-header .user-email {
+    display: none;
+  }
+  .admin-shell .app-main {
+    padding: 16px;
+  }
+}
+
+/* Page header: back link, title, one-line purpose, page-level actions. */
+.admin-page-head {
+  margin-bottom: 20px;
+}
+
+.admin-page-head h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.admin-page-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-subtitle,
+.admin-hint {
+  margin: 6px 0 0;
+  max-width: 70ch;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.admin-hint {
+  margin: 0 0 12px;
+}
+
+.admin-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-back {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.admin-back:hover {
+  color: var(--accent);
+}
+
+/* Cards */
+.admin-section h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.admin-section--danger {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+}
+
+.admin-section--danger h2 {
+  color: var(--error);
+}
+
+.admin-section > .table-scroll:last-child,
+.admin-section > .admin-table-wrap:last-child {
+  margin-bottom: 0;
+}
+
+/* Tables */
+.admin-table-wrap {
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+}
+
+.admin-section .admin-table-wrap {
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+
+.admin-table {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table th {
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.admin-table td {
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table .num {
+  text-align: right;
+}
+
+.admin-table .nowrap {
+  white-space: nowrap;
+}
+
+.admin-table .actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-table .actions > * + * {
+  margin-left: 8px;
+}
+
+.admin-cell-main {
+  display: block;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.admin-cell-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.admin-link {
+  color: var(--text-h);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.admin-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+
+.admin-showmore {
+  font-size: 13px;
+  color: var(--text);
+  margin: 4px 0 16px;
+}
+
+/* Toolbar above a list: search + filters */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.admin-toolbar input,
+.admin-toolbar select {
+  margin: 0;
+  width: auto;
+  min-width: 0;
+}
+
+.admin-toolbar input[type='search'] {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.admin-toolbar-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Badges: one family, five tones. */
+.badge {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.badge--neutral {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  color: var(--text-h);
+}
+
+.badge--success {
+  background: color-mix(in srgb, #16a34a 18%, transparent);
+  color: #15803d;
+}
+
+.badge--warning {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  color: var(--text-h);
+}
+
+.badge--danger {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
+}
+
+.badge--info {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .badge--success {
+    color: #4ade80;
+  }
+}
+
+/* Compact buttons (row actions, toolbars). */
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Forms inside cards: an even grid, labels above, one primary action. */
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.admin-form-grid label {
+  margin: 0;
+}
+
+.admin-form-grid input,
+.admin-form-grid select {
+  margin: 4px 0 0;
+}
+
+.admin-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.admin-form-actions .admin-hint {
+  margin: 0;
+}
+
+.admin-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: 12px;
+}
+
+/* Key/value rows (setup checklists, account facts). */
+.admin-kv {
+  display: grid;
+  grid-template-columns: minmax(160px, 260px) 1fr;
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.admin-kv dt {
+  color: var(--text);
+}
+
+.admin-kv dd {
+  margin: 0;
+  color: var(--text-h);
+  word-break: break-word;
+}
+
+@media (max-width: 600px) {
+  .admin-kv {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .admin-kv dd {
+    margin-bottom: 10px;
+  }
+}
+
+/* Audit-log details: collapsed by default. */
+.admin-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.admin-details .audit-log-metadata {
+  margin-top: 6px;
+}
+
+/* Stat cards: label on top, one number. */
+.admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-stats .stat-card {
+  min-width: 0;
+}
+
+.admin-list-title {
+  margin: 28px 0 10px;
+  font-size: 16px;
+}
+
+.stat-card-value--warning {
+  color: var(--warning);
+}
+
+.stat-card-value--danger {
+  color: var(--error);
+}
+
+/* Phones: drop secondary columns so the row's action stays on screen. */
+.show-sm {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .hide-sm {
+    display: none;
+  }
+  .show-sm {
+    display: block;
+  }
+}
+
+.admin-subtitle,
+.admin-hint {
+  max-width: 80ch;
+}
+
+.admin-table-wrap--tall {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .admin-table th,
+  .admin-table td {
+    padding: 10px 8px;
+  }
+  .admin-table .admin-cell-main {
+    overflow-wrap: anywhere;
+  }
+  /* Stack row buttons so the pair never pushes past the screen. */
+  .admin-table .actions {
+    white-space: normal;
+  }
+  .admin-table .actions > button {
+    display: block;
+    width: 100%;
+  }
+  .admin-table .actions > * + * {
+    margin: 6px 0 0;
+  }
+}
