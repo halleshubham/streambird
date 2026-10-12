@@ -1,7 +1,7 @@
 import { NameBadge } from '../../components/NameBadge';
 import { formatWhen } from '../../lib/schedule';
-import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera,
   Copy,
@@ -30,6 +30,8 @@ import {
   ImagePlus,
   Lock,
   Check,
+  Circle,
+  Square,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
@@ -38,6 +40,7 @@ import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspec
 import { PlatformBadge } from '../../components/PlatformBadge';
 import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
+import { formatElapsed } from '../../studio/recorder';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -70,6 +73,8 @@ export function HostStudioPage() {
     wallpaperDim,
     resolution,
     maxResolution,
+    canRecord,
+    recordingSince,
     cameraStarting,
     cameraStarted,
     isLive,
@@ -284,7 +289,7 @@ export function HostStudioPage() {
             <select
               aria-label="Stream quality"
               value={resolution}
-              disabled={isLive}
+              disabled={isLive || recordingSince !== null}
               onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
             >
               {Object.entries(RESOLUTIONS)
@@ -345,6 +350,12 @@ export function HostStudioPage() {
           >
             <Radio size={18} /> {isLive ? 'Live' : 'Go live'}
           </button>
+          <RecordButton
+            canRecord={canRecord}
+            since={recordingSince}
+            onStart={() => void actions.startRecording()}
+            onStop={() => void actions.stopRecording()}
+          />
           <button
             type="button"
             className="tb-btn tb-btn--danger"
@@ -641,5 +652,43 @@ export function HostStudioPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Record the composited stream to the host's own computer. Pro only: other plans see it locked, with a nudge to upgrade. */
+function RecordButton({ canRecord, since, onStart, onStop }: { canRecord: boolean; since: number | null; onStart: () => void; onStop: () => void }) {
+  const navigate = useNavigate();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === null) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [since]);
+
+  if (since !== null) {
+    return (
+      <button type="button" className="tb-btn tb-btn--danger tb-btn--recording" aria-label="Stop recording" title="Stop and save the recording" onClick={onStop}>
+        <Square size={16} /> <span className="tb-label">Stop {formatElapsed((now - since) / 1000)}</span>
+      </button>
+    );
+  }
+  if (!canRecord) {
+    return (
+      <button
+        type="button"
+        className="tb-btn"
+        aria-label="Record to this computer (Pro plan)"
+        title="Recording to your computer is on the Pro plan"
+        onClick={() => navigate('/billing')}
+      >
+        <Lock size={16} /> <span className="tb-label">Record</span>
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="tb-btn" aria-label="Record to this computer" title="Save a recording of the stream on this computer" onClick={onStart}>
+      <Circle size={16} className="tb-rec-dot" /> <span className="tb-label">Record</span>
+    </button>
   );
 }

@@ -16,6 +16,8 @@ export interface EffectiveLimits {
   /** Simultaneous guests in the studio, host excluded. */
   maxGuests: number;
   maxResolution: Resolution;
+  /** Recording the composited stream to the host's own computer. */
+  canRecord: boolean;
   /** A single live session ends after this many hours; null = no cap. */
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: Date } | null;
@@ -45,6 +47,7 @@ export function computeLimits(
   let maxDestinations = account.maxDestinationsOverride ?? plan.maxDestinations;
   let maxGuests = account.maxGuestsOverride ?? plan.maxGuests;
   let maxResolution = plan.maxResolution;
+  let canRecord = plan.canRecord;
   let maxSessionHours = num(plan.maxSessionHours);
   let graceMultiplier = Number(plan.graceMultiplier);
   let activePass: EffectiveLimits['dayPass'] = null;
@@ -59,6 +62,7 @@ export function computeLimits(
     if (RESOLUTION_ORDER.indexOf(dayPass.maxResolution) > RESOLUTION_ORDER.indexOf(maxResolution)) {
       maxResolution = dayPass.maxResolution;
     }
+    canRecord = canRecord || dayPass.canRecord;
     const passSession = num(dayPass.maxSessionHours);
     // A pass with no session cap removes the plan's; otherwise the longer of the two.
     maxSessionHours = passSession === null || maxSessionHours === null ? null : Math.max(maxSessionHours, passSession);
@@ -73,6 +77,7 @@ export function computeLimits(
     maxDestinations,
     maxGuests,
     maxResolution,
+    canRecord,
     maxSessionHours,
     dayPass: activePass,
     planExpiresAt: null,
@@ -162,6 +167,7 @@ export class PlansService {
     if (dto.maxDestinations !== undefined) out.maxDestinations = dto.maxDestinations;
     if (dto.maxGuests !== undefined) out.maxGuests = dto.maxGuests;
     if (dto.maxResolution !== undefined) out.maxResolution = dto.maxResolution;
+    if (dto.canRecord !== undefined) out.canRecord = dto.canRecord;
     if ('maxSessionHours' in dto) out.maxSessionHours = str(dto.maxSessionHours);
     if ('validityHours' in dto) out.validityHours = dto.validityHours ?? null;
     if ('priceInr' in dto) out.priceInr = dto.priceInr ?? null;

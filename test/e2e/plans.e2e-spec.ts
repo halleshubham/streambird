@@ -73,6 +73,22 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
     expect((await client.post('/streams', { title: 't', destinationConnectionIds: [a, b] })).status).toBe(201);
   });
 
+  it('recording to the host\'s computer is a plan feature: Pro and Business have it, Free does not, and an admin can switch it', async () => {
+    const pub = (await new Client(h.baseUrl).get('/plans/public')).body.filter((p: any) => !p.key.startsWith('e2e_'));
+    expect(pub.map((p: any) => [p.key, p.canRecord])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+
+    const { client } = await h.signIn();
+    expect((await client.get('/plans/me')).body.canRecord).toBe(false);
+    try {
+      expect((await admin.patch('/superadmin/plans/free', { canRecord: true })).body.canRecord).toBe(true);
+      expect((await client.get('/plans/me')).body.canRecord).toBe(true);
+      expect((await admin.patch('/superadmin/plans/free', { canRecord: 'yes' })).status).toBe(400);
+    } finally {
+      await admin.patch('/superadmin/plans/free', { canRecord: false });
+    }
+    expect((await client.get('/plans/me')).body.canRecord).toBe(false);
+  });
+
   it('creates plans (validated), including unlimited hours and a session cap; unlimited never blocks on hours', async () => {
     expect((await admin.post('/superadmin/plans', { key: 'Bad Key', name: 'x', maxDestinations: 1, maxGuests: 1 })).status).toBe(400);
     const created = await admin.post('/superadmin/plans', { key: planKey, name: 'Creator', includedHoursPerMonth: null, maxDestinations: 3, maxGuests: 5, maxSessionHours: 12, priceInr: 1499 });

@@ -4,7 +4,7 @@ import { Plan } from './entities/plan.entity';
 const plan = (o: Partial<Plan> = {}): Plan =>
   ({
     key: 'pro', name: 'Pro', kind: 'monthly', includedHoursPerMonth: '30', graceMultiplier: '1.2',
-    maxDestinations: 4, maxGuests: 6, maxResolution: 'hd', maxSessionHours: null, validityHours: null,
+    maxDestinations: 4, maxGuests: 6, maxResolution: 'hd', canRecord: false, maxSessionHours: null, validityHours: null,
     priceInr: 1999, priceUsd: '39', isPublic: true, isActive: true, sortOrder: 30, ...o,
   }) as Plan;
 const none = { includedHoursOverride: null, maxDestinationsOverride: null, maxGuestsOverride: null, dayPassPlanKey: null, dayPassExpiresAt: null };
@@ -30,6 +30,14 @@ describe('computeLimits', () => {
     const l = computeLimits(plan({ maxSessionHours: '6' }), { ...none, dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) }, pass, NOW);
     expect(l).toMatchObject({ includedHours: null, maxDestinations: 6, maxGuests: 10, maxResolution: 'fhd', maxSessionHours: 12 });
     expect(l.dayPass?.planKey).toBe('day_pass');
+  });
+
+  it('recording follows the plan; a day pass that allows it adds it, one that does not never removes it', () => {
+    const live = { ...none, dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) };
+    expect(computeLimits(plan(), none, null, NOW).canRecord).toBe(false);
+    expect(computeLimits(plan({ canRecord: true }), none, null, NOW).canRecord).toBe(true);
+    expect(computeLimits(plan(), live, plan({ key: 'day_pass', kind: 'day_pass', canRecord: true }), NOW).canRecord).toBe(true);
+    expect(computeLimits(plan({ canRecord: true }), live, plan({ key: 'day_pass', kind: 'day_pass', canRecord: false }), NOW).canRecord).toBe(true);
   });
 
   it('a day pass never lowers anything the plan already allows', () => {

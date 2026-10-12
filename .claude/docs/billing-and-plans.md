@@ -30,3 +30,5 @@ Usage: `recordStreamUsage(hours)` at end; no cron — `rolloverIfNeeded` resets 
 - Tests: `test/e2e/payments|autopay|plans.e2e-spec.ts` with `mock-razorpay.ts`. Never call real Razorpay in tests; `RAZORPAY_API_BASE` redirects the client to the mock.
 
 - **Quality tiers** (`maxResolution`): `sd`/`hd`/`fhd`/`qhd` (2K, 2560x1440, 10 Mbps cap). Seeded on Pro + Business by migration 0017 (Free/Starter stay Full HD, day pass HD). The relay copies video, so nothing server-side changes; the order list lives in `plan.entity.ts`, `useHostStudio.ts` and `HostStudioPage.tsx`.
+
+- **`canRecord`** (plan column `can_record`, default false; migration 0018 turns it on for Pro + Business): local recording in the studio. A day pass that allows it adds it, never removes it. Editable per plan in Admin → Plans.

@@ -3062,3 +3062,9 @@ kbd {
     opacity: 0;
   }
 }
+
+/* Record button in the studio top bar: a red dot while idle. */
+.tb-rec-dot {
+  color: var(--error);
+  fill: var(--error);
+}
