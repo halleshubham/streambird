@@ -37,18 +37,6 @@ export interface PendingApproval {
   createdAt: string;
 }
 
-export interface UserSearchResult {
-  id: string;
-  email: string;
-  displayName: string | null;
-  role: UserRole;
-  accountId: string;
-  companyName: string | null;
-  approvedAt: string | null;
-  suspendedAt: string | null;
-  createdAt: string;
-}
-
 export interface AuditLogEntry {
   id: string;
   actorUserId: string | null;
@@ -267,6 +255,8 @@ export interface AccountSummary {
   createdAt: string;
   companyName: string | null;
   userCount: number;
+  /** On a search: a user on this account whose email matched (the account's own name did not). */
+  matchedUserEmail?: string | null;
 }
 
 export interface AccountListResponse {

@@ -7,7 +7,6 @@ import { PENDING_CHANGED_EVENT } from '../lib/adminEvents';
 const NAV: { to: string; label: string; end?: boolean; count?: boolean }[] = [
   { to: '/admin', label: 'Approvals', end: true, count: true },
   { to: '/admin/accounts', label: 'Companies' },
-  { to: '/admin/users', label: 'Users' },
   { to: '/admin/plans', label: 'Plans' },
   { to: '/admin/billing', label: 'Billing' },
   { to: '/admin/analytics', label: 'Analytics' },

@@ -16,6 +16,7 @@ export function AdminAccountDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [suspending, setSuspending] = useState(false);
+  const [userBusyId, setUserBusyId] = useState<string | null>(null);
 
   const [plans, setPlans] = useState<AdminPlan[]>([]);
   const [planKey, setPlanKey] = useState('free');
@@ -80,6 +81,21 @@ export function AdminAccountDetailPage() {
       setError(err instanceof ApiError ? err.message : 'Failed to update subscription.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleUser(u: AccountDetail['users'][number]) {
+    if (!u.suspendedAt && !window.confirm(`Suspend ${u.email}? They are signed out and cannot log in until reactivated.`)) return;
+    setUserBusyId(u.id);
+    setError(null);
+    try {
+      if (u.suspendedAt) await superadminApi.reactivateUser(u.id);
+      else await superadminApi.suspendUser(u.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : u.suspendedAt ? 'Failed to reactivate.' : 'Failed to suspend.');
+    } finally {
+      setUserBusyId(null);
     }
   }
 
@@ -230,7 +246,8 @@ export function AdminAccountDetailPage() {
               <th scope="col">Email</th>
               <th scope="col">Role</th>
               <th scope="col">Status</th>
-              <th scope="col">Joined</th>
+              <th scope="col" className="hide-sm">Joined</th>
+              <th scope="col" />
             </tr>
           </thead>
           <tbody>
@@ -241,7 +258,19 @@ export function AdminAccountDetailPage() {
                 <td>
                   {u.suspendedAt ? <Badge tone="danger">Suspended</Badge> : u.approvedAt ? <Badge tone="success">Approved</Badge> : <Badge tone="warning">Pending approval</Badge>}
                 </td>
-                <td className="nowrap"><When iso={u.createdAt} /></td>
+                <td className="nowrap hide-sm"><When iso={u.createdAt} /></td>
+                <td className="actions">
+                  {u.role !== 'superadmin' &&
+                    (u.suspendedAt ? (
+                      <button type="button" className="btn-sm" disabled={userBusyId === u.id} onClick={() => void handleUser(u)}>
+                        {userBusyId === u.id && <BirdBusy />} Reactivate
+                      </button>
+                    ) : (
+                      <button type="button" className="btn-sm danger-button" disabled={userBusyId === u.id} onClick={() => void handleUser(u)}>
+                        {userBusyId === u.id && <BirdBusy />} Suspend
+                      </button>
+                    ))}
+                </td>
               </tr>
             ))}
           </tbody>

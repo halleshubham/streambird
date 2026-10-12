@@ -11,7 +11,6 @@ import type {
   PendingApproval,
   UpdateSubscriptionPayload,
   UsageAlert,
-  UserSearchResult,
 } from '../types/api';
 
 export function listPendingApprovals(): Promise<PendingApproval[]> {
@@ -44,10 +43,6 @@ export function listLiveStreams(): Promise<LiveStreamRow[]> {
 
 export function forceEndStream(id: string): Promise<{ id: string; status: string; endedAt: string | null }> {
   return api.post(`/superadmin/streams/${id}/force-end`);
-}
-
-export function searchUsers(email: string): Promise<UserSearchResult[]> {
-  return api.get(`/superadmin/users?email=${encodeURIComponent(email)}`);
 }
 
 export function suspendUser(userId: string): Promise<{ id: string; suspendedAt: string }> {

@@ -63,12 +63,12 @@ export function AdminAccountsPage() {
 
   return (
     <>
-      <PageHeader title="Companies" subtitle="Every account on StreamBird. Open one to change its plan, grant a day pass, or suspend it." />
+      <PageHeader title="Companies" subtitle="Every account on StreamBird. Search by company, name or any user's email. Open one to change its plan, grant a day pass, suspend it or one of its users." />
       <div className="admin-toolbar">
         <input
           type="search"
           aria-label="Search companies"
-          placeholder="Search by name or email…"
+          placeholder="Search by company or user email…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -98,6 +98,7 @@ export function AdminAccountsPage() {
                   <td>
                     <Link to={`/admin/accounts/${a.id}`} className="admin-link">{a.companyName ?? a.name}</Link>
                     {a.companyName && a.companyName !== a.name && <span className="admin-cell-sub">{a.name}</span>}
+                    {a.matchedUserEmail && <span className="admin-cell-sub">User: {a.matchedUserEmail}</span>}
                   </td>
                   <td>{planLabel(a.planKey, plans)}</td>
                   <td>

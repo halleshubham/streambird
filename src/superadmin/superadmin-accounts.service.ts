@@ -28,6 +28,8 @@ export interface AccountSummary {
   createdAt: Date;
   companyName: string | null;
   userCount: number;
+  /** Only on a search: the email of a user on this account that matched, when the account's own name did not. */
+  matchedUserEmail?: string | null;
 }
 
 export interface AccountDetail extends AccountSummary {
@@ -78,7 +80,7 @@ export class SuperadminAccountsService {
     private readonly plans: PlansService,
   ) {}
 
-  /** `search` matches the account name or the company name, case-insensitively (LIKE wildcards in it are literal). */
+  /** `search` matches the account name, the company name or the email of any user on the account, case-insensitively (LIKE wildcards in it are literal). */
   async list(limit: number, offset: number, search?: string): Promise<{ items: AccountSummary[]; total: number }> {
     const term = search?.trim();
     let accounts: Account[];
@@ -88,7 +90,10 @@ export class SuperadminAccountsService {
       [accounts, total] = await this.accounts
         .createQueryBuilder('a')
         .leftJoin(Company, 'c', 'c.accountId = a.id')
-        .where(`a.name ILIKE :like ESCAPE '\\' OR c.name ILIKE :like ESCAPE '\\'`, { like })
+        .where(
+          `(a.name ILIKE :like ESCAPE '\\' OR c.name ILIKE :like ESCAPE '\\' OR EXISTS (SELECT 1 FROM users u WHERE u.account_id = a.id AND u.email ILIKE :like ESCAPE '\\'))`,
+          { like },
+        )
         .orderBy('a.createdAt', 'DESC')
         .take(limit)
         .skip(offset)
@@ -112,9 +117,22 @@ export class SuperadminAccountsService {
     ]);
     const companyByAccountId = new Map(companies.map((c) => [c.accountId, c.name]));
 
-    const items = accounts.map((account) =>
-      this.toSummary(account, companyByAccountId.get(account.id) ?? null, userCounts.get(account.id) ?? 0),
-    );
+    // On a search, say which user matched when it was not the account/company name itself.
+    const needle = term?.toLowerCase();
+    const matchedUser = new Map<string, string>();
+    if (needle) {
+      const onPage = await this.users.find({ where: accountIds.map((id) => ({ accountId: id })), order: { createdAt: 'ASC' } });
+      for (const u of onPage) {
+        if (u.email.toLowerCase().includes(needle) && !matchedUser.has(u.accountId)) matchedUser.set(u.accountId, u.email);
+      }
+    }
+
+    const items = accounts.map((account) => {
+      const summary = this.toSummary(account, companyByAccountId.get(account.id) ?? null, userCounts.get(account.id) ?? 0);
+      const hit = matchedUser.get(account.id);
+      const nameMatches = !!needle && [account.name, summary.companyName].some((n) => n?.toLowerCase().includes(needle));
+      return hit && !nameMatches ? { ...summary, matchedUserEmail: hit } : summary;
+    });
     return { items, total };
   }
 

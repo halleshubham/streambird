@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Navigate, Routes, Route } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SuperadminRoute } from './components/SuperadminRoute';
@@ -16,7 +16,6 @@ import { GuestJoinPage } from './routes/studio/GuestJoinPage';
 import { AdminShell } from './components/AdminShell';
 import { AdminLoginPage } from './routes/admin/AdminLoginPage';
 import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
-import { AdminUsersPage } from './routes/admin/AdminUsersPage';
 import { AdminAuditLogPage } from './routes/admin/AdminAuditLogPage';
 import { AdminAnalyticsPage } from './routes/admin/AdminAnalyticsPage';
 import { AdminAccountsPage } from './routes/admin/AdminAccountsPage';
@@ -57,7 +56,8 @@ export function App() {
         <Route element={<AdminShell />}>
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
+          {/* Users were folded into Companies (search matches user emails); keep old links working. */}
+          <Route path="/admin/users" element={<Navigate to="/admin/accounts" replace />} />
           <Route path="/admin/accounts" element={<AdminAccountsPage />} />
           <Route path="/admin/plans" element={<AdminPlansPage />} />
           <Route path="/admin/billing" element={<AdminBillingPage />} />

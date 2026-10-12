@@ -40,6 +40,23 @@ describeE2E('superadmin: companies directory search and paging', () => {
     expect(p1.body.items[0].id).not.toBe(p2.body.items[0].id);
   });
 
+  it('also finds a company by the email of one of its users, and says which user matched', async () => {
+    const { email, accountId } = await h.signIn({ email: `${tag}_member@e2e.test` });
+    // The company is called something else entirely; only the user's email matches.
+    await h.db.query(`UPDATE accounts SET name = $1 WHERE id = $2`, [`Acme ${tag}`, accountId]);
+
+    const res = await admin.get(`/superadmin/accounts?q=${encodeURIComponent(`${tag}_MEMBER@`)}`);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0]).toMatchObject({ id: accountId, name: `Acme ${tag}`, matchedUserEmail: email });
+
+    // Matching the company's own name does not claim a user matched.
+    const byName = await admin.get(`/superadmin/accounts?q=${encodeURIComponent(`Acme ${tag}`)}`);
+    expect(byName.body.items[0].id).toBe(accountId);
+    expect(byName.body.items[0].matchedUserEmail).toBeUndefined();
+    // Without a search the field is never present.
+    expect((await admin.get('/superadmin/accounts?limit=1')).body.items[0].matchedUserEmail).toBeUndefined();
+  });
+
   it('without a search it lists everyone, as before', async () => {
     const all = await admin.get('/superadmin/accounts');
     expect(all.body.total).toBeGreaterThanOrEqual(3);
