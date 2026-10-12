@@ -154,18 +154,18 @@ test.describe('admin', () => {
   });
 });
 
-test.describe('host studio', () => {
-  async function newStream(context: BrowserContext, api: APIRequestContext, orientation?: 'landscape' | 'portrait'): Promise<string> {
-    const conn = await (
-      await api.post(`${APP}/api/platform-connections/twitch/manual`, {
-        data: { label: 'UI Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
-        headers: apiHeaders,
-      })
-    ).json();
-    const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'UI smoke stream', orientation, destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
-    return stream.id as string;
-  }
+async function newStream(context: BrowserContext, api: APIRequestContext, orientation?: 'landscape' | 'portrait'): Promise<string> {
+  const conn = await (
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'UI Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    })
+  ).json();
+  const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'UI smoke stream', orientation, destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+  return stream.id as string;
+}
 
+test.describe('host studio', () => {
   test('opens without a camera and shows the StreamBird slide (not a black frame)', async ({ page, context }) => {
     const { api } = await signIn(context);
     const id = await newStream(context, api);
@@ -447,6 +447,84 @@ test.describe('host studio', () => {
       await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { maxResolution: 'fhd' }, headers: apiHeaders });
       await adminCtx.close();
     }
+  });
+});
+
+test.describe('recording to this computer (Pro)', () => {
+  test('Free plan: the Record button is locked and points to billing', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const locked = page.getByRole('button', { name: /Record to this computer \(Pro plan\)/ });
+    await expect(locked).toBeVisible();
+    await locked.click();
+    await expect(page).toHaveURL(/\/billing$/);
+  });
+
+  test.describe('on a plan that allows it', () => {
+    test.beforeEach(async ({ browser }) => {
+      const adminCtx = await browser.newContext();
+      const admin = await signIn(adminCtx, { superadmin: true });
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canRecord: true }, headers: apiHeaders });
+      await adminCtx.close();
+    });
+    test.afterEach(async ({ browser }) => {
+      const adminCtx = await browser.newContext();
+      const admin = await signIn(adminCtx, { superadmin: true });
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canRecord: false }, headers: apiHeaders });
+      await adminCtx.close();
+    });
+
+    test('writes the composited stream to the file the host picked, and the quality is locked meanwhile', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.addInitScript(() => {
+        const w = window as unknown as { __rec: { name: string; bytes: number; closed: boolean } };
+        w.__rec = { name: '', bytes: 0, closed: false };
+        (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async (o: { suggestedName: string }) => {
+          w.__rec.name = o.suggestedName;
+          return { createWritable: async () => ({ write: async (b: Blob) => { w.__rec.bytes += b.size; }, close: async () => { w.__rec.closed = true; } }) };
+        };
+      });
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: 'Record to this computer', exact: true }).click();
+      const stop = page.getByRole('button', { name: 'Stop recording' });
+      await expect(stop).toBeVisible();
+      await expect(page.locator('.studio-resolution-select select')).toBeDisabled();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __rec: { bytes: number } }).__rec.bytes), { timeout: 15_000 }).toBeGreaterThan(0);
+      await stop.click();
+      await expect(page.getByText(/Recording saved as streambird-.*\.(mp4|webm)/)).toBeVisible();
+      const rec = await page.evaluate(() => (window as unknown as { __rec: { name: string; closed: boolean } }).__rec);
+      expect(rec.closed).toBe(true);
+      expect(rec.name).toMatch(/^streambird-.*\.(mp4|webm)$/);
+      await expect(page.getByRole('button', { name: 'Record to this computer', exact: true })).toBeVisible();
+      await expect(page.locator('.studio-resolution-select select')).toBeEnabled();
+    });
+
+    test('without the file picker it downloads the recording when stopped; closing the save dialog records nothing', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.addInitScript(() => {
+        (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined;
+      });
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: 'Record to this computer', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Stop recording' })).toBeVisible();
+      await page.waitForTimeout(2500);
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Stop recording' }).click();
+      expect((await download).suggestedFilename()).toMatch(/^streambird-.*\.(mp4|webm)$/);
+      await expect(page.getByText(/Recording downloaded as/)).toBeVisible();
+
+      await page.evaluate(() => {
+        (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => {
+          throw new DOMException('dismissed', 'AbortError');
+        };
+      });
+      await page.getByRole('button', { name: 'Record to this computer', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Stop recording' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Record to this computer', exact: true })).toBeVisible();
+    });
   });
 });
 

@@ -77,6 +77,13 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     expect(q2.rows.map((r) => [r.key, r.max_resolution])).toEqual([['pro', 'hd'], ['enterprise', 'qhd']]);
     await expect(db.query(`UPDATE plans SET max_resolution = 'bogus' WHERE key = 'free'`)).rejects.toThrow();
 
+    // Recording (0018): Pro and Business get it, the rest do not; an admin's later choice survives a re-run.
+    const rec = await db.query(`SELECT key, can_record FROM plans ORDER BY sort_order`);
+    expect(rec.rows.map((r) => [r.key, r.can_record])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    await db.query(`UPDATE plans SET can_record = false WHERE key = 'pro'`);
+    await runMigrations(url, { quiet: true });
+    expect((await db.query(`SELECT can_record FROM plans WHERE key = 'pro'`)).rows[0].can_record).toBe(false);
+
     const settings = await db.query(`SELECT value FROM app_settings WHERE key = 'payments_enabled'`);
     expect(settings.rows[0].value).toBe(false); // payments ship OFF
     await expect(db.query(`SELECT razorpay_plan_id, razorpay_plan_amount_paise FROM plans LIMIT 1`)).resolves.toBeDefined();

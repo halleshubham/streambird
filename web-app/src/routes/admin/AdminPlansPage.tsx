@@ -17,6 +17,7 @@ interface PlanForm {
   maxDestinations: string;
   maxGuests: string;
   maxResolution: Resolution;
+  canRecord: boolean;
   maxSessionHours: string;
   validityHours: string;
   priceInr: string;
@@ -28,7 +29,7 @@ interface PlanForm {
 
 const EMPTY: PlanForm = {
   key: '', name: '', kind: 'monthly', includedHours: '10', unlimitedHours: false, graceMultiplier: '1',
-  maxDestinations: '2', maxGuests: '4', maxResolution: 'hd', maxSessionHours: '', validityHours: '',
+  maxDestinations: '2', maxGuests: '4', maxResolution: 'hd', canRecord: false, maxSessionHours: '', validityHours: '',
   priceInr: '', priceUsd: '', isPublic: true, isActive: true, sortOrder: '100',
 };
 
@@ -37,7 +38,7 @@ function toForm(p: AdminPlan): PlanForm {
     key: p.key, name: p.name, kind: p.kind,
     includedHours: p.includedHoursPerMonth ?? '', unlimitedHours: p.includedHoursPerMonth === null,
     graceMultiplier: p.graceMultiplier, maxDestinations: String(p.maxDestinations), maxGuests: String(p.maxGuests),
-    maxResolution: p.maxResolution, maxSessionHours: p.maxSessionHours ?? '',
+    maxResolution: p.maxResolution, canRecord: p.canRecord, maxSessionHours: p.maxSessionHours ?? '',
     validityHours: p.validityHours === null ? '' : String(p.validityHours),
     priceInr: p.priceInr === null ? '' : String(p.priceInr), priceUsd: p.priceUsd ?? '',
     isPublic: p.isPublic, isActive: p.isActive, sortOrder: String(p.sortOrder),
@@ -55,6 +56,7 @@ function toPayload(f: PlanForm, creating: boolean): PlanPayload {
     maxDestinations: Number(f.maxDestinations),
     maxGuests: Number(f.maxGuests),
     maxResolution: f.maxResolution,
+    canRecord: f.canRecord,
     maxSessionHours: numOrNull(f.maxSessionHours),
     validityHours: f.kind === 'day_pass' ? numOrNull(f.validityHours) : null,
     priceInr: numOrNull(f.priceInr),
@@ -229,6 +231,7 @@ export function AdminPlansPage() {
           </div>
           <p>
             <label className="checkbox-row"><input type="checkbox" checked={form.isPublic} onChange={(e) => set('isPublic', e.target.checked)} /> Show on the public pricing page</label>
+            <label className="checkbox-row"><input type="checkbox" checked={form.canRecord} onChange={(e) => set('canRecord', e.target.checked)} /> Can record the stream to their own computer</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} /> Active</label>
           </p>
           <button type="submit" disabled={saving}>{saving && <BirdBusy />} Save plan</button>{' '}

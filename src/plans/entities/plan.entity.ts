@@ -31,6 +31,10 @@ export class Plan {
   @Column({ type: 'text', default: 'fhd' })
   maxResolution!: Resolution;
 
+  /** May record the composited stream to their own computer from the studio (client-side). */
+  @Column({ default: false })
+  canRecord!: boolean;
+
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   maxSessionHours!: string | null;
 

@@ -67,7 +67,7 @@ Rules of thumb:
 
 ### Selector contract (renaming these breaks tests — update both)
 Ids: `#layoutSelect`, `#themeSelect`, `#slidesInput`, `#wallpaperInput`, `#email`, `#code`, `#displayName`, `#invitePassword`. Test ids: `slide-counter`, `wallpaper-fit`, `youtube-permission-note`. Classes used by tests: `.studio-resolution-select option` (the **quality** menu only — do not reuse that class for other selects; layout/style use `.tb-select`), `canvas.studio-canvas`, `.busy-overlay-bird`, `.slide-controls`, `.slide-thumb(--active)`, `.meeting-grid`, `.chip-link`, `.go-live-cta`, `.hero-word`, `.hero-studio`, `.hs-dest` (home hero), `.pending-bird`, `.pending-ring--1`, heading "Your studio is being set up!" and the "Setup progress" list (approval page).
-Accessible names: icon buttons keep their **full** `aria-label` even when the visible text is short ("Start my camera"/"Camera on", "Create guest invite", "End stream", "Previous slide"), so tests and screen readers are unaffected by label trimming.
+Accessible names: icon buttons keep their **full** `aria-label` even when the visible text is short ("Start my camera"/"Camera on", "Create guest invite", "End stream", "Previous slide", "Record to this computer"/"Stop recording"), so tests and screen readers are unaffected by label trimming.
 
 ## Visual verification (do it for any UI change)
 Tests prove behaviour, not looks. Drop a temporary `test/ui/zz-shots.spec.ts` that signs in, opens the page and `page.screenshot({ path })` to the scratchpad at desktop (1366x800) and phone (390x800) widths, **read the PNGs**, then delete the spec before committing. See skill `streambird-ui-change`.

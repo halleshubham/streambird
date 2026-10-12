@@ -1,3 +1,4 @@
+import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getMyLimits } from '../api/plans';
@@ -275,11 +276,22 @@ export function useHostStudio(streamId: string | undefined) {
   const [resolution, setResolutionState] = useState<StreamResolution>('hd');
   // The best quality the host's plan allows (GET /plans/me); until it loads, nothing is restricted.
   const [maxResolution, setMaxResolution] = useState<StreamResolution>('fhd');
+  /** Plan allows recording to the host's own computer (Pro and up). */
+  const [canRecord, setCanRecord] = useState(false);
+  /** Set while a local recording runs: when it began (ms), so the page can show the clock. */
+  const [recordingSince, setRecordingSince] = useState<number | null>(null);
+  const recorderRef = useRef<StartedRecording | null>(null);
   const clampResolution = useCallback(
     (r: StreamResolution) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(maxResolution) ? maxResolution : r),
     [maxResolution],
   );
-  const setResolution = useCallback((r: StreamResolution) => setResolutionState(clampResolution(r)), [clampResolution]);
+  const setResolution = useCallback(
+    (r: StreamResolution) => {
+      if (recorderRef.current) return; // the canvas size is fixed while a recording runs
+      setResolutionState(clampResolution(r));
+    },
+    [clampResolution],
+  );
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
@@ -1207,6 +1219,7 @@ export function useHostStudio(streamId: string | undefined) {
     getMyLimits()
       .then((l) => {
         setMaxResolution(l.maxResolution);
+        setCanRecord(!!l.canRecord);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
       })
       .catch(() => {});
@@ -1673,6 +1686,70 @@ export function useHostStudio(streamId: string | undefined) {
     });
   }
 
+  // ---- Local recording (Pro): the composited picture + mixed audio, saved on the host's own computer ----
+  const stopRecording = useCallback(async () => {
+    const rec = recorderRef.current;
+    if (!rec) return;
+    recorderRef.current = null;
+    setRecordingSince(null);
+    try {
+      const { fileName, savedToDisk } = await rec.stop();
+      setStatus({ text: savedToDisk ? `Recording saved as ${fileName}.` : `Recording downloaded as ${fileName}.`, isError: false });
+    } catch (err) {
+      setStatus({ text: `Could not finish the recording: ${(err as Error).message}`, isError: true });
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    if (recorderRef.current) return;
+    if (!canRecord) {
+      setStatus({ text: 'Recording to your computer is on the Pro plan.', isError: true });
+      return;
+    }
+    if (!recordingSupported()) {
+      setStatus({ text: 'This browser cannot record video. Try Chrome, Edge or Safari 17+.', isError: true });
+      return;
+    }
+    try {
+      ensureAudioMix();
+      const audioCtx = audioContextRef.current;
+      if (audioCtx && audioCtx.state !== 'running') await audioCtx.resume().catch(() => {});
+      const tracks: MediaStreamTrack[] = [canvasRef.current!.captureStream(30).getVideoTracks()[0]];
+      const audioTrack = audioDestinationRef.current?.stream.getAudioTracks()[0];
+      if (audioTrack) tracks.push(audioTrack);
+      const rec = await beginRecording({
+        stream: new MediaStream(tracks),
+        videoBitsPerSecond: RESOLUTIONS[resolution].maxBitrate,
+        fileName: (ext) => recordingFileName(stream?.title, new Date(), ext),
+        onError: (message) => {
+          recorderRef.current = null;
+          setRecordingSince(null);
+          setStatus({ text: message, isError: true });
+        },
+      });
+      recorderRef.current = rec;
+      setRecordingSince(Date.now());
+      setStatus({ text: 'Recording to your computer. Press Stop recording when you are done.', isError: false });
+    } catch (err) {
+      if ((err as Error).message === 'cancelled') return; // the host closed the save dialog
+      setStatus({ text: (err as Error).message || 'Could not start recording.', isError: true });
+    }
+  }, [canRecord, resolution, stream?.title]);
+
+  // Leaving the studio finishes the file (a crash still keeps what was written to disk).
+  useEffect(() => () => void recorderRef.current?.stop().catch(() => {}), []);
+
+  // Closing the tab mid-recording would lose it (download mode) or cut it short.
+  useEffect(() => {
+    if (recordingSince === null) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [recordingSince]);
+
   const goLive = useCallback(async () => {
     if (!stream?.whipUrl) {
       setStatus({ text: 'This stream has no publish URL yet.', isError: true });
@@ -1771,6 +1848,7 @@ export function useHostStudio(streamId: string | undefined) {
   }, [stream, resolution]);
 
   const endStream = useCallback(async () => {
+    await stopRecording();
     setEnding(true);
     endingStreamRef.current = true;
     setStatus({ text: 'Ending stream…', isError: false, busy: true });
@@ -1816,7 +1894,7 @@ export function useHostStudio(streamId: string | undefined) {
       }, 1500);
     }
     return ended;
-  }, [stream]);
+  }, [stream, stopRecording]);
 
   /**
    * A scheduled stream has no platform broadcasts or publish URL until it's
@@ -1920,6 +1998,8 @@ export function useHostStudio(streamId: string | undefined) {
     wallpaperDim,
     resolution,
     maxResolution,
+    canRecord,
+    recordingSince,
     cameraStarting,
     cameraStarted,
     isLive,
@@ -1943,6 +2023,8 @@ export function useHostStudio(streamId: string | undefined) {
       setLayout,
       setResolution,
       goLive,
+      startRecording,
+      stopRecording,
       endStream,
       toggleParticipantAudio,
       toggleParticipantVideo,
