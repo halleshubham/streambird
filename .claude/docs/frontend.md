@@ -65,3 +65,5 @@ Every admin page is `PageHeader` + `Section`/`DataTable` from `web-app/src/compo
 - **Long lists never silently truncate**: Companies is searched and paged on the server (`GET /superadmin/accounts?q=&limit=&offset=` returns `total`), Audit log pages with "Load older entries", Billing tables show 20 with "Show more", the live-streams list is complete but scrolls inside a capped box (`DataTable tall`).
 - **Phones**: secondary columns carry `hide-sm` (hidden ≤640px; put the essentials under the primary cell with `show-sm`), and row action buttons stack, so Approve/Reject/Suspend are always on screen. `test/ui/smoke.spec.ts` ("admin console") asserts this at 390px.
 - Destructive actions confirm (`window.confirm`): reject signup, suspend user, suspend account, force end. Row actions use `btn-sm` (+ `danger-button`); page-level actions sit in `PageHeader actions`.
+
+- **Admin sign-in** (`AdminLoginPage`): same identity as the admin header (logo + ADMIN badge, amber top rule), two labelled steps ("Sign in" then "Check your email"), errors as `role=alert`. Tests: `admin login page` block in smoke.spec.
