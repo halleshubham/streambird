@@ -1,3 +1,4 @@
+import { ChromaKeyer, DEFAULT_CHROMA, normalizeChroma, type ChromaSettings } from './chromaKey';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
@@ -85,6 +86,10 @@ interface Participant {
   videoEnabled: boolean;
   joinedAt: number; // performance.now() at creation -- drives the lower-third's slide-in animation
   onStage: boolean; // false = "backstage": excluded from the composited canvas and the broadcast audio mix
+  /** Green screen for this person: settings, the picture shown behind them (if any), and the GPU keyer (made on first use). */
+  chroma: ChromaSettings;
+  chromaBg: Wallpaper | null;
+  keyer: ChromaKeyer | null;
 }
 
 export interface ParticipantView {
@@ -98,6 +103,13 @@ export interface ParticipantView {
   isScreenShare: boolean;
   onStage: boolean;
   pinned: boolean;
+  chroma: ChromaSettings;
+  /** File name of the picture behind them, if one is set. */
+  chromaBgName: string | null;
+  /** The picture itself (read-only), so the settings panel can preview the result. */
+  chromaBgCanvas: HTMLCanvasElement | null;
+  /** Their raw (un-keyed) video, for the colour picker preview. */
+  stream: MediaStream | null;
 }
 
 export interface Branding {
@@ -190,8 +202,35 @@ interface PersistedStudioState {
   scenes: Scene[];
   logoDataUrl: string | null;
   wentLive: boolean;
+  /** The host's own green-screen settings (guests' are per visit and not kept). */
+  chroma: ChromaSettings;
 }
 const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
+// The host's green-screen background picture lives in its own key (a full quota must not drop the rest).
+const chromaBgKey = (streamId: string) => `streambird:studio:${streamId}:chromabg:v1`;
+interface SavedChromaBg {
+  name: string;
+  width: number;
+  height: number;
+  dataUrl: string;
+}
+function loadSavedChromaBg(streamId: string): SavedChromaBg | null {
+  try {
+    const raw = localStorage.getItem(chromaBgKey(streamId));
+    return raw ? (JSON.parse(raw) as SavedChromaBg) : null;
+  } catch {
+    return null;
+  }
+}
+function saveChromaBg(streamId: string, value: SavedChromaBg | null): boolean {
+  try {
+    if (value) localStorage.setItem(chromaBgKey(streamId), JSON.stringify(value));
+    else localStorage.removeItem(chromaBgKey(streamId));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function loadPersisted(streamId: string): Partial<PersistedStudioState> {
   try {
@@ -276,6 +315,12 @@ export function useHostStudio(streamId: string | undefined) {
   const [resolution, setResolutionState] = useState<StreamResolution>('hd');
   // The best quality the host's plan allows (GET /plans/me); until it loads, nothing is restricted.
   const [maxResolution, setMaxResolution] = useState<StreamResolution>('fhd');
+  /** Plan allows green screen (Pro and up). Client-side only: the keying happens in this browser. */
+  const [canChromaKey, setCanChromaKey] = useState(false);
+  const canChromaKeyRef = useRef(false);
+  /** The host's own green-screen settings and background, kept here so they apply the moment the camera starts. */
+  const hostChromaRef = useRef<{ settings: ChromaSettings; bg: Wallpaper | null; bgData: SavedChromaBg | null }>({ settings: { ...DEFAULT_CHROMA }, bg: null, bgData: null });
+  const streamIdRef = useRef<string | null>(null);
   /** Plan allows recording to the host's own computer (Pro and up). */
   const [canRecord, setCanRecord] = useState(false);
   /** Set while a local recording runs: when it began (ms), so the page can show the clock. */
@@ -379,6 +424,10 @@ export function useHostStudio(streamId: string | undefined) {
       isScreenShare: p.id === SCREEN_SHARE_ID,
       onStage: p.onStage,
       pinned: p.id === pinnedIdRef.current,
+      chroma: p.chroma,
+      chromaBgName: p.chromaBg?.name ?? null,
+      chromaBgCanvas: p.chromaBg?.canvas ?? null,
+      stream: p.videoEl.srcObject instanceof MediaStream ? p.videoEl.srcObject : null,
     }));
     setParticipantsView(view);
   }
@@ -562,38 +611,77 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.fillText(b.newsText, newsScrollXRef.current, barY + barH / 2);
   }
 
+  /** True when this person's green screen should be removed this frame (plan allows it, it is on, and the GPU can do it). */
+  function isKeyed(p: Participant): boolean {
+    if (!p.chroma.enabled || !canChromaKeyRef.current) return false;
+    if (!p.keyer) p.keyer = new ChromaKeyer();
+    return p.keyer.supported;
+  }
+
+  /** Draws the person's own background picture "cover"-cropped into the rect. */
+  function drawChromaBg(p: Participant, x: number, y: number, w: number, h: number) {
+    const bg = p.chromaBg;
+    if (!bg) return;
+    const ctx = ctxRef.current!;
+    const scale = Math.max(w / bg.canvas.width, h / bg.canvas.height);
+    const sw = w / scale;
+    const sh = h / scale;
+    ctx.drawImage(bg.canvas, (bg.canvas.width - sw) / 2, (bg.canvas.height - sh) / 2, sw, sh, x, y, w, h);
+  }
+
+  /** Keys the video (cropped to `crop`) and draws the result into the rect; the removed colour is see-through. */
+  function drawKeyedVideo(p: Participant, crop: { sx: number; sy: number; sw: number; sh: number }, x: number, y: number, w: number, h: number) {
+    const k = Math.min(1, 1920 / Math.max(w, h));
+    const out = p.keyer!.render(p.videoEl, crop, w * k, h * k, p.chroma);
+    if (out) ctxRef.current!.drawImage(out, x, y, w, h);
+  }
+
   function drawCell(p: Participant, x: number, y: number, w: number, h: number, now: number, style?: TileStyle) {
     const ctx = ctxRef.current!;
     const vw = p.videoEl.videoWidth;
     const vh = p.videoEl.videoHeight;
+    const keyed = vw > 0 && vh > 0 && isKeyed(p);
     if (style) {
       // Framed layouts: a rounded tile that the video fills (cropped, not letterboxed).
+      // A keyed person without a picture of their own has no card: the canvas style / wallpaper shows through.
       const radius = Math.round(Math.min(w, h) * 0.04 * style.theme.radius);
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.35)';
-      ctx.shadowBlur = Math.max(6, h * 0.02);
-      ctx.shadowOffsetY = Math.max(2, h * 0.006);
-      ctx.fillStyle = style.theme.cardBg;
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, radius);
-      ctx.fill();
-      ctx.restore();
+      const card = !keyed || !!p.chromaBg;
+      if (card) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.35)';
+        ctx.shadowBlur = Math.max(6, h * 0.02);
+        ctx.shadowOffsetY = Math.max(2, h * 0.006);
+        ctx.fillStyle = style.theme.cardBg;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, radius);
+        ctx.fill();
+        ctx.restore();
+      }
       if (vw > 0 && vh > 0) {
         const scale = Math.max(w / vw, h / vh);
         const sw = w / scale;
         const sh = h / scale;
         ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(x, y, w, h, radius);
-        ctx.clip();
-        ctx.drawImage(p.videoEl, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, w, h);
+        if (card) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, radius);
+          ctx.clip();
+        }
+        if (keyed) {
+          drawChromaBg(p, x, y, w, h);
+          drawKeyedVideo(p, { sx: (vw - sw) / 2, sy: (vh - sh) / 2, sw, sh }, x, y, w, h);
+        } else {
+          ctx.drawImage(p.videoEl, (vw - sw) / 2, (vh - sh) / 2, sw, sh, x, y, w, h);
+        }
         ctx.restore();
       }
-      ctx.strokeStyle = style.theme.border;
-      ctx.lineWidth = Math.max(2, h * 0.003);
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, radius);
-      ctx.stroke();
+      if (card) {
+        ctx.strokeStyle = style.theme.border;
+        ctx.lineWidth = Math.max(2, h * 0.003);
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, radius);
+        ctx.stroke();
+      }
     } else if (vw > 0 && vh > 0) {
       // "Contain" fit (like CSS object-fit: contain): scale the video's
       // native aspect ratio to fit entirely within the cell, centered, so
@@ -605,7 +693,13 @@ export function useHostStudio(streamId: string | undefined) {
       const drawH = vh * scale;
       const drawX = x + (w - drawW) / 2;
       const drawY = y + (h - drawH) / 2;
-      ctx.drawImage(p.videoEl, drawX, drawY, drawW, drawH);
+      if (keyed) {
+        // Their own picture fills the whole cell; the keyed person stands in the contain-fit area.
+        drawChromaBg(p, x, y, w, h);
+        drawKeyedVideo(p, { sx: 0, sy: 0, sw: vw, sh: vh }, drawX, drawY, drawW, drawH);
+      } else {
+        ctx.drawImage(p.videoEl, drawX, drawY, drawW, drawH);
+      }
     }
     // else: video metadata not loaded yet -- skip drawing this frame rather
     // than stretching to fill or drawing garbage.
@@ -912,6 +1006,9 @@ export function useHostStudio(streamId: string | undefined) {
       videoEnabled: true,
       joinedAt: performance.now(),
       onStage: true,
+      chroma: { ...DEFAULT_CHROMA },
+      chromaBg: null,
+      keyer: null,
     });
     renderParticipantList();
 
@@ -1034,6 +1131,7 @@ export function useHostStudio(streamId: string | undefined) {
       const p = participantsRef.current.get(socketId);
       if (p) {
         p.pc?.close();
+        p.keyer?.dispose();
         participantsRef.current.delete(socketId);
         renderParticipantList();
       }
@@ -1120,6 +1218,22 @@ export function useHostStudio(streamId: string | undefined) {
           if (saved.branding.newsText) tickerAppearedAtRef.current = performance.now();
         }
         if (saved.scenes) setScenes(saved.scenes);
+        if (saved.chroma) hostChromaRef.current.settings = normalizeChroma(saved.chroma);
+        const savedBg = loadSavedChromaBg(streamRow.id);
+        if (savedBg) {
+          wallpaperFromDataUrl(savedBg.dataUrl, savedBg.name, savedBg.width, savedBg.height)
+            .then((bg) => {
+              if (cancelled) return;
+              hostChromaRef.current.bg = bg;
+              hostChromaRef.current.bgData = savedBg;
+              const local = participantsRef.current.get('local');
+              if (local) {
+                local.chromaBg = bg;
+                renderParticipantList();
+              }
+            })
+            .catch(() => saveChromaBg(streamRow.id, null));
+        }
         if (saved.logoDataUrl) {
           const img = new Image();
           img.onload = () => {
@@ -1146,6 +1260,7 @@ export function useHostStudio(streamId: string | undefined) {
 
         hostTokenRef.current = hostToken;
         streamTitleRef.current = streamRow.title ?? '';
+        streamIdRef.current = streamRow.id;
         setStream(streamRow);
         setLoading(false);
 
@@ -1220,6 +1335,8 @@ export function useHostStudio(streamId: string | undefined) {
       .then((l) => {
         setMaxResolution(l.maxResolution);
         setCanRecord(!!l.canRecord);
+        canChromaKeyRef.current = !!l.canChromaKey;
+        setCanChromaKey(!!l.canChromaKey);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
       })
       .catch(() => {});
@@ -1254,6 +1371,9 @@ export function useHostStudio(streamId: string | undefined) {
         videoEnabled: true,
         joinedAt: performance.now(),
         onStage: true,
+        chroma: { ...hostChromaRef.current.settings },
+        chromaBg: hostChromaRef.current.bg,
+        keyer: null,
       });
       connectAudioTrack('local', audioTrack);
       renderParticipantList();
@@ -1349,6 +1469,9 @@ export function useHostStudio(streamId: string | undefined) {
         videoEnabled: true,
         joinedAt: performance.now(),
         onStage: true,
+        chroma: { ...DEFAULT_CHROMA },
+        chromaBg: null,
+        keyer: null,
       });
 
       if (audioTrack) connectAudioTrack(SCREEN_SHARE_ID, audioTrack);
@@ -1435,6 +1558,7 @@ export function useHostStudio(streamId: string | undefined) {
     if (!p) return;
     socketRef.current?.emit('signal', { to: id, type: 'kicked', payload: {} });
     p.pc?.close();
+    p.keyer?.dispose();
     participantsRef.current.delete(id);
     renderParticipantList();
     removeParticipantAudio(id);
@@ -1510,6 +1634,70 @@ export function useHostStudio(streamId: string | undefined) {
       focusY: ws.y,
       dim: ws.dim,
     });
+  }
+
+  // ---- Green screen (chroma key), per participant -------------------------
+
+  function persistHostChroma(chroma: ChromaSettings) {
+    hostChromaRef.current.settings = chroma;
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { chroma });
+  }
+
+  /** Turns a person's green screen on or off and adjusts it. Plan-gated (Pro and up). */
+  function setChroma(id: string, patch: Partial<ChromaSettings>) {
+    const p = participantsRef.current.get(id);
+    if (!p || id === SCREEN_SHARE_ID) return;
+    if (patch.enabled && !canChromaKeyRef.current) {
+      setStatus({ text: 'Green screen is on the Pro plan.', isError: true });
+      return;
+    }
+    if (patch.enabled) {
+      if (!p.keyer) p.keyer = new ChromaKeyer();
+      if (!p.keyer.supported) {
+        p.keyer.dispose();
+        p.keyer = null;
+        setStatus({ text: "Your browser can't do green screen (WebGL is switched off or unavailable).", isError: true });
+        return;
+      }
+    }
+    p.chroma = normalizeChroma({ ...p.chroma, ...patch });
+    if (id === 'local') persistHostChroma(p.chroma);
+    renderParticipantList();
+  }
+
+  /** The picture shown behind a keyed person (their own, instead of the stream's wallpaper / canvas style). */
+  async function setChromaBackground(id: string, file: File | null) {
+    const p = participantsRef.current.get(id);
+    if (!p || id === SCREEN_SHARE_ID) return;
+    if (!file) {
+      p.chromaBg = null;
+      if (id === 'local') {
+        hostChromaRef.current.bg = null;
+        hostChromaRef.current.bgData = null;
+        if (streamIdRef.current) saveChromaBg(streamIdRef.current, null);
+      }
+      renderParticipantList();
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setStatus({ text: 'The picture behind a person must be an image file (JPG, PNG, WebP...).', isError: true });
+      return;
+    }
+    try {
+      const bg = await loadWallpaper(file);
+      p.chromaBg = bg;
+      if (id === 'local') {
+        hostChromaRef.current.bg = bg;
+        const data: SavedChromaBg = { name: bg.name, width: bg.width, height: bg.height, dataUrl: wallpaperToDataUrl(bg) };
+        hostChromaRef.current.bgData = data;
+        if (streamIdRef.current && !saveChromaBg(streamIdRef.current, data)) {
+          setStatus({ text: 'Picture added. It is too large to keep after a reload, so you will need to add it again then.', isError: false });
+        }
+      }
+      renderParticipantList();
+    } catch {
+      setStatus({ text: `Could not read "${file.name}" as an image.`, isError: true });
+    }
   }
 
   async function setWallpaperFile(file: File | null) {
@@ -1735,6 +1923,14 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: (err as Error).message || 'Could not start recording.', isError: true });
     }
   }, [canRecord, resolution, stream?.title]);
+
+  // Free the GPU contexts used for green screen when the studio closes.
+  useEffect(
+    () => () => {
+      participantsRef.current.forEach((p) => p.keyer?.dispose());
+    },
+    [],
+  );
 
   // Leaving the studio finishes the file (a crash still keeps what was written to disk).
   useEffect(() => () => void recorderRef.current?.stop().catch(() => {}), []);
@@ -1999,6 +2195,7 @@ export function useHostStudio(streamId: string | undefined) {
     resolution,
     maxResolution,
     canRecord,
+    canChromaKey,
     recordingSince,
     cameraStarting,
     cameraStarted,
@@ -2037,6 +2234,8 @@ export function useHostStudio(streamId: string | undefined) {
       setNameFontSize,
       setNewsFontSize,
       setTheme,
+      setChroma,
+      setChromaBackground,
       setWallpaperFile,
       clearWallpaper,
       setWallpaperFocus,

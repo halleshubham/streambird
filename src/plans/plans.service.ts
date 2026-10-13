@@ -18,6 +18,8 @@ export interface EffectiveLimits {
   maxResolution: Resolution;
   /** Recording the composited stream to the host's own computer. */
   canRecord: boolean;
+  /** Green screen (chroma key) in the studio. */
+  canChromaKey: boolean;
   /** A single live session ends after this many hours; null = no cap. */
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: Date } | null;
@@ -48,6 +50,7 @@ export function computeLimits(
   let maxGuests = account.maxGuestsOverride ?? plan.maxGuests;
   let maxResolution = plan.maxResolution;
   let canRecord = plan.canRecord;
+  let canChromaKey = plan.canChromaKey;
   let maxSessionHours = num(plan.maxSessionHours);
   let graceMultiplier = Number(plan.graceMultiplier);
   let activePass: EffectiveLimits['dayPass'] = null;
@@ -63,6 +66,7 @@ export function computeLimits(
       maxResolution = dayPass.maxResolution;
     }
     canRecord = canRecord || dayPass.canRecord;
+    canChromaKey = canChromaKey || dayPass.canChromaKey;
     const passSession = num(dayPass.maxSessionHours);
     // A pass with no session cap removes the plan's; otherwise the longer of the two.
     maxSessionHours = passSession === null || maxSessionHours === null ? null : Math.max(maxSessionHours, passSession);
@@ -78,6 +82,7 @@ export function computeLimits(
     maxGuests,
     maxResolution,
     canRecord,
+    canChromaKey,
     maxSessionHours,
     dayPass: activePass,
     planExpiresAt: null,
@@ -168,6 +173,7 @@ export class PlansService {
     if (dto.maxGuests !== undefined) out.maxGuests = dto.maxGuests;
     if (dto.maxResolution !== undefined) out.maxResolution = dto.maxResolution;
     if (dto.canRecord !== undefined) out.canRecord = dto.canRecord;
+    if (dto.canChromaKey !== undefined) out.canChromaKey = dto.canChromaKey;
     if ('maxSessionHours' in dto) out.maxSessionHours = str(dto.maxSessionHours);
     if ('validityHours' in dto) out.validityHours = dto.validityHours ?? null;
     if ('priceInr' in dto) out.priceInr = dto.priceInr ?? null;

@@ -3601,3 +3601,159 @@ kbd {
   color: var(--text);
   text-align: center;
 }
+
+/* Green screen controls under a person in the Participants panel. */
+.chroma-panel {
+  margin: -2px 0 6px;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.chroma-panel .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.chroma-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 280px));
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.chroma-previews figure {
+  margin: 0;
+}
+
+.chroma-previews figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.chroma-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #000;
+  display: block;
+}
+
+video.chroma-preview {
+  object-fit: contain;
+}
+
+.chroma-preview--pick {
+  cursor: crosshair;
+}
+
+.chroma-preview--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d4d4d8;
+  font-size: 13px;
+}
+
+.chroma-key-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.chroma-key-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chroma-color {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+}
+
+.chroma-slider {
+  max-width: 560px;
+}
+
+.chroma-slider label {
+  margin: 0;
+}
+
+.chroma-slider input[type='range'] {
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.chroma-slider .docs-hint {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.chroma-more {
+  margin: 4px 0 8px;
+}
+
+.chroma-more summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 0;
+}
+
+.chroma-actions {
+  margin: 4px 0 10px;
+}
+
+.chroma-bg {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chroma-bg label {
+  margin: 0 0 4px;
+}
+
+.chroma-bg-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chroma-bg-row input[type='file'] {
+  width: auto;
+  margin: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .chroma-previews {
+    grid-template-columns: 1fr;
+  }
+}
+
+.participant-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.participant-item .participant-row {
+  margin-bottom: 0;
+}
