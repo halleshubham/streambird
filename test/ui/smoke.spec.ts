@@ -1,6 +1,7 @@
 import { APIRequestContext, BrowserContext, expect, Page, test } from '@playwright/test';
 import * as crypto from 'crypto';
 import { computeLayout } from '../../web-app/src/studio/compose';
+import type {} from '../../web-app/src/studio/personSegmenter'; // brings in the window.__SB_TEST_SEGMENTER__ type
 
 const CONTROL = `http://127.0.0.1:${process.env.UI_CONTROL_PORT ?? 4311}`;
 const APP = `http://127.0.0.1:${process.env.UI_APP_PORT ?? 4310}`;
@@ -535,14 +536,14 @@ const canvasPixel = (page: Page, x: number, y: number) =>
     [x, y],
   );
 
-test.describe('green screen (Pro)', () => {
-  test('Free plan: the Green screen button is locked and points to billing', async ({ page, context }) => {
+test.describe('background removal (Pro)', () => {
+  test('Free plan: the Background button is locked and points to billing', async ({ page, context }) => {
     const { api } = await signIn(context);
     const id = await newStream(context, api);
     await page.goto(`/streams/${id}/studio`);
     await page.getByRole('button', { name: /Start my camera/ }).click();
     await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
-    const locked = page.getByRole('button', { name: 'Green screen for Host (Pro plan)' });
+    const locked = page.getByRole('button', { name: 'Background for Host (Pro plan)' });
     await expect(locked).toBeVisible();
     await expect(locked).toContainText('Pro'); // the upgrade cue is visible, not only in a tooltip
     await locked.click();
@@ -578,14 +579,14 @@ test.describe('green screen (Pro)', () => {
       // Before: the fake camera is a green test pattern.
       await expect.poll(async () => greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
 
-      await page.getByRole('button', { name: 'Green screen for Host' }).click();
-      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
       await expect(panel).toBeVisible();
       await page.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
       await expect(panel.getByText('red.png')).toBeVisible();
-      await panel.getByLabel(/Remove the background colour behind you/).check();
+      await panel.getByLabel(/Remove the background behind you/).check();
       await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2)), { timeout: 10_000 }).toBe(true);
-      await expect(page.getByRole('button', { name: 'Green screen for Host' })).toHaveClass(/icon-btn--accent/);
+      await expect(page.getByRole('button', { name: 'Background for Host' })).toHaveClass(/icon-btn--accent/);
 
       // Colour that is not the screen: removing blue leaves the green camera alone.
       await panel.getByRole('button', { name: 'Blue', exact: true }).click();
@@ -594,7 +595,7 @@ test.describe('green screen (Pro)', () => {
       await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
 
       // Off: the camera is back, and the picture is only remembered.
-      await panel.getByLabel(/Remove the background colour behind you/).uncheck();
+      await panel.getByLabel(/Remove the background behind you/).uncheck();
       await expect.poll(async () => greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
       await panel.getByRole('button', { name: 'Remove picture' }).click();
       await expect(panel.getByText('red.png')).toHaveCount(0);
@@ -606,8 +607,8 @@ test.describe('green screen (Pro)', () => {
       await page.goto(`/streams/${id}/studio`);
       await page.getByRole('button', { name: /Start my camera/ }).click();
       await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
-      await page.getByRole('button', { name: 'Green screen for Host' }).click();
-      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
       const preview = panel.getByRole('img', { name: /How Host will look/ });
       const previewPixel = () =>
         preview.evaluate((el) => {
@@ -655,9 +656,9 @@ test.describe('green screen (Pro)', () => {
       await expect(panel.getByRole('button', { name: 'Reset' })).toBeDisabled();
 
       // Turning it on is reflected next to the person's name and on the button.
-      await panel.getByLabel(/Remove the background colour behind you/).check();
-      await expect(page.locator('.participant-row').getByText('Green screen on')).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Green screen for Host' })).toHaveAttribute('aria-expanded', 'true');
+      await panel.getByLabel(/Remove the background behind you/).check();
+      await expect(page.locator('.participant-row').getByText('Background removed')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Background for Host' })).toHaveAttribute('aria-expanded', 'true');
     });
 
     test('with no picture, the wallpaper shows through the keyed person', async ({ page, context }) => {
@@ -667,8 +668,8 @@ test.describe('green screen (Pro)', () => {
       await page.getByRole('button', { name: /Start my camera/ }).click();
       await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
       await page.locator('#wallpaperInput').setInputFiles({ name: 'wall.png', mimeType: 'image/png', buffer: RED });
-      await page.getByRole('button', { name: 'Green screen for Host' }).click();
-      await page.getByRole('group', { name: 'Green screen for Host' }).getByLabel(/Remove the background colour behind you/).check();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      await page.getByRole('group', { name: 'Background for Host' }).getByLabel(/Remove the background behind you/).check();
       const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
       await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2)), { timeout: 10_000 }).toBe(true);
     });
@@ -698,34 +699,208 @@ test.describe('green screen (Pro)', () => {
       const [gx, gy] = mid(geo.people[1]);
       await expect.poll(async () => greenish(await canvasPixel(page, gx, gy))).toBe(true);
 
-      await page.getByRole('button', { name: 'Green screen for Alex' }).click();
-      const panel = page.getByRole('group', { name: 'Green screen for Alex' });
+      await page.getByRole('button', { name: 'Background for Alex' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Alex' });
       await panel.getByLabel('Picture behind Alex').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
-      await panel.getByLabel(/Remove the background colour behind Alex/).check();
+      await panel.getByLabel(/Remove the background behind Alex/).check();
       await expect.poll(async () => redish(await canvasPixel(page, gx, gy)), { timeout: 10_000 }).toBe(true);
       expect(greenish(await canvasPixel(page, hx, hy))).toBe(true); // the host's own tile is untouched
       await guestCtx.close();
     });
 
-    test("the host's green screen settings and picture are still there after a reload", async ({ page, context }) => {
+    // ---- Any background (person cut-out). The browser tests give the studio their own "segmenter" (a mask they know
+    //      the shape of: the left half of every picture is the person), so the pixels can be checked exactly.
+    const LEFT_HALF_IS_PERSON = () => {
+      window.__SB_TEST_SEGMENTER__ = {
+        mask: () => {
+          const w = 32;
+          const h = 18;
+          const data = new Float32Array(w * h);
+          for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data[y * w + x] = x < w / 2 ? 1 : 0;
+          return { data, width: w, height: h };
+        },
+      };
+    };
+
+    test('any background: the person stays, everything else is replaced by the picture behind them', async ({ page, context }) => {
+      await page.addInitScript(LEFT_HALF_IS_PERSON);
       const { api } = await signIn(context);
       const id = await newStream(context, api);
       await page.goto(`/streams/${id}/studio`);
       await page.getByRole('button', { name: /Start my camera/ }).click();
       await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
-      await page.getByRole('button', { name: 'Green screen for Host' }).click();
-      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
       await panel.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
-      await panel.getByLabel(/Remove the background colour behind you/).check();
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await expect(panel).toHaveAttribute('data-cutout-state', 'ready');
+      await panel.getByLabel(/Remove the background behind you/).check();
+      // The camera is a 4:3 picture centred in the 16:9 canvas: its left half is the person (kept), the right half is not.
+      await expect.poll(async () => greenish(await canvasPixel(page, width * 0.35, height / 2)), { timeout: 10_000 }).toBe(true);
+      await expect.poll(async () => redish(await canvasPixel(page, width * 0.65, height / 2)), { timeout: 10_000 }).toBe(true);
+      // Outside the camera picture altogether is the person's own picture too (a classic cell shows it behind them).
+      await expect.poll(async () => redish(await canvasPixel(page, 20, 20))).toBe(true);
+
+      // The panel's own preview agrees, and the green-screen controls are replaced by the cut-out's.
+      const preview = panel.getByRole('img', { name: /How Host will look/ });
+      const previewAt = (fx: number) => preview.evaluate((el, f) => { const c = el as HTMLCanvasElement; const d = c.getContext('2d')!.getImageData(Math.floor(c.width * f), c.height / 2, 1, 1).data; return [d[0], d[1], d[2]] as [number, number, number]; }, fx);
+      await expect.poll(async () => greenish(await previewAt(0.38))).toBe(true);
+      await expect.poll(async () => redish(await previewAt(0.62))).toBe(true);
+      await expect(panel.getByText('Screen colour', { exact: true })).toHaveCount(0);
+      await expect(panel.getByLabel(/Cut-out strength/)).toBeVisible();
+      await expect(panel.getByText(/Finds you in the picture/)).toBeVisible();
+
+      // Back to a green screen: the camera's own green is removed instead, wherever it is.
+      await panel.getByRole('button', { name: 'Green screen' }).click();
+      await expect(panel.getByText('Screen colour', { exact: true })).toBeVisible();
+      await expect.poll(async () => redish(await canvasPixel(page, width * 0.35, height / 2)), { timeout: 10_000 }).toBe(true);
+    });
+
+    test('any background works for a guest too, and the host is left alone', async ({ page, context, browser }) => {
+      await page.addInitScript(LEFT_HALF_IS_PERSON);
+      const { api } = await signIn(context);
+      const conn = await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'T', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json();
+      const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'cut out a guest', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+      const invite = await (await api.post(`${APP}/api/studio-sessions/${stream.studioSessionId}/invites`, { data: {}, headers: apiHeaders })).json();
+      await page.goto(`/streams/${stream.id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      const guestCtx = await browser.newContext({ permissions: ['camera', 'microphone'] });
+      const guest = await guestCtx.newPage();
+      await guest.goto(`${APP}/join/${invite.token}`);
+      await guest.fill('#displayName', 'Alex');
+      await guest.getByRole('button', { name: /^Join$/ }).click();
+      await expect(guest.locator('.meeting-grid')).toBeVisible();
+      await expect(page.locator('.studio-status-toast')).toContainText('Alex is connected', { timeout: 20_000 });
+      await page.locator('#layoutSelect').selectOption('podcast-split');
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+      const tile = computeLayout('podcast-split', width, height).people[1];
+      const at = (fx: number) => canvasPixel(page, tile.x + tile.w * fx, tile.y + tile.h / 2);
+
+      await page.getByRole('button', { name: 'Background for Alex' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Alex' });
+      await panel.getByLabel('Picture behind Alex').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await panel.getByLabel(/Remove the background behind Alex/).check();
+      await expect.poll(async () => greenish(await at(0.2)), { timeout: 10_000 }).toBe(true); // left of Alex: kept
+      await expect.poll(async () => redish(await at(0.8)), { timeout: 10_000 }).toBe(true); // right of Alex: his picture
+      const hostTile = computeLayout('podcast-split', width, height).people[0];
+      expect(greenish(await canvasPixel(page, hostTile.x + hostTile.w * 0.8, hostTile.y + hostTile.h / 2))).toBe(true); // the host's whole tile is untouched
+      await guestCtx.close();
+    });
+
+    test('any background: the model loads once with a visible note, and a failed load switches back with a clear message', async ({ page, context }) => {
+      await page.addInitScript(() => {
+        window.__SB_TEST_SEGMENTER__ = {
+          init: () => new Promise((_, reject) => setTimeout(() => reject(new Error('the model file is blocked')), 1200)),
+          mask: () => ({ data: new Float32Array(4), width: 2, height: 2 }),
+        };
+      });
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await expect(panel.getByText(/Loading the cut-out model/)).toBeVisible();
+      await expect(page.locator('.studio-status-toast')).toContainText('Could not start the background cut-out (the model file is blocked)', { timeout: 10_000 });
+      await expect(panel).toHaveAttribute('data-cutout-state', 'error');
+      // Back on the green screen, switched off, and still usable.
+      await expect(panel.getByRole('button', { name: 'Green screen' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(panel.getByLabel(/Remove the background behind you/)).not.toBeChecked();
+    });
+
+    test('any background: a computer too slow for it switches it off with a message, so the broadcast is protected', async ({ page, context }) => {
+      await page.addInitScript(() => {
+        window.__SB_TEST_SEGMENTER__ = {
+          mask: () => {
+            const until = performance.now() + 200; // each mask takes 200 ms: far too slow
+            while (performance.now() < until) { /* busy */ }
+            return { data: new Float32Array(16).fill(1), width: 4, height: 4 };
+          },
+        };
+      });
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
+      // Opening the cut-out already runs the model (for the preview), so a slow computer is caught straight away.
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await expect(page.locator('.studio-status-toast')).toContainText('too slow for the background cut-out', { timeout: 20_000 });
+      await expect(panel.getByLabel(/Remove the background behind you/)).not.toBeChecked();
+      await expect(panel.getByRole('button', { name: 'Green screen' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test("the host's choice of method is remembered after a reload", async ({ page, context }) => {
+      await page.addInitScript(LEFT_HALF_IS_PERSON);
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await panel.getByLabel(/Remove the background behind you/).check();
+      await panel.getByLabel(/Cut-out strength/).fill('70');
+
+      await page.reload();
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const again = page.getByRole('group', { name: 'Background for Host' });
+      await expect(again.getByRole('button', { name: 'Any background' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(again.getByLabel(/Remove the background behind you/)).toBeChecked();
+      await expect(again.getByText('Cut-out strength: 70')).toBeVisible();
+    });
+
+    test('any background with the real model: it downloads, starts and runs on the camera without an error', async ({ page, context }) => {
+      test.setTimeout(120_000);
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
+      await panel.getByRole('button', { name: 'Any background' }).click();
+      await expect(panel).toHaveAttribute('data-cutout-state', 'ready', { timeout: 90_000 });
+      // (A plain click: this test browser draws WebGL in software, so the "too slow" guard may switch it off again; that is fine here.)
+      await panel.getByLabel(/Remove the background behind you/).click();
+      await page.waitForTimeout(3000); // let it run for a few frames
+      await expect(panel).toHaveAttribute('data-cutout-state', 'ready');
+      await expect(page.locator('.studio-status-toast')).not.toContainText(/Could not start/);
+      // The studio is still drawing (the canvas is not blank).
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+      expect((await canvasPixel(page, width / 2, height / 2)).length).toBe(3);
+    });
+
+    test("the host's background settings and picture are still there after a reload", async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Background for Host' });
+      await panel.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await panel.getByLabel(/Remove the background behind you/).check();
       await panel.getByLabel(/Amount removed/).fill('65');
       await expect(panel.getByText('Amount removed: 65')).toBeVisible();
 
       await page.reload();
       await page.getByRole('button', { name: /Start my camera/ }).click();
       await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
-      await page.getByRole('button', { name: 'Green screen for Host' }).click();
-      const again = page.getByRole('group', { name: 'Green screen for Host' });
-      await expect(again.getByLabel(/Remove the background colour behind you/)).toBeChecked();
+      await page.getByRole('button', { name: 'Background for Host' }).click();
+      const again = page.getByRole('group', { name: 'Background for Host' });
+      await expect(again.getByLabel(/Remove the background behind you/)).toBeChecked();
       await expect(again.getByText('Amount removed: 65')).toBeVisible();
       await expect(again.getByText('red.png')).toBeVisible();
     });
@@ -798,12 +973,12 @@ test.describe('admin console', () => {
     await expect(page.getByText('No companies match "zzz-no-such-company".')).toBeVisible();
   });
 
-  test('plans: quality, recording and green screen read as words, not codes', async ({ page, context }) => {
+  test('plans: quality, recording and background removal read as words, not codes', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/plans');
     const pro = page.getByRole('row', { name: /^Pro / });
     await expect(pro).toContainText('2K 1440p');
-    await expect(pro.getByText('Yes')).toHaveCount(2); // recording and green screen
+    await expect(pro.getByText('Yes')).toHaveCount(2); // recording and background removal
     const free = page.getByRole('row', { name: /^Free / });
     await expect(free).toContainText('Full HD 1080p');
     await expect(free.getByText('Yes')).toHaveCount(0);

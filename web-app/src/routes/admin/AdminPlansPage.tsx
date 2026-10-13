@@ -160,7 +160,7 @@ export function AdminPlansPage() {
             <th scope="col" className="num">Guests</th>
             <th scope="col">Quality</th>
             <th scope="col">Recording</th>
-            <th scope="col">Green screen</th>
+            <th scope="col">Background removal</th>
             <th scope="col">Session cap</th>
             <th scope="col">₹ / $</th>
             <th scope="col">Visibility</th>
@@ -247,7 +247,7 @@ export function AdminPlansPage() {
           <p>
             <label className="checkbox-row"><input type="checkbox" checked={form.isPublic} onChange={(e) => set('isPublic', e.target.checked)} /> Show on the public pricing page</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.canRecord} onChange={(e) => set('canRecord', e.target.checked)} /> Can record the stream to their own computer</label>
-            <label className="checkbox-row"><input type="checkbox" checked={form.canChromaKey} onChange={(e) => set('canChromaKey', e.target.checked)} /> Can use a green screen (remove the background colour)</label>
+            <label className="checkbox-row"><input type="checkbox" checked={form.canChromaKey} onChange={(e) => set('canChromaKey', e.target.checked)} /> Can remove the background behind people (green screen or any-background cut-out)</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} /> Active</label>
           </p>
           <button type="submit" disabled={saving}>{saving && <BirdBusy />} Save plan</button>{' '}

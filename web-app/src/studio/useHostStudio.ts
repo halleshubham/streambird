@@ -1,4 +1,5 @@
-import { ChromaKeyer, DEFAULT_CHROMA, normalizeChroma, type ChromaSettings } from './chromaKey';
+import { ChromaKeyer, DEFAULT_CHROMA, normalizeChroma, smoothMask, type ChromaSettings, type MaskBytes } from './chromaKey';
+import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
@@ -36,6 +37,10 @@ import {
   type SlideImage,
   type Wallpaper,
 } from './themePaint';
+
+/** Person cut-out: if masks keep taking longer than this on average (ms), the cut-out is switched off. */
+const SEG_TOO_SLOW_MS = 150;
+const SEG_SLOW_AFTER = 5;
 
 // Mirrors StreamDetailPage's own poll interval -- see that page for why
 // 10s (fast enough to catch a destination's platformStatus climbing from
@@ -90,6 +95,11 @@ interface Participant {
   chroma: ChromaSettings;
   chromaBg: Wallpaper | null;
   keyer: ChromaKeyer | null;
+  /** Person cut-out: the latest smoothed "this is the person" mask for their video, and when it was made. */
+  mask: MaskBytes | null;
+  maskAt: number;
+  /** The settings panel is open for this person, so keep a mask coming even before the cut-out is switched on. */
+  segPreview: boolean;
 }
 
 export interface ParticipantView {
@@ -318,6 +328,14 @@ export function useHostStudio(streamId: string | undefined) {
   /** Plan allows green screen (Pro and up). Client-side only: the keying happens in this browser. */
   const [canChromaKey, setCanChromaKey] = useState(false);
   const canChromaKeyRef = useRef(false);
+  /** The person cut-out model: loaded the first time someone turns "Any background" on. */
+  const [cutoutState, setCutoutState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [cutoutError, setCutoutError] = useState<string | null>(null);
+  const segmenterRef = useRef<PersonSegmenter | null>(null);
+  const segLoadRef = useRef<Promise<PersonSegmenter | null> | null>(null);
+  const segIntervalRef = useRef(66);
+  const segAvgMsRef = useRef(0);
+  const segSamplesRef = useRef(0);
   /** The host's own green-screen settings and background, kept here so they apply the moment the camera starts. */
   const hostChromaRef = useRef<{ settings: ChromaSettings; bg: Wallpaper | null; bgData: SavedChromaBg | null }>({ settings: { ...DEFAULT_CHROMA }, bg: null, bgData: null });
   const streamIdRef = useRef<string | null>(null);
@@ -611,11 +629,86 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.fillText(b.newsText, newsScrollXRef.current, barY + barH / 2);
   }
 
+  /** Loads the person cut-out model once. On failure every cut-out is switched back off, with a message. */
+  function ensureSegmenter(): Promise<PersonSegmenter | null> {
+    if (segmenterRef.current) return Promise.resolve(segmenterRef.current);
+    if (!segLoadRef.current) {
+      setCutoutState('loading');
+      setCutoutError(null);
+      segLoadRef.current = createPersonSegmenter()
+        .then((seg) => {
+          segmenterRef.current = seg;
+          setCutoutState('ready');
+          return seg;
+        })
+        .catch((err: unknown) => {
+          segLoadRef.current = null;
+          const reason = err instanceof Error && err.message ? err.message : 'the model could not be loaded';
+          setCutoutState('error');
+          setCutoutError(reason);
+          setStatus({ text: `Could not start the background cut-out (${reason}). Use a green screen instead.`, isError: true });
+          participantsRef.current.forEach((p, id) => {
+            if (p.chroma.mode !== 'person') return;
+            p.chroma = normalizeChroma({ ...p.chroma, mode: 'color', enabled: false });
+            if (id === 'local') persistHostChroma(p.chroma);
+          });
+          renderParticipantList();
+          return null;
+        });
+    }
+    return segLoadRef.current;
+  }
+
+  /** Keeps each cut-out person's mask fresh (about 15 times a second, slower if the computer struggles). */
+  function updateMasks(now: number) {
+    const seg = segmenterRef.current;
+    if (!seg) return;
+    participantsRef.current.forEach((p) => {
+      const wanted = canChromaKeyRef.current && p.chroma.mode === 'person' && (p.chroma.enabled || p.segPreview);
+      if (!wanted) {
+        if (p.mask) p.mask = null;
+        return;
+      }
+      if (p.videoEl.readyState < 2 || !p.videoEl.videoWidth || now - p.maskAt < segIntervalRef.current) return;
+      p.maskAt = now;
+      const t0 = performance.now();
+      let raw: ReturnType<PersonSegmenter['segmentVideo']> = null;
+      try {
+        raw = seg.segmentVideo(p.videoEl);
+      } catch {
+        raw = null;
+      }
+      const ms = performance.now() - t0;
+      // Adapt: when segmenting is slow, ask for fewer masks instead of dropping the broadcast's frame rate.
+      segAvgMsRef.current = segAvgMsRef.current ? segAvgMsRef.current * 0.8 + ms * 0.2 : ms;
+      segIntervalRef.current = Math.min(250, Math.max(66, segAvgMsRef.current * 2.5));
+      segSamplesRef.current += 1;
+      if (segSamplesRef.current >= SEG_SLOW_AFTER && segAvgMsRef.current > SEG_TOO_SLOW_MS) {
+        // Each mask blocks the drawing, so a computer this slow would make the broadcast itself stutter: stop, and say so.
+        segAvgMsRef.current = 0;
+        segSamplesRef.current = 0;
+        participantsRef.current.forEach((q, qid) => {
+          if (q.chroma.mode !== 'person') return;
+          q.chroma = normalizeChroma({ ...q.chroma, mode: 'color', enabled: false });
+          q.mask = null;
+          if (qid === 'local') persistHostChroma(q.chroma);
+        });
+        setStatus({ text: 'This computer is too slow for the background cut-out, so it was switched off to protect the stream. A green screen is lighter.', isError: true });
+        renderParticipantList();
+        return;
+      }
+      if (!raw) return;
+      const prev = p.mask && p.mask.width === raw.width && p.mask.height === raw.height ? p.mask.data : null;
+      p.mask = { data: smoothMask(prev, raw.data, prev), width: raw.width, height: raw.height };
+    });
+  }
+
   /** True when this person's green screen should be removed this frame (plan allows it, it is on, and the GPU can do it). */
   function isKeyed(p: Participant): boolean {
     if (!p.chroma.enabled || !canChromaKeyRef.current) return false;
     if (!p.keyer) p.keyer = new ChromaKeyer();
-    return p.keyer.supported;
+    // The person cut-out needs its first mask: until then the plain camera shows (no flash of an empty tile).
+    return p.keyer.supported && (p.chroma.mode === 'color' || p.mask !== null);
   }
 
   /** Draws the person's own background picture "cover"-cropped into the rect. */
@@ -632,7 +725,7 @@ export function useHostStudio(streamId: string | undefined) {
   /** Keys the video (cropped to `crop`) and draws the result into the rect; the removed colour is see-through. */
   function drawKeyedVideo(p: Participant, crop: { sx: number; sy: number; sw: number; sh: number }, x: number, y: number, w: number, h: number) {
     const k = Math.min(1, 1920 / Math.max(w, h));
-    const out = p.keyer!.render(p.videoEl, crop, w * k, h * k, p.chroma);
+    const out = p.chroma.mode === 'person' && p.mask ? p.keyer!.renderPerson(p.videoEl, crop, w * k, h * k, p.mask, p.chroma) : p.keyer!.render(p.videoEl, crop, w * k, h * k, p.chroma);
     if (out) ctxRef.current!.drawImage(out, x, y, w, h);
   }
 
@@ -908,6 +1001,7 @@ export function useHostStudio(streamId: string | undefined) {
       if (!ctx) return;
       const w = canvas.width;
       const h = canvas.height;
+      updateMasks(now);
 
       const entries = [...participantsRef.current.values()].filter(
         (p) => p.videoEl.readyState >= 2 && p.onStage,
@@ -1009,6 +1103,9 @@ export function useHostStudio(streamId: string | undefined) {
       chroma: { ...DEFAULT_CHROMA },
       chromaBg: null,
       keyer: null,
+      mask: null,
+      maskAt: 0,
+      segPreview: false,
     });
     renderParticipantList();
 
@@ -1374,6 +1471,9 @@ export function useHostStudio(streamId: string | undefined) {
         chroma: { ...hostChromaRef.current.settings },
         chromaBg: hostChromaRef.current.bg,
         keyer: null,
+        mask: null,
+        maskAt: 0,
+        segPreview: false,
       });
       connectAudioTrack('local', audioTrack);
       renderParticipantList();
@@ -1472,6 +1572,9 @@ export function useHostStudio(streamId: string | undefined) {
         chroma: { ...DEFAULT_CHROMA },
         chromaBg: null,
         keyer: null,
+        mask: null,
+        maskAt: 0,
+        segPreview: false,
       });
 
       if (audioTrack) connectAudioTrack(SCREEN_SHARE_ID, audioTrack);
@@ -1648,7 +1751,7 @@ export function useHostStudio(streamId: string | undefined) {
     const p = participantsRef.current.get(id);
     if (!p || id === SCREEN_SHARE_ID) return;
     if (patch.enabled && !canChromaKeyRef.current) {
-      setStatus({ text: 'Green screen is on the Pro plan.', isError: true });
+      setStatus({ text: 'Removing the background is on the Pro plan.', isError: true });
       return;
     }
     if (patch.enabled) {
@@ -1662,7 +1765,21 @@ export function useHostStudio(streamId: string | undefined) {
     }
     p.chroma = normalizeChroma({ ...p.chroma, ...patch });
     if (id === 'local') persistHostChroma(p.chroma);
+    if (p.chroma.mode === 'person' && (p.chroma.enabled || p.segPreview)) void ensureSegmenter();
     renderParticipantList();
+  }
+
+  /** The settings panel for a person opened or closed: while open, keep a cut-out mask coming so it can preview the result. */
+  function setChromaPreview(id: string, on: boolean) {
+    const p = participantsRef.current.get(id);
+    if (!p) return;
+    p.segPreview = on;
+    if (on && p.chroma.mode === 'person') void ensureSegmenter();
+  }
+
+  /** The latest cut-out mask for a person (for the panel's preview). */
+  function getChromaMask(id: string): MaskBytes | null {
+    return participantsRef.current.get(id)?.mask ?? null;
   }
 
   /** The picture shown behind a keyed person (their own, instead of the stream's wallpaper / canvas style). */
@@ -1928,6 +2045,8 @@ export function useHostStudio(streamId: string | undefined) {
   useEffect(
     () => () => {
       participantsRef.current.forEach((p) => p.keyer?.dispose());
+      segmenterRef.current?.close();
+      segmenterRef.current = null;
     },
     [],
   );
@@ -2196,6 +2315,8 @@ export function useHostStudio(streamId: string | undefined) {
     maxResolution,
     canRecord,
     canChromaKey,
+    cutoutState,
+    cutoutError,
     recordingSince,
     cameraStarting,
     cameraStarted,
@@ -2235,6 +2356,8 @@ export function useHostStudio(streamId: string | undefined) {
       setNewsFontSize,
       setTheme,
       setChroma,
+      setChromaPreview,
+      getChromaMask,
       setChromaBackground,
       setWallpaperFile,
       clearWallpaper,

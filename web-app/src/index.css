@@ -3757,3 +3757,7 @@ video.chroma-preview {
 .participant-item .participant-row {
   margin-bottom: 0;
 }
+
+.chroma-mode {
+  margin: 6px 0 4px;
+}
