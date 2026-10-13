@@ -18,7 +18,7 @@ Wrong docs are worse than none: agents act on them. Treat docs as part of the ch
 | pages, components, CSS conventions, loaders | `docs/frontend.md` |
 | test harness, selectors, commands | `docs/testing.md` + `skills/streambird-test` |
 | a decision or a trap you discovered | one line in `docs/decisions-and-gotchas.md` |
-| product capability added/removed | "Product state" in `docs/overview.md` |
+| product capability added/removed | "Product state" in `docs/overview.md`, **and** the user docs in `shackyapps-landing` (CLAUDE.md rule 11) |
 | a new workflow you had to figure out | a new skill (below) |
 
 ## Procedure
@@ -27,7 +27,10 @@ Wrong docs are worse than none: agents act on them. Treat docs as part of the ch
 3. Keep `CLAUDE.md` short (it loads every session): rules and pointers only; detail goes in `docs/`.
 4. No secrets or tokens; identifiers (uuids, project ids) are fine.
 5. If a file nears ~300 lines, split it and update `docs/README.md` and the `CLAUDE.md` table.
-6. Mention in the PR body: "docs updated: <files>" (or why none needed).
+6. Mention in the PR body: "docs updated: <files>" (or why none needed), and the linked `shackyapps-landing` docs PR for any user-visible change (CLAUDE.md rule 11).
+
+## User docs site (`halleshubham/shackyapps-landing`)
+Separate repo, Docusaurus under `docs-site/`; StreamBird guides are `docs-site/streambird/*.md` (host pages, `join-as-a-guest.md` for guests, `plans-and-pricing.md`), images in `docs-site/static/img/streambird/`. For every new or changed feature: update or add the page, fix every sentence the change makes false (grep for the old label), retake the affected screenshots, `npm run build` in `docs-site`, PR, and deploy with `deploy.sh landing` after merge.
 
 ## Writing a new skill
 Create `.claude/skills/<streambird-name>/SKILL.md` with frontmatter `name` (= folder) and a `description` that says *what it does and when to use it* (this is what triggers it). Body: numbered steps, exact commands and paths, a verification section, pitfalls. Under ~120 lines; put scripts next to it and call them by path. Add it to `CLAUDE.md` and `docs/README.md`.

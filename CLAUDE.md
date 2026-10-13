@@ -46,6 +46,7 @@ CI (`.github/workflows/ci.yml`) runs exactly typecheck → unit → build → e2
 8. **Vanilla canvas theme and landscape behaviour must stay unchanged** unless asked; vertical (9:16) is per-stream and immutable after creation.
 9. Single backend process is assumed (some state is in memory). Do not introduce multi-instance assumptions.
 10. Update `.claude/` docs/skills in the same PR when your change makes them wrong (`streambird-docs-maintenance`).
+11. **Every new feature or user-visible change (UI, plans/limits/prices, flows, guest or host experience) also needs the user docs updated in `halleshubham/shackyapps-landing`** (Docusaurus, `docs-site/streambird/*.md` + screenshots in `docs-site/static/img/streambird/`; live at shackyapps.in/docs/streambird; the landing page pricing too when plans change). Open a PR there alongside the StreamBird PR, say so in both PR bodies, and when the user says "merge and deploy" do both (`deploy.sh streambird` and `deploy.sh landing`). If the repo is not attached to the session, add it with `add_repo`. If you genuinely skip it (internal-only change), say why in the PR body.
 
 ## Working with this user
 - Terse, practical requests; they review in the browser on the live site. They often say "merge and deploy once CI is green" — that means: wait for CI, squash-merge, wait for the image, deploy with the token they provide, verify live, report.
