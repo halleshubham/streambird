@@ -40,6 +40,9 @@ export class CreatePlanDto {
   @IsOptional() @IsBoolean()
   canRecord?: boolean;
 
+  @IsOptional() @IsBoolean()
+  canChromaKey?: boolean;
+
   /** null = no per-session cap. */
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsNumber() @Min(0.25) @Max(168)
@@ -93,6 +96,9 @@ export class UpdatePlanDto {
 
   @IsOptional() @IsBoolean()
   canRecord?: boolean;
+
+  @IsOptional() @IsBoolean()
+  canChromaKey?: boolean;
 
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsNumber() @Min(0.25) @Max(168)

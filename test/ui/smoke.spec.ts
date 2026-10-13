@@ -493,6 +493,245 @@ test.describe('host studio', () => {
   });
 });
 
+/** A tiny solid-colour PNG, built by hand (zlib + CRC) so a test can upload a picture whose pixels it knows. */
+function solidPng(r: number, g: number, b: number, size = 16): Buffer {
+  const zlib = require('zlib') as typeof import('zlib');
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf: Buffer) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: size }, () => [r, g, b]).flat())]);
+  const raw = Buffer.concat(Array.from({ length: size }, () => row));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+/** The colour of the studio canvas at a point (the canvas keeps its 2D context, so this reads what viewers get). */
+const canvasPixel = (page: Page, x: number, y: number) =>
+  page.evaluate(
+    ([px, py]) => {
+      const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement;
+      const d = c.getContext('2d')!.getImageData(px, py, 1, 1).data;
+      return [d[0], d[1], d[2]] as [number, number, number];
+    },
+    [x, y],
+  );
+
+test.describe('green screen (Pro)', () => {
+  test('Free plan: the Green screen button is locked and points to billing', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    const locked = page.getByRole('button', { name: 'Green screen for Host (Pro plan)' });
+    await expect(locked).toBeVisible();
+    await expect(locked).toContainText('Pro'); // the upgrade cue is visible, not only in a tooltip
+    await locked.click();
+    await expect(page).toHaveURL(/\/billing$/);
+  });
+
+  test.describe('on a plan that allows it', () => {
+    test.beforeEach(async ({ browser }) => {
+      const adminCtx = await browser.newContext();
+      const admin = await signIn(adminCtx, { superadmin: true });
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canChromaKey: true }, headers: apiHeaders });
+      await adminCtx.close();
+    });
+    test.afterEach(async ({ browser }) => {
+      const adminCtx = await browser.newContext();
+      const admin = await signIn(adminCtx, { superadmin: true });
+      await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canChromaKey: false }, headers: apiHeaders });
+      await adminCtx.close();
+    });
+
+    const RED = solidPng(220, 30, 40);
+    const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+    const greenish = (p: [number, number, number]) => p[1] > 100 && p[0] < 120 && p[2] < 120;
+
+    test('the host removes the green behind themselves and a picture of their own shows instead; off again, the camera is back', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+
+      // Before: the fake camera is a green test pattern.
+      await expect.poll(async () => greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
+
+      await page.getByRole('button', { name: 'Green screen for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      await expect(panel).toBeVisible();
+      await page.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await expect(panel.getByText('red.png')).toBeVisible();
+      await panel.getByLabel(/Remove the background colour behind you/).check();
+      await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2)), { timeout: 10_000 }).toBe(true);
+      await expect(page.getByRole('button', { name: 'Green screen for Host' })).toHaveClass(/icon-btn--accent/);
+
+      // Colour that is not the screen: removing blue leaves the green camera alone.
+      await panel.getByRole('button', { name: 'Blue', exact: true }).click();
+      await expect.poll(async () => greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
+      await panel.getByRole('button', { name: 'Green', exact: true }).click();
+      await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
+
+      // Off: the camera is back, and the picture is only remembered.
+      await panel.getByLabel(/Remove the background colour behind you/).uncheck();
+      await expect.poll(async () => greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
+      await panel.getByRole('button', { name: 'Remove picture' }).click();
+      await expect(panel.getByText('red.png')).toHaveCount(0);
+    });
+
+    test('the panel previews the result live, picks the screen colour from a click on the camera, and resets', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Green screen for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      const preview = panel.getByRole('img', { name: /How Host will look/ });
+      const previewPixel = () =>
+        preview.evaluate((el) => {
+          const c = el as HTMLCanvasElement;
+          const d = c.getContext('2d')!.getImageData(c.width / 2, c.height / 2, 1, 1).data;
+          return [d[0], d[1], d[2]] as [number, number, number];
+        });
+
+      // Nothing is switched on yet, but the preview already shows the effect: the camera's green is gone, so a
+      // light grey checkerboard (or the chosen picture) is left. The main picture is still the raw camera.
+      await expect(panel.getByText(/How it will look \(tick the box above to use it\)/)).toBeVisible();
+      await expect.poll(async () => { const p = await previewPixel(); return p[0] > 190 && p[1] > 190 && p[2] > 190; }).toBe(true);
+      await panel.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await expect.poll(async () => redish(await previewPixel())).toBe(true);
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+      expect(greenish(await canvasPixel(page, width / 2, height / 2))).toBe(true);
+
+      // Picking the screen colour by clicking the camera preview.
+      const colour = panel.getByLabel('Screen colour for Host');
+      const before = await colour.inputValue();
+      await panel.getByRole('button', { name: 'Blue', exact: true }).click();
+      await expect(colour).toHaveValue('#0047bb');
+      const cam = panel.getByLabel(/Host's camera. Click the screen colour/);
+      await cam.click({ position: { x: 4, y: 4 } }); // the black edge beside a 4:3 picture: told so, nothing changes
+      await expect(panel.getByText('Click on the picture itself, not the black edge.')).toBeVisible();
+      await expect(colour).toHaveValue('#0047bb');
+      const box = (await cam.boundingBox())!;
+      await cam.click({ position: { x: box.width * 0.3, y: box.height * 0.2 } }); // the green wall
+      await expect(panel.getByText('Screen colour picked.')).toBeVisible();
+      const picked = await colour.inputValue();
+      expect(picked).not.toBe('#0047bb');
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(picked.slice(i, i + 2), 16));
+      expect(g).toBeGreaterThan(r + 40);
+      expect(g).toBeGreaterThan(b + 40);
+
+      // Fine-tuning is tucked away until asked for; Reset puts the basics back.
+      await expect(panel.getByLabel(/Edge softness/)).toBeHidden();
+      await panel.getByText('Fine-tune the edges').click();
+      await panel.getByLabel(/Edge softness/).fill('40');
+      await panel.getByLabel(/Amount removed/).fill('80');
+      await panel.getByRole('button', { name: 'Reset' }).click();
+      await expect(colour).toHaveValue(before);
+      await expect(panel.getByText('Amount removed: 50')).toBeVisible();
+      await expect(panel.getByText('Edge softness: 12')).toBeVisible();
+      await expect(panel.getByRole('button', { name: 'Reset' })).toBeDisabled();
+
+      // Turning it on is reflected next to the person's name and on the button.
+      await panel.getByLabel(/Remove the background colour behind you/).check();
+      await expect(page.locator('.participant-row').getByText('Green screen on')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Green screen for Host' })).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    test('with no picture, the wallpaper shows through the keyed person', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.locator('#wallpaperInput').setInputFiles({ name: 'wall.png', mimeType: 'image/png', buffer: RED });
+      await page.getByRole('button', { name: 'Green screen for Host' }).click();
+      await page.getByRole('group', { name: 'Green screen for Host' }).getByLabel(/Remove the background colour behind you/).check();
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+      await expect.poll(async () => redish(await canvasPixel(page, width / 2, height / 2)), { timeout: 10_000 }).toBe(true);
+    });
+
+    test('the host can key a guest: Alex gets his own picture behind him, and the host is left alone', async ({ page, context, browser }) => {
+      const { api } = await signIn(context);
+      const conn = await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label: 'T', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json();
+      const stream = await (await api.post(`${APP}/api/streams`, { data: { title: 'key a guest', destinationConnectionIds: [conn.id] }, headers: apiHeaders })).json();
+      const invite = await (await api.post(`${APP}/api/studio-sessions/${stream.studioSessionId}/invites`, { data: {}, headers: apiHeaders })).json();
+      await page.goto(`/streams/${stream.id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+
+      const guestCtx = await browser.newContext({ permissions: ['camera', 'microphone'] });
+      const guest = await guestCtx.newPage();
+      await guest.goto(`${APP}/join/${invite.token}`);
+      await guest.fill('#displayName', 'Alex');
+      await guest.getByRole('button', { name: /^Join$/ }).click();
+      await expect(guest.locator('.meeting-grid')).toBeVisible();
+      await expect(page.locator('.studio-status-toast')).toContainText('Alex is connected', { timeout: 20_000 });
+
+      await page.locator('#layoutSelect').selectOption('podcast-split');
+      const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+      const geo = computeLayout('podcast-split', width, height);
+      const mid = (r: { x: number; y: number; w: number; h: number }) => [r.x + r.w / 2, r.y + r.h / 2] as const;
+      const [hx, hy] = mid(geo.people[0]);
+      const [gx, gy] = mid(geo.people[1]);
+      await expect.poll(async () => greenish(await canvasPixel(page, gx, gy))).toBe(true);
+
+      await page.getByRole('button', { name: 'Green screen for Alex' }).click();
+      const panel = page.getByRole('group', { name: 'Green screen for Alex' });
+      await panel.getByLabel('Picture behind Alex').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await panel.getByLabel(/Remove the background colour behind Alex/).check();
+      await expect.poll(async () => redish(await canvasPixel(page, gx, gy)), { timeout: 10_000 }).toBe(true);
+      expect(greenish(await canvasPixel(page, hx, hy))).toBe(true); // the host's own tile is untouched
+      await guestCtx.close();
+    });
+
+    test("the host's green screen settings and picture are still there after a reload", async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Green screen for Host' }).click();
+      const panel = page.getByRole('group', { name: 'Green screen for Host' });
+      await panel.getByLabel('Picture behind you').setInputFiles({ name: 'red.png', mimeType: 'image/png', buffer: RED });
+      await panel.getByLabel(/Remove the background colour behind you/).check();
+      await panel.getByLabel(/Amount removed/).fill('65');
+      await expect(panel.getByText('Amount removed: 65')).toBeVisible();
+
+      await page.reload();
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await page.getByRole('button', { name: 'Green screen for Host' }).click();
+      const again = page.getByRole('group', { name: 'Green screen for Host' });
+      await expect(again.getByLabel(/Remove the background colour behind you/)).toBeChecked();
+      await expect(again.getByText('Amount removed: 65')).toBeVisible();
+      await expect(again.getByText('red.png')).toBeVisible();
+    });
+  });
+});
+
 /** A signup that is waiting for approval: the email-code login creates it, nobody approves it. */
 async function pendingSignup(context: BrowserContext): Promise<string> {
   const email = `pend-${crypto.randomBytes(5).toString('hex')}@test.dev`;
@@ -559,12 +798,12 @@ test.describe('admin console', () => {
     await expect(page.getByText('No companies match "zzz-no-such-company".')).toBeVisible();
   });
 
-  test('plans: quality and recording read as words, not codes', async ({ page, context }) => {
+  test('plans: quality, recording and green screen read as words, not codes', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/plans');
     const pro = page.getByRole('row', { name: /^Pro / });
     await expect(pro).toContainText('2K 1440p');
-    await expect(pro.getByText('Yes')).toBeVisible();
+    await expect(pro.getByText('Yes')).toHaveCount(2); // recording and green screen
     const free = page.getByRole('row', { name: /^Free / });
     await expect(free).toContainText('Full HD 1080p');
     await expect(free.getByText('Yes')).toHaveCount(0);

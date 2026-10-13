@@ -35,6 +35,10 @@ export class Plan {
   @Column({ default: false })
   canRecord!: boolean;
 
+  /** May remove a green screen behind a person in the studio (client-side). */
+  @Column({ default: false })
+  canChromaKey!: boolean;
+
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   maxSessionHours!: string | null;
 

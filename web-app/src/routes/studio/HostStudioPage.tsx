@@ -26,6 +26,7 @@ import {
   EyeOff,
   Gauge,
   Palette,
+  Layers,
   Trash2,
   ImagePlus,
   Lock,
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
+import { ChromaPanel } from '../../components/ChromaPanel';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
@@ -52,6 +54,8 @@ export function HostStudioPage() {
   // The password that new invite links actually use. Typing in the box changes nothing until Save.
   const [savedInvitePassword, setSavedInvitePassword] = useState('');
   const [inviteOptionsOpen, setInviteOptionsOpen] = useState(false);
+  const [chromaOpenId, setChromaOpenId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [inviteOptionsNote, setInviteOptionsNote] = useState<string | null>(null);
   const [copiedDestinationId, setCopiedDestinationId] = useState<string | null>(null);
   const {
@@ -74,6 +78,7 @@ export function HostStudioPage() {
     resolution,
     maxResolution,
     canRecord,
+    canChromaKey,
     recordingSince,
     cameraStarting,
     cameraStarted,
@@ -461,12 +466,14 @@ export function HostStudioPage() {
         <label className="studio-section-label">Participants</label>
         <div className="participant-list">
           {participants.map((p) => (
-            <div key={p.id} className="participant-row">
+            <div key={p.id} className="participant-item">
+            <div className="participant-row">
               <span className="participant-row-name"><NameBadge name={p.displayName} /><span>{p.displayName}</span></span>
               {!p.isScreenShare && (
                 <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
               )}
               {p.pinned && <span className="badge badge-accent">Pinned</span>}
+              {p.chroma.enabled && canChromaKey && <span className="badge badge-accent">Green screen on</span>}
               {(!p.isScreenShare || p.hasAudio) && (
                 <>
                   {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
@@ -480,6 +487,18 @@ export function HostStudioPage() {
                 <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
                   {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
                   {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                </button>
+              )}
+              {!p.isScreenShare && (
+                <button
+                  type="button"
+                  className={`icon-btn icon-btn--small${p.chroma.enabled ? ' icon-btn--accent' : ''}`}
+                  aria-expanded={chromaOpenId === p.id}
+                  aria-label={canChromaKey ? `Green screen for ${p.displayName}` : `Green screen for ${p.displayName} (Pro plan)`}
+                  title={canChromaKey ? 'Remove a green or blue screen behind this person' : 'Green screen is on the Pro plan'}
+                  onClick={() => (canChromaKey ? setChromaOpenId(chromaOpenId === p.id ? null : p.id) : navigate('/billing'))}
+                >
+                  {canChromaKey ? <Layers size={14} /> : <Lock size={14} />} Green screen{canChromaKey ? '' : ' · Pro'}
                 </button>
               )}
               <button
@@ -517,6 +536,14 @@ export function HostStudioPage() {
                   </button>
                 )
               )}
+            </div>
+            {canChromaKey && !p.isScreenShare && chromaOpenId === p.id && (
+              <ChromaPanel
+                person={p}
+                onChange={(patch) => actions.setChroma(p.id, patch)}
+                onBackground={(file) => void actions.setChromaBackground(p.id, file)}
+              />
+            )}
             </div>
           ))}
         </div>

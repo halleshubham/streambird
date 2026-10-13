@@ -16,6 +16,7 @@ export function toPublicPlan(p: Plan) {
     maxGuests: p.maxGuests,
     maxResolution: p.maxResolution,
     canRecord: p.canRecord,
+    canChromaKey: p.canChromaKey,
     maxSessionHours: p.maxSessionHours === null ? null : Number(p.maxSessionHours),
     validityHours: p.validityHours,
     priceInr: p.priceInr,

@@ -40,6 +40,14 @@ describe('computeLimits', () => {
     expect(computeLimits(plan({ canRecord: true }), live, plan({ key: 'day_pass', kind: 'day_pass', canRecord: false }), NOW).canRecord).toBe(true);
   });
 
+  it('green screen follows the plan; a day pass that allows it adds it, one that does not never removes it', () => {
+    const live = { ...none, dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) };
+    expect(computeLimits(plan(), none, null, NOW).canChromaKey).toBeFalsy();
+    expect(computeLimits(plan({ canChromaKey: true }), none, null, NOW).canChromaKey).toBe(true);
+    expect(computeLimits(plan(), live, plan({ key: 'day_pass', kind: 'day_pass', canChromaKey: true }), NOW).canChromaKey).toBe(true);
+    expect(computeLimits(plan({ canChromaKey: true }), live, plan({ key: 'day_pass', kind: 'day_pass', canChromaKey: false }), NOW).canChromaKey).toBe(true);
+  });
+
   it('a day pass never lowers anything the plan already allows', () => {
     const small = plan({ key: 'day_pass', kind: 'day_pass', includedHoursPerMonth: '5', maxDestinations: 1, maxGuests: 1, maxResolution: 'sd', maxSessionHours: '2' });
     const l = computeLimits(plan({ maxDestinations: 4, maxGuests: 6 }), { ...none, dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) }, small, NOW);
