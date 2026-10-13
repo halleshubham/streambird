@@ -79,6 +79,8 @@ export function HostStudioPage() {
     maxResolution,
     canRecord,
     canChromaKey,
+    cutoutState,
+    cutoutError,
     recordingSince,
     cameraStarting,
     cameraStarted,
@@ -473,7 +475,7 @@ export function HostStudioPage() {
                 <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
               )}
               {p.pinned && <span className="badge badge-accent">Pinned</span>}
-              {p.chroma.enabled && canChromaKey && <span className="badge badge-accent">Green screen on</span>}
+              {p.chroma.enabled && canChromaKey && <span className="badge badge-accent">Background removed</span>}
               {(!p.isScreenShare || p.hasAudio) && (
                 <>
                   {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
@@ -494,11 +496,11 @@ export function HostStudioPage() {
                   type="button"
                   className={`icon-btn icon-btn--small${p.chroma.enabled ? ' icon-btn--accent' : ''}`}
                   aria-expanded={chromaOpenId === p.id}
-                  aria-label={canChromaKey ? `Green screen for ${p.displayName}` : `Green screen for ${p.displayName} (Pro plan)`}
-                  title={canChromaKey ? 'Remove a green or blue screen behind this person' : 'Green screen is on the Pro plan'}
+                  aria-label={canChromaKey ? `Background for ${p.displayName}` : `Background for ${p.displayName} (Pro plan)`}
+                  title={canChromaKey ? 'Remove the background behind this person' : 'Removing the background is on the Pro plan'}
                   onClick={() => (canChromaKey ? setChromaOpenId(chromaOpenId === p.id ? null : p.id) : navigate('/billing'))}
                 >
-                  {canChromaKey ? <Layers size={14} /> : <Lock size={14} />} Green screen{canChromaKey ? '' : ' · Pro'}
+                  {canChromaKey ? <Layers size={14} /> : <Lock size={14} />} Background{canChromaKey ? '' : ' · Pro'}
                 </button>
               )}
               <button
@@ -542,6 +544,9 @@ export function HostStudioPage() {
                 person={p}
                 onChange={(patch) => actions.setChroma(p.id, patch)}
                 onBackground={(file) => void actions.setChromaBackground(p.id, file)}
+                cutout={{ state: cutoutState, error: cutoutError }}
+                getMask={() => actions.getChromaMask(p.id)}
+                onOpen={(open) => actions.setChromaPreview(p.id, open)}
               />
             )}
             </div>

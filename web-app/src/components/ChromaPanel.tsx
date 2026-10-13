@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
-import { ChromaKeyer, DEFAULT_CHROMA, KEY_PRESETS, rgbToHex, type ChromaSettings } from '../studio/chromaKey';
+import { ChromaKeyer, DEFAULT_CHROMA, KEY_PRESETS, rgbToHex, type ChromaSettings, type CutoutMode, type MaskBytes } from '../studio/chromaKey';
 import type { ParticipantView } from '../studio/useHostStudio';
 
 interface Props {
   person: ParticipantView;
   onChange: (patch: Partial<ChromaSettings>) => void;
   onBackground: (file: File | null) => void;
+  /** State of the person cut-out model: 'loading' the first time it is used. */
+  cutout: { state: 'idle' | 'loading' | 'ready' | 'error'; error: string | null };
+  /** The latest cut-out mask for this person (the studio keeps it fresh while this panel is open). */
+  getMask: () => MaskBytes | null;
+  /** Tells the studio this panel is open, so it keeps a mask coming even before the cut-out is on. */
+  onOpen: (open: boolean) => void;
 }
 
 const CHECKER = 12;
@@ -28,7 +34,7 @@ function paintChecker(ctx: CanvasRenderingContext2D, w: number, h: number) {
  *    without scrolling up to the main picture.
  *  - The basics first (on/off, screen colour, how much to remove, a picture behind); fine-tuning is tucked away.
  */
-export function ChromaPanel({ person, onChange, onBackground }: Props) {
+export function ChromaPanel({ person, onChange, onBackground, cutout, getMask, onOpen }: Props) {
   const c = person.chroma;
   const name = person.displayName;
   const who = person.isLocal ? 'you' : name;
@@ -36,9 +42,19 @@ export function ChromaPanel({ person, onChange, onBackground }: Props) {
   const resultRef = useRef<HTMLCanvasElement>(null);
   const settingsRef = useRef(c);
   const bgRef = useRef(person.chromaBgCanvas);
+  const getMaskRef = useRef(getMask);
+  const isPerson = c.mode === 'person';
   const [pickNote, setPickNote] = useState<string | null>(null);
   settingsRef.current = c;
   bgRef.current = person.chromaBgCanvas;
+  getMaskRef.current = getMask;
+
+  // While this panel is open the studio keeps a cut-out mask coming for this person, so the preview can show it.
+  useEffect(() => {
+    onOpen(true);
+    return () => onOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The raw camera preview.
   useEffect(() => {
@@ -72,7 +88,14 @@ export function ChromaPanel({ person, onChange, onBackground }: Props) {
       const scale = Math.max(w / vw, h / vh);
       const sw = w / scale;
       const sh = h / scale;
-      const out = keyer.render(video, { sx: (vw - sw) / 2, sy: (vh - sh) / 2, sw, sh }, w, h, settingsRef.current);
+      const crop = { sx: (vw - sw) / 2, sy: (vh - sh) / 2, sw, sh };
+      let out: HTMLCanvasElement | null = null;
+      if (settingsRef.current.mode === 'person') {
+        const mask = getMaskRef.current();
+        if (mask) out = keyer.renderPerson(video, crop, w, h, mask, settingsRef.current);
+      } else {
+        out = keyer.render(video, crop, w, h, settingsRef.current);
+      }
       if (out) ctx.drawImage(out, 0, 0, w, h);
     }, 80);
     return () => {
@@ -121,6 +144,8 @@ export function ChromaPanel({ person, onChange, onBackground }: Props) {
     setPickNote('Screen colour picked.');
   }
 
+  const setMode = (mode: CutoutMode) => onChange({ mode });
+
   const slider = (id: string, label: string, key: 'similarity' | 'smoothness' | 'spill', hint: string) => (
     <div className="chroma-slider">
       <label htmlFor={id}>
@@ -135,49 +160,85 @@ export function ChromaPanel({ person, onChange, onBackground }: Props) {
 
   const isDefault = c.keyColor === DEFAULT_CHROMA.keyColor && c.similarity === DEFAULT_CHROMA.similarity && c.smoothness === DEFAULT_CHROMA.smoothness && c.spill === DEFAULT_CHROMA.spill;
 
+  const modelNote =
+    isPerson && cutout.state === 'loading'
+      ? 'Loading the cut-out model (about 13 MB, only the first time)…'
+      : isPerson && cutout.state === 'error'
+        ? `The cut-out could not start (${cutout.error ?? 'unknown reason'}). Try a green screen instead.`
+        : null;
+
   return (
-    <div className="chroma-panel" role="group" aria-label={`Green screen for ${name}`}>
+    <div className="chroma-panel" role="group" aria-label={`Background for ${name}`} data-cutout-state={cutout.state}>
       <label className="checkbox-row">
-        <input type="checkbox" checked={c.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} /> Remove the background colour behind {who}
+        <input type="checkbox" checked={c.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} /> Remove the background behind {who}
       </label>
-      <p className="docs-hint">Works best with an evenly lit green (or blue) screen and nothing green worn. {person.isLocal ? 'Your' : 'Their'} wallpaper or canvas style shows through unless you add a picture below.</p>
+
+      <div className="segmented chroma-mode" role="group" aria-label={`How to remove the background behind ${name}`}>
+        <button type="button" className={!isPerson ? 'active' : ''} aria-pressed={!isPerson} onClick={() => setMode('color')}>
+          Green screen
+        </button>
+        <button type="button" className={isPerson ? 'active' : ''} aria-pressed={isPerson} onClick={() => setMode('person')}>
+          Any background
+        </button>
+      </div>
+      <p className="docs-hint">
+        {isPerson
+          ? `Finds ${person.isLocal ? 'you' : name} in the picture and removes everything else, so no screen is needed. It works best in good, even light, and uses more of this computer than a green screen.`
+          : `Works best with an evenly lit green (or blue) screen and nothing green worn.`}{' '}
+        {person.isLocal ? 'Your' : 'Their'} wallpaper or canvas style shows through unless you add a picture below.
+      </p>
+      {modelNote && (
+        <p className={`docs-hint${cutout.state === 'error' ? ' error' : ''}`} role="status">
+          {modelNote}
+        </p>
+      )}
 
       <div className="chroma-previews">
         <figure>
           {person.stream ? (
-            <video ref={rawRef} className="chroma-preview chroma-preview--pick" muted playsInline autoPlay onClick={pickFromPreview} aria-label={`${name}'s camera. Click the screen colour to pick it.`} />
+            <video ref={rawRef} className={`chroma-preview${isPerson ? '' : ' chroma-preview--pick'}`} muted playsInline autoPlay onClick={isPerson ? undefined : pickFromPreview} aria-label={isPerson ? `${name}'s camera` : `${name}'s camera. Click the screen colour to pick it.`} />
           ) : (
             <div className="chroma-preview chroma-preview--empty">Camera is off</div>
           )}
-          <figcaption>Camera: click the screen colour to pick it</figcaption>
+          <figcaption>{isPerson ? 'Camera' : 'Camera: click the screen colour to pick it'}</figcaption>
         </figure>
         <figure>
-          <canvas ref={resultRef} className="chroma-preview" width={320} height={180} role="img" aria-label={`How ${name} will look with the screen removed`} />
+          <canvas ref={resultRef} className="chroma-preview" width={320} height={180} role="img" aria-label={`How ${name} will look with the background removed`} />
           <figcaption>How it will look{c.enabled ? '' : ' (tick the box above to use it)'}</figcaption>
         </figure>
       </div>
 
-      <div className="chroma-key-row">
-        <span className="chroma-key-label">Screen colour</span>
-        <button type="button" className={`icon-btn icon-btn--small${c.keyColor === KEY_PRESETS.green ? ' icon-btn--accent' : ''}`} onClick={() => onChange({ keyColor: KEY_PRESETS.green })}>
-          Green
-        </button>
-        <button type="button" className={`icon-btn icon-btn--small${c.keyColor === KEY_PRESETS.blue ? ' icon-btn--accent' : ''}`} onClick={() => onChange({ keyColor: KEY_PRESETS.blue })}>
-          Blue
-        </button>
-        <input className="chroma-color" type="color" aria-label={`Screen colour for ${name}`} value={c.keyColor} onChange={(e) => onChange({ keyColor: e.target.value })} />
-        <span className="docs-hint" role="status">
-          {pickNote ?? ''}
-        </span>
-      </div>
+      {!isPerson && (
+        <div className="chroma-key-row">
+          <span className="chroma-key-label">Screen colour</span>
+          <button type="button" className={`icon-btn icon-btn--small${c.keyColor === KEY_PRESETS.green ? ' icon-btn--accent' : ''}`} onClick={() => onChange({ keyColor: KEY_PRESETS.green })}>
+            Green
+          </button>
+          <button type="button" className={`icon-btn icon-btn--small${c.keyColor === KEY_PRESETS.blue ? ' icon-btn--accent' : ''}`} onClick={() => onChange({ keyColor: KEY_PRESETS.blue })}>
+            Blue
+          </button>
+          <input className="chroma-color" type="color" aria-label={`Screen colour for ${name}`} value={c.keyColor} onChange={(e) => onChange({ keyColor: e.target.value })} />
+          <span className="docs-hint" role="status">
+            {pickNote ?? ''}
+          </span>
+        </div>
+      )}
 
-      {slider(`chroma-sim-${person.id}`, 'Amount removed', 'similarity', 'Raise it until the screen is gone; lower it if the person starts to fade.')}
-
-      <details className="chroma-more">
-        <summary>Fine-tune the edges</summary>
-        {slider(`chroma-smooth-${person.id}`, 'Edge softness', 'smoothness', 'Higher blends the edge, which helps hair.')}
-        {slider(`chroma-spill-${person.id}`, 'Remove green glow', 'spill', 'Takes the green tint off the edges of the person.')}
-      </details>
+      {isPerson ? (
+        <>
+          {slider(`chroma-sim-${person.id}`, 'Cut-out strength', 'similarity', 'Raise it if bits of the background stay; lower it if the person starts to fade.')}
+          {slider(`chroma-smooth-${person.id}`, 'Edge softness', 'smoothness', 'Higher blends the edge of the person into the picture behind.')}
+        </>
+      ) : (
+        <>
+          {slider(`chroma-sim-${person.id}`, 'Amount removed', 'similarity', 'Raise it until the screen is gone; lower it if the person starts to fade.')}
+          <details className="chroma-more">
+            <summary>Fine-tune the edges</summary>
+            {slider(`chroma-smooth-${person.id}`, 'Edge softness', 'smoothness', 'Higher blends the border, which helps hair.')}
+            {slider(`chroma-spill-${person.id}`, 'Remove green glow', 'spill', 'Takes the green tint off the edges of the person.')}
+          </details>
+        </>
+      )}
 
       <div className="chroma-actions">
         <button type="button" className="icon-btn icon-btn--small" disabled={isDefault} onClick={() => onChange({ keyColor: DEFAULT_CHROMA.keyColor, similarity: DEFAULT_CHROMA.similarity, smoothness: DEFAULT_CHROMA.smoothness, spill: DEFAULT_CHROMA.spill })}>

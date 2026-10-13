@@ -8,7 +8,10 @@ import {
   hexToRgb,
   isHexColor,
   normalizeChroma,
+  personAlpha,
+  personParams,
   rgbToHex,
+  smoothMask,
   type ChromaSettings,
 } from '../../web-app/src/studio/chromaKey';
 
@@ -88,9 +91,68 @@ test.describe('chroma key maths', () => {
   });
 });
 
+test.describe('person cut-out maths', () => {
+  test('where the model is sure of the person the pixel is kept, where it is sure of the background it is removed', () => {
+    for (const similarity of [0, 25, 50, 75, 100]) {
+      const s = on({ mode: 'person', similarity });
+      expect(personAlpha(1, s), `person at ${similarity}`).toBeGreaterThan(0.99);
+      expect(personAlpha(0, s), `background at ${similarity}`).toBeLessThan(0.01);
+    }
+  });
+
+  test('alpha rises with the model\'s confidence, and a stronger cut-out never keeps more', () => {
+    let last = -1;
+    for (let m = 0; m <= 1.0001; m += 0.05) {
+      const a = personAlpha(Math.min(1, m), on({ mode: 'person' }));
+      expect(a).toBeGreaterThanOrEqual(last - 1e-9);
+      last = a;
+    }
+    for (const m of [0.3, 0.5, 0.7]) {
+      let prev = 2;
+      for (const similarity of [0, 25, 50, 75, 100]) {
+        const a = personAlpha(m, on({ mode: 'person', similarity }));
+        expect(a, `m=${m} similarity=${similarity}`).toBeLessThanOrEqual(prev + 1e-9);
+        prev = a;
+      }
+    }
+  });
+
+  test('softness widens the edge: an unsure pixel is partly see-through only with a soft edge', () => {
+    const hard = on({ mode: 'person', smoothness: 0 });
+    const soft = on({ mode: 'person', smoothness: 60 });
+    expect(personAlpha(0.45, hard)).toBeLessThan(0.1);
+    expect(personAlpha(0.45, soft)).toBeGreaterThan(0.1);
+    expect(personAlpha(0.45, soft)).toBeLessThan(0.9);
+    const p = personParams(hard);
+    expect(p.softness).toBeGreaterThan(0);
+    expect(p.threshold).toBeCloseTo(0.5, 5);
+  });
+
+  test('smoothing blends the new mask into the last one, so the edge does not flicker', () => {
+    const raw = new Float32Array([0, 0.5, 1, 1]);
+    const first = smoothMask(null, raw, null);
+    expect(Array.from(first)).toEqual([0, 128, 255, 255]);
+    const next = smoothMask(first, new Float32Array([1, 1, 0, 1]), null, 0.5);
+    expect(Array.from(next)).toEqual([128, 192, 128, 255]);
+    // k = 1 follows the new mask exactly; values are clamped to a byte.
+    expect(Array.from(smoothMask(first, new Float32Array([1, 0, 1, 7]), null, 1))).toEqual([255, 0, 255, 255]);
+  });
+
+  test('smoothing reuses the array it is given, and starts again if the mask changes shape', () => {
+    const a = smoothMask(null, new Float32Array([1, 1]), null);
+    const b = smoothMask(a, new Float32Array([0, 0]), a, 0.5);
+    expect(b).toBe(a); // same array, no allocation per frame
+    expect(Array.from(b)).toEqual([128, 128]);
+    const c = smoothMask(a, new Float32Array([1, 0, 1]), null, 0.5); // a different size: no blending with the old one
+    expect(c.length).toBe(3);
+    expect(Array.from(c)).toEqual([255, 0, 255]);
+  });
+});
+
 test.describe('chroma settings', () => {
   test('defaults are off, green, and inside the slider range', () => {
     expect(DEFAULT_CHROMA.enabled).toBe(false);
+    expect(DEFAULT_CHROMA.mode).toBe('color');
     expect(DEFAULT_CHROMA.keyColor).toBe(KEY_PRESETS.green);
     for (const k of ['similarity', 'smoothness', 'spill'] as const) {
       expect(DEFAULT_CHROMA[k]).toBeGreaterThanOrEqual(CHROMA_RANGES.min);
@@ -102,7 +164,9 @@ test.describe('chroma settings', () => {
     expect(normalizeChroma(undefined)).toEqual(DEFAULT_CHROMA);
     expect(normalizeChroma(null)).toEqual(DEFAULT_CHROMA);
     const n = normalizeChroma({ enabled: true, keyColor: 'nope', similarity: 400, smoothness: -5, spill: Number.NaN });
-    expect(n).toEqual({ enabled: true, keyColor: DEFAULT_CHROMA.keyColor, similarity: 100, smoothness: 0, spill: 0 });
+    expect(n).toEqual({ enabled: true, mode: 'color', keyColor: DEFAULT_CHROMA.keyColor, similarity: 100, smoothness: 0, spill: 0 });
+    expect(normalizeChroma({ mode: 'person' }).mode).toBe('person');
+    expect(normalizeChroma({ mode: 'sky' as never }).mode).toBe('color');
     expect(normalizeChroma({ keyColor: '#ABCDEF' }).keyColor).toBe('#abcdef');
     expect(normalizeChroma({ enabled: 'yes' as unknown as boolean }).enabled).toBe(false);
   });
