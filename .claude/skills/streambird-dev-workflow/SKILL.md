@@ -25,6 +25,9 @@ Follow in order. The user decides merge/deploy timing; everything before that is
 ## 4. Self-review the diff
 `git diff origin/main` and read it adversarially: unused imports (they break `tsc -b`), unvalidated DTO fields, missing guard/throttle on a public endpoint, secrets, broken selector contracts (`testing.md`), docs that are now wrong. Update `.claude/` (skill `streambird-docs-maintenance`).
 
+## 4b. User docs (CLAUDE.md rule 11)
+A new feature or any user-visible change also updates the user docs in `halleshubham/shackyapps-landing` (`docs-site/streambird/*.md`, screenshots under `docs-site/static/img/streambird/`; sidebar order is `sidebar_position` in each page's frontmatter). Write it for the audience (host guide, or guest page), verify labels against the source, retake screenshots from the local test app, `cd docs-site && npm run build`, and open a PR there. Link the two PRs to each other.
+
 ## 5. Commit and PR
 - Commit message: imperative subject, body explaining *why*. Add the attribution trailers the session's system reminder asks for.
 - Push the branch with `git push -u origin <branch>` (retry network failures with backoff 2/4/8/16 s). **Never force-push, amend pushed commits, or push to main.**
@@ -35,7 +38,7 @@ Follow in order. The user decides merge/deploy timing; everything before that is
 - Wait until both checks are green (`test` job + GitGuardian). Squash merge via the GitHub tool. If a merge conflicts, merge `origin/main` into the branch, resolve, re-run tests, push (no rebase).
 
 ## 7. Deploy (only when the user says "deploy")
-Skill `streambird-deploy`: wait for the image build of the merge commit → deploy via Coolify with the token the user provides → verify live → report.
+Skill `streambird-deploy`: wait for the image build of the merge commit → deploy via Coolify (the `COOLIFY_API_TOKEN` in the environment usually works; ask for a new one only on a 401) → verify live → report. If a docs PR exists, merge it too and run `deploy.sh landing`, then check the new pages return 200 on shackyapps.in/docs/streambird.
 
 ## 8. Report
 Say what shipped, what was verified (and how), what was not, and what the user should look at. Mention secrets they pasted that should be rotated, and merged branches they can delete (the sandbox cannot delete remote branches).
