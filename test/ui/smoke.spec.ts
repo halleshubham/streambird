@@ -425,6 +425,29 @@ test.describe('host studio', () => {
     await expect(page.getByText(/cannot be changed once the stream is created/)).toBeVisible();
   });
 
+  test('a new stream is Public by default, whether you go live now or schedule it, and that is what is sent', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Form Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    await page.goto('/streams/new');
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await expect(page.locator('#visibility option:checked')).toHaveText('Public');
+    // Still a choice, and the other two are one click away.
+    await expect(page.locator('#visibility option')).toHaveText(['Public', 'Unlisted', 'Private']);
+
+    // Scheduling uses the same field, so the default carries over.
+    await page.getByRole('tab', { name: /Schedule/ }).click();
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await page.getByRole('tab', { name: /Go live now/ }).click();
+
+    const sent = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
+    await page.getByLabel(/Form Twitch/).check();
+    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    expect((await sent).postDataJSON().visibility).toBe('public');
+  });
+
   test.describe('with a camera (the config provides a fake one)', () => {
     test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
       const { api } = await signIn(context);
