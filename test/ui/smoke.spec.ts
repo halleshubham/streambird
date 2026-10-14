@@ -55,7 +55,9 @@ test.describe('signed-in user', () => {
     const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.fill('#code', code);
     await page.getByRole('button', { name: /Log in/ }).click();
-    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible(); // new accounts wait for approval
+    await page.getByLabel('Mobile number').fill('9876543210'); // new accounts give a number first
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible(); // then wait for approval
 
     await page.request.post(`${CONTROL}/approve?email=${email}`);
     await page.getByRole('button', { name: 'Check again' }).click();
@@ -1224,6 +1226,8 @@ test.describe('UI polish', () => {
     const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.fill('#code', code);
     await page.getByRole('button', { name: /Log in/ }).click();
+    await page.getByLabel('Mobile number').fill('9876543210');
+    await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
     await expect(page.getByText(`as ${email}`)).toBeVisible();
@@ -1255,6 +1259,8 @@ test.describe('UI polish', () => {
     const { code } = await (await p.request.get(`${CONTROL}/code?email=${email}`)).json();
     await p.fill('#code', code);
     await p.getByRole('button', { name: /Log in/ }).click();
+    await p.getByLabel('Mobile number').fill('9876543210');
+    await p.getByRole('button', { name: 'Continue' }).click();
     await expect(p.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
     expect(await p.locator('.pending-bird').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     expect(await p.locator('.pending-ring--1').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
