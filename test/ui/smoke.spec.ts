@@ -907,6 +907,69 @@ test.describe('background removal (Pro)', () => {
   });
 });
 
+test.describe('logo position', () => {
+  const RED = solidPng(220, 30, 40);
+  const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+  const size = (page: Page) => page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+
+  test('the logo can sit top left (as before) or top right, and the choice sticks through a reload and a scene', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const { width } = await size(page);
+    const logoSize = 90; // the default; the picture is square, so it is 90 x 90 and 16 px in from the corner
+    const left = () => canvasPixel(page, 16 + logoSize / 2, 16 + logoSize / 2);
+    const right = () => canvasPixel(page, width - 16 - logoSize / 2, 16 + logoSize / 2);
+
+    await page.locator('#logoInput').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: RED });
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await right())).toBe(false);
+    const position = page.getByRole('group', { name: 'Logo position' });
+    await expect(position.getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+
+    await position.getByRole('button', { name: 'Top right' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+
+    // The logo stays clear of the edge by the same 16 px on the right, whatever its width and size.
+    await page.locator('#logoSizeInput').fill('200');
+    await expect.poll(async () => redish(await canvasPixel(page, width - 16 - 100, 16 + 100)), { timeout: 10_000 }).toBe(true);
+    expect(redish(await canvasPixel(page, width - 8, 16 + 100))).toBe(false); // the 16 px margin is empty
+    await page.locator('#logoSizeInput').fill('90');
+
+    // A scene remembers the position; applying it brings the logo back to that corner.
+    page.once('dialog', (d) => void d.accept('Right logo'));
+    await page.getByRole('button', { name: /Save current as scene/ }).click();
+    await position.getByRole('button', { name: 'Top left' }).click();
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    await page.getByRole('button', { name: 'Right logo' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+
+    // And after a reload, the logo comes back in the same corner.
+    await page.reload();
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+  });
+
+  test('a stream saved before this option existed still shows its logo top left', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.addInitScript(
+      ([key, logo]) => {
+        // What an older version of the studio stored: branding with no logoPosition.
+        localStorage.setItem(key, JSON.stringify({ branding: { logoSize: 90, newsText: '', nameFontSize: 14, newsFontSize: 18 }, logoDataUrl: logo }));
+      },
+      [`streambird:studio:${id}:v1`, `data:image/png;base64,${RED.toString('base64')}`],
+    );
+    await page.goto(`/streams/${id}/studio`);
+    await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
 /** A signup that is waiting for approval: the email-code login creates it, nobody approves it. */
 async function pendingSignup(context: BrowserContext): Promise<string> {
   const email = `pend-${crypto.randomBytes(5).toString('hex')}@test.dev`;

@@ -612,9 +612,19 @@ export function HostStudioPage() {
 
       <div className="panel">
         <label className="studio-section-label" htmlFor="logoInput">
-          <ImageIcon size={14} /> Logo (shown top-left)
+          <ImageIcon size={14} /> Logo
         </label>
         <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
+
+        <label id="logoPositionLabel">Logo position</label>
+        <div className="segmented" role="group" aria-labelledby="logoPositionLabel">
+          <button type="button" className={branding.logoPosition === 'left' ? 'active' : ''} aria-pressed={branding.logoPosition === 'left'} onClick={() => actions.setLogoPosition('left')}>
+            Top left
+          </button>
+          <button type="button" className={branding.logoPosition === 'right' ? 'active' : ''} aria-pressed={branding.logoPosition === 'right'} onClick={() => actions.setLogoPosition('right')}>
+            Top right
+          </button>
+        </div>
 
         <label htmlFor="logoSizeInput">Logo size: {branding.logoSize}px</label>
         <input

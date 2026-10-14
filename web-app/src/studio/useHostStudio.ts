@@ -122,8 +122,12 @@ export interface ParticipantView {
   stream: MediaStream | null;
 }
 
+export type LogoPosition = 'left' | 'right';
+
 export interface Branding {
   logoSize: number;
+  /** Which top corner the logo sits in. */
+  logoPosition: LogoPosition;
   newsText: string;
   nameFontSize: number;
   /** Ticker text size in canvas pixels (the bar grows with it). */
@@ -132,6 +136,7 @@ export interface Branding {
 
 const DEFAULT_BRANDING: Branding = {
   logoSize: BRANDING_RANGES.logoSize.default,
+  logoPosition: 'left',
   newsText: '',
   nameFontSize: BRANDING_RANGES.nameFontSize.default,
   newsFontSize: BRANDING_RANGES.newsFontSize.default,
@@ -592,7 +597,9 @@ export function useHostStudio(streamId: string | undefined) {
     }
     const scale = b.logoSize / b.logoImg.naturalHeight;
     ctx.globalAlpha = alpha;
-    ctx.drawImage(b.logoImg, 16, 16 + yOffset, b.logoImg.naturalWidth * scale, b.logoSize);
+    const logoW = b.logoImg.naturalWidth * scale;
+    const logoX = b.logoPosition === 'right' ? ctx.canvas.width - 16 - logoW : 16;
+    ctx.drawImage(b.logoImg, logoX, 16 + yOffset, logoW, b.logoSize);
     ctx.globalAlpha = 1;
   }
 
@@ -1693,6 +1700,12 @@ export function useHostStudio(streamId: string | undefined) {
     }
   }
 
+  function setLogoPosition(position: LogoPosition) {
+    if (position !== 'left' && position !== 'right') return;
+    brandingRef.current.logoPosition = position;
+    setBranding((b) => ({ ...b, logoPosition: position }));
+  }
+
   function setNewsText(text: string) {
     const trimmed = text.trim();
     if (!brandingRef.current.newsText && trimmed) {
@@ -1946,6 +1959,7 @@ export function useHostStudio(streamId: string | undefined) {
       themeId: themeIdRef.current,
       branding: {
         logoSize: brandingRef.current.logoSize,
+        logoPosition: brandingRef.current.logoPosition,
         newsText: brandingRef.current.newsText,
         nameFontSize: brandingRef.current.nameFontSize,
         newsFontSize: brandingRef.current.newsFontSize,
@@ -1967,6 +1981,7 @@ export function useHostStudio(streamId: string | undefined) {
     }
     const sceneBranding: Branding = { ...DEFAULT_BRANDING, ...scene.branding };
     brandingRef.current.logoSize = sceneBranding.logoSize;
+    brandingRef.current.logoPosition = sceneBranding.logoPosition === 'right' ? 'right' : 'left';
     brandingRef.current.newsText = sceneBranding.newsText;
     brandingRef.current.nameFontSize = sceneBranding.nameFontSize;
     brandingRef.current.newsFontSize = sceneBranding.newsFontSize;
@@ -2351,6 +2366,7 @@ export function useHostStudio(streamId: string | undefined) {
       dropParticipant,
       setLogoFile,
       setLogoSize,
+      setLogoPosition,
       setNewsText,
       setNameFontSize,
       setNewsFontSize,
