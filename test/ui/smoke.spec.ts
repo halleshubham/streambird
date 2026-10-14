@@ -917,6 +917,38 @@ async function pendingSignup(context: BrowserContext): Promise<string> {
   return email;
 }
 
+test.describe('mobile number at sign-up', () => {
+  test('a new sign-up is asked for a number first, then waits for approval; the admin sees it', async ({ page, context, browser }) => {
+    const email = await pendingSignup(context);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'One last thing' })).toBeVisible();
+
+    await page.getByLabel('Mobile number').fill('12345');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alert')).toContainText('valid mobile number');
+
+    await page.getByLabel('Mobile number').fill('98765 43210');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: /studio is being set up/i })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /studio is being set up/i })).toBeVisible(); // asked only once
+
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    expect(admin.email).toBeTruthy();
+    const adminPage = await adminCtx.newPage();
+    await adminPage.goto('/admin');
+    await expect(adminPage.getByRole('row', { name: new RegExp(email) })).toContainText('+919876543210');
+  });
+
+  test('an account that signed up before is never asked', async ({ page, context }) => {
+    await signIn(context);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'One last thing' })).toHaveCount(0);
+    await expect(page.locator('nav, header').first()).toBeVisible();
+  });
+});
+
 test.describe('admin console', () => {
   test('nav: labelled, shows how many signups wait, and the count drops when one is approved', async ({ page, context, browser }) => {
     const email = await pendingSignup(await browser.newContext());

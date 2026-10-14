@@ -245,6 +245,7 @@ export function AdminAccountDetailPage() {
             <tr>
               <th scope="col">Email</th>
               <th scope="col">Role</th>
+              <th scope="col" className="hide-sm">Mobile</th>
               <th scope="col">Status</th>
               <th scope="col" className="hide-sm">Joined</th>
               <th scope="col" />
@@ -255,6 +256,7 @@ export function AdminAccountDetailPage() {
               <tr key={u.id}>
                 <td><span className="admin-cell-main">{u.email}</span></td>
                 <td>{ROLE_LABEL[u.role as keyof typeof ROLE_LABEL] ?? u.role}</td>
+                <td className="nowrap hide-sm">{u.phone ?? '—'}</td>
                 <td>
                   {u.suspendedAt ? <Badge tone="danger">Suspended</Badge> : u.approvedAt ? <Badge tone="success">Approved</Badge> : <Badge tone="warning">Pending approval</Badge>}
                 </td>

@@ -30,7 +30,7 @@ async function main() {
       if (url.pathname === '/code') return send(200, { code: h.mailbox.codes.get(email) ?? null });
       if (url.pathname === '/approve' && req.method === 'POST') {
         const role = url.searchParams.get('superadmin') ? ", role = 'superadmin'" : '';
-        const r = await h.db.query(`UPDATE users SET approved_at = now()${role} WHERE email = $1`, [email]);
+        const r = await h.db.query(`UPDATE users SET approved_at = now(), phone_required = false${role} WHERE email = $1`, [email]);
         return send(200, { updated: r.rowCount });
       }
       if (url.pathname === '/make-superadmin' && req.method === 'POST') {

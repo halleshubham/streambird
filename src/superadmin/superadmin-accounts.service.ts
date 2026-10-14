@@ -36,6 +36,7 @@ export interface AccountDetail extends AccountSummary {
   users: Array<{
     id: string;
     email: string;
+    phone: string | null;
     role: string;
     approvedAt: Date | null;
     suspendedAt: Date | null;
@@ -159,6 +160,7 @@ export class SuperadminAccountsService {
       users: users.map((u) => ({
         id: u.id,
         email: u.email,
+        phone: u.phone,
         role: u.role,
         approvedAt: u.approvedAt,
         suspendedAt: u.suspendedAt,

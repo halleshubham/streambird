@@ -64,6 +64,7 @@ export function AdminDashboardPage() {
               <th scope="col">Email</th>
               <th scope="col" className="hide-sm">Type</th>
               <th scope="col" className="hide-sm">Company</th>
+              <th scope="col" className="hide-sm">Mobile</th>
               <th scope="col" className="hide-sm">Signed up</th>
               <th scope="col" />
             </tr>
@@ -74,11 +75,12 @@ export function AdminDashboardPage() {
                 <td>
                   <span className="admin-cell-main">{p.email}</span>
                   <span className="admin-cell-sub show-sm">
-                    {ROLE_LABEL[p.role]}{p.role === 'company_admin' && p.companyName ? ` · ${p.companyName}` : ''} · <When iso={p.createdAt} />
+                    {ROLE_LABEL[p.role]}{p.role === 'company_admin' && p.companyName ? ` · ${p.companyName}` : ''}{p.phone ? ` · ${p.phone}` : ''} · <When iso={p.createdAt} />
                   </span>
                 </td>
                 <td className="hide-sm"><Badge tone={p.role === 'company_admin' ? 'info' : 'neutral'}>{ROLE_LABEL[p.role]}</Badge></td>
                 <td className="hide-sm">{p.role === 'company_admin' ? (p.companyName ?? '—') : '—'}</td>
+                <td className="nowrap hide-sm">{p.phone ?? '—'}</td>
                 <td className="nowrap hide-sm"><When iso={p.createdAt} /></td>
                 <td className="actions">
                   <button type="button" className="btn-sm" disabled={busyId === p.id} onClick={() => void decide(p.id, () => superadminApi.approveUser(p.id), 'Failed to approve.')}>

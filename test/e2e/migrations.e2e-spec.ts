@@ -39,6 +39,8 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
         ('a-free', 'h1', 'free', 2), ('b-pro-default', 'h2', 'pro', 30), ('c-pro-custom', 'h3', 'pro', 55), ('d-ent', 'h4', 'enterprise', 100)`,
     );
 
+    await db.query(`INSERT INTO users (email, account_id) SELECT 'old-user@e2e.test', id FROM accounts WHERE name = 'a-free'`);
+
     await runMigrations(url, { quiet: true }); // 0012 onwards
     await runMigrations(url, { quiet: true }); // and again: nothing left to do, no error
 
@@ -90,6 +92,14 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await db.query(`UPDATE plans SET can_chroma_key = false WHERE key = 'pro'`);
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_chroma_key FROM plans WHERE key = 'pro'`)).rows[0].can_chroma_key).toBe(false);
+
+    // Mobile numbers (0020): people who signed up before are never flagged to be asked; the columns survive a re-run.
+    const before = await db.query(`SELECT phone, phone_required FROM users`);
+    expect(before.rows).toEqual([{ phone: null, phone_required: false }]);
+    await db.query(`UPDATE users SET phone = '+919876543210'`);
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0020%'`);
+    await runMigrations(url, { quiet: true });
+    expect((await db.query(`SELECT DISTINCT phone FROM users`)).rows.map((r) => r.phone)).toEqual(['+919876543210']);
 
     const settings = await db.query(`SELECT value FROM app_settings WHERE key = 'payments_enabled'`);
     expect(settings.rows[0].value).toBe(false); // payments ship OFF

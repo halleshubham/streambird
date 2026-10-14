@@ -14,6 +14,10 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   approvedAt: string | null;
+  /** Mobile number (E.164), or null when not given. */
+  phone?: string | null;
+  /** True until a person who must give a mobile number has done so. */
+  needsPhone?: boolean;
   createdAt?: string;
 }
 
@@ -34,6 +38,7 @@ export interface PendingApproval {
   email: string;
   role: UserRole;
   companyName: string | null;
+  phone: string | null;
   createdAt: string;
 }
 
@@ -267,6 +272,7 @@ export interface AccountListResponse {
 export interface AccountUser {
   id: string;
   email: string;
+  phone: string | null;
   role: UserRole;
   approvedAt: string | null;
   suspendedAt: string | null;
