@@ -48,7 +48,7 @@ export function PhoneStepPage() {
             required
             value={phone}
             onChange={(e) => setPhoneText(e.target.value)}
-            placeholder="98765 43210 or +1 415 555 2671"
+            placeholder="98765 43210"
           />
           <p className="field-hint">Indian numbers need no country code. For any other country, start with + and the code.</p>
           {error && <p className="error" role="alert">{error}</p>}
