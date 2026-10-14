@@ -427,6 +427,29 @@ test.describe('host studio', () => {
     await expect(page.getByText(/cannot be changed once the stream is created/)).toBeVisible();
   });
 
+  test('a new stream is Public by default, whether you go live now or schedule it, and that is what is sent', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Form Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    await page.goto('/streams/new');
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await expect(page.locator('#visibility option:checked')).toHaveText('Public');
+    // Still a choice, and the other two are one click away.
+    await expect(page.locator('#visibility option')).toHaveText(['Public', 'Unlisted', 'Private']);
+
+    // Scheduling uses the same field, so the default carries over.
+    await page.getByRole('tab', { name: /Schedule/ }).click();
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await page.getByRole('tab', { name: /Go live now/ }).click();
+
+    const sent = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
+    await page.getByLabel(/Form Twitch/).check();
+    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    expect((await sent).postDataJSON().visibility).toBe('public');
+  });
+
   test.describe('with a camera (the config provides a fake one)', () => {
     test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
       const { api } = await signIn(context);
@@ -906,6 +929,69 @@ test.describe('background removal (Pro)', () => {
       await expect(again.getByText('Amount removed: 65')).toBeVisible();
       await expect(again.getByText('red.png')).toBeVisible();
     });
+  });
+});
+
+test.describe('logo position', () => {
+  const RED = solidPng(220, 30, 40);
+  const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+  const size = (page: Page) => page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+
+  test('the logo can sit top left (as before) or top right, and the choice sticks through a reload and a scene', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const { width } = await size(page);
+    const logoSize = 90; // the default; the picture is square, so it is 90 x 90 and 16 px in from the corner
+    const left = () => canvasPixel(page, 16 + logoSize / 2, 16 + logoSize / 2);
+    const right = () => canvasPixel(page, width - 16 - logoSize / 2, 16 + logoSize / 2);
+
+    await page.locator('#logoInput').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: RED });
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await right())).toBe(false);
+    const position = page.getByRole('group', { name: 'Logo position' });
+    await expect(position.getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+
+    await position.getByRole('button', { name: 'Top right' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+
+    // The logo stays clear of the edge by the same 16 px on the right, whatever its width and size.
+    await page.locator('#logoSizeInput').fill('200');
+    await expect.poll(async () => redish(await canvasPixel(page, width - 16 - 100, 16 + 100)), { timeout: 10_000 }).toBe(true);
+    expect(redish(await canvasPixel(page, width - 8, 16 + 100))).toBe(false); // the 16 px margin is empty
+    await page.locator('#logoSizeInput').fill('90');
+
+    // A scene remembers the position; applying it brings the logo back to that corner.
+    page.once('dialog', (d) => void d.accept('Right logo'));
+    await page.getByRole('button', { name: /Save current as scene/ }).click();
+    await position.getByRole('button', { name: 'Top left' }).click();
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    await page.getByRole('button', { name: 'Right logo' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+
+    // And after a reload, the logo comes back in the same corner.
+    await page.reload();
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+  });
+
+  test('a stream saved before this option existed still shows its logo top left', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.addInitScript(
+      ([key, logo]) => {
+        // What an older version of the studio stored: branding with no logoPosition.
+        localStorage.setItem(key, JSON.stringify({ branding: { logoSize: 90, newsText: '', nameFontSize: 14, newsFontSize: 18 }, logoDataUrl: logo }));
+      },
+      [`streambird:studio:${id}:v1`, `data:image/png;base64,${RED.toString('base64')}`],
+    );
+    await page.goto(`/streams/${id}/studio`);
+    await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
