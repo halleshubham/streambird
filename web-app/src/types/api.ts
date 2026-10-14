@@ -328,6 +328,7 @@ export interface PublicPlan {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: number | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -346,6 +347,7 @@ export interface AdminPlan {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: string | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -367,6 +369,7 @@ export interface PlanPayload {
   maxResolution?: Resolution;
   canRecord?: boolean;
   canChromaKey?: boolean;
+  canLowerThird?: boolean;
   maxSessionHours?: number | null;
   validityHours?: number | null;
   priceInr?: number | null;
@@ -387,6 +390,7 @@ export interface EffectiveLimits {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: string } | null;
   /** When a purchased plan lapses (null = no expiry). */

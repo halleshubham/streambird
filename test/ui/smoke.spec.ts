@@ -561,6 +561,102 @@ const canvasPixel = (page: Page, x: number, y: number) =>
     [x, y],
   );
 
+test.describe('lower third banner (Pro)', () => {
+  const purple = (p: [number, number, number]) => Math.abs(p[0] - 124) < 25 && Math.abs(p[1] - 58) < 25 && Math.abs(p[2] - 237) < 25;
+  const setPlan = async (browser: import('@playwright/test').Browser, can: boolean) => {
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canLowerThird: can }, headers: apiHeaders });
+    await adminCtx.close();
+  };
+  const startStudio = async (page: Page, context: BrowserContext, orientation?: 'landscape' | 'portrait') => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api, orientation);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    const size = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+    return { id, ...size };
+  };
+
+  test('Free plan: the lower third is locked and points to billing', async ({ page, context }) => {
+    await startStudio(page, context);
+    await expect(page.getByLabel('Name or title, e.g. Priya Sharma')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Lower third (Pro plan)' }).click();
+    await expect(page).toHaveURL(/\/billing$/);
+  });
+
+  test.describe('on a plan that allows it', () => {
+    test.beforeEach(async ({ browser }) => setPlan(browser, true));
+    test.afterEach(async ({ browser }) => setPlan(browser, false));
+
+    test('slides in over the picture, hides again, and hides by itself after the chosen time', async ({ page, context }) => {
+      const { width, height } = await startStudio(page, context);
+      const u = height / 720;
+      const stripeAt = () => canvasPixel(page, Math.round(32 * u), Math.round(height - 69 * u));
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeDisabled(); // nothing to show yet
+      await page.locator('#lowerThirdTitle').fill('Priya Sharma');
+      await page.locator('#lowerThirdSubtitle').fill('Founder, ShackyApps');
+      expect(purple(await stripeAt())).toBe(false);
+
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(true);
+      // The text is drawn: some near-white pixels sit inside the box.
+      const white = await page.evaluate(([x0, y0, w, h]) => {
+        const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement;
+        const d = c.getContext('2d')!.getImageData(x0, y0, w, h).data;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) return true;
+        return false;
+      }, [Math.round(40 * u), Math.round(height - 100 * u), Math.round(200 * u), Math.round(60 * u)]);
+      expect(white).toBe(true);
+
+      await page.getByRole('button', { name: 'Hide lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(false);
+
+      await page.locator('#lowerThirdAutoHide').selectOption('5');
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(true);
+      await expect.poll(async () => purple(await stripeAt()), { timeout: 10_000 }).toBe(false);
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeVisible();
+      expect(width).toBeGreaterThan(0);
+    });
+
+    test('saved texts and the look stick through a reload, and a saved text shows with one click', async ({ page, context }) => {
+      const { id, height } = await startStudio(page, context);
+      const u = height / 720;
+      await page.locator('#lowerThirdTitle').fill('Alex Rao');
+      await page.locator('#lowerThirdSubtitle').fill('Guest');
+      await page.getByRole('button', { name: 'Glass' }).click();
+      await page.getByRole('button', { name: 'Save text' }).click();
+      await page.reload();
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await expect(page.locator('#lowerThirdTitle')).toHaveValue('Alex Rao');
+      await expect(page.getByRole('button', { name: 'Glass' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeEnabled();
+      await page.locator('#lowerThirdTitle').fill('');
+      await page.getByRole('button', { name: 'Alex Rao', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Hide lower third' })).toBeVisible();
+      await expect(page.locator('#lowerThirdTitle')).toHaveValue('Alex Rao');
+      // Glass has no stripe: the box is lighter than the dark bar styles and the whole banner is on screen.
+      await expect.poll(async () => { const p = await canvasPixel(page, Math.round(40 * u), Math.round(height - 69 * u)); return p[0] + p[1] + p[2]; }).toBeGreaterThan(0);
+      await page.getByRole('button', { name: 'Delete saved text Alex Rao' }).click();
+      await expect(page.getByRole('button', { name: 'Alex Rao', exact: true })).toHaveCount(0);
+      expect(id).toBeTruthy();
+    });
+
+    test('vertical (9:16): the banner sits above the bottom edge, inside the frame', async ({ page, context }) => {
+      const { width, height } = await startStudio(page, context, 'portrait');
+      const u = width / 720;
+      await page.locator('#lowerThirdTitle').fill('Priya Sharma');
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await canvasPixel(page, Math.round(32 * u), Math.round(height * 0.88 - 29 * u)))).toBe(true);
+      // Nothing in the bottom 8% (where the platforms put their own buttons).
+      expect(purple(await canvasPixel(page, Math.round(32 * u), Math.round(height * 0.95)))).toBe(false);
+    });
+  });
+});
+
 test.describe('background removal (Pro)', () => {
   test('Free plan: the Background button is locked and points to billing', async ({ page, context }) => {
     const { api } = await signIn(context);
@@ -1093,12 +1189,12 @@ test.describe('admin console', () => {
     await expect(page.getByText('No companies match "zzz-no-such-company".')).toBeVisible();
   });
 
-  test('plans: quality, recording and background removal read as words, not codes', async ({ page, context }) => {
+  test('plans: quality, recording and background removal and lower thirds read as words, not codes', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/plans');
     const pro = page.getByRole('row', { name: /^Pro / });
     await expect(pro).toContainText('2K 1440p');
-    await expect(pro.getByText('Yes')).toHaveCount(2); // recording and background removal
+    await expect(pro.getByText('Yes')).toHaveCount(3); // recording, background removal and lower thirds
     const free = page.getByRole('row', { name: /^Free / });
     await expect(free).toContainText('Full HD 1080p');
     await expect(free.getByText('Yes')).toHaveCount(0);

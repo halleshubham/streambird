@@ -42,6 +42,9 @@ describe('computeLimits', () => {
 
   it('green screen follows the plan; a day pass that allows it adds it, one that does not never removes it', () => {
     const live = { ...none, dayPassPlanKey: 'day_pass', dayPassExpiresAt: new Date(NOW.getTime() + 3_600_000) };
+    expect(computeLimits(plan(), none, null, NOW).canLowerThird).toBeFalsy();
+    expect(computeLimits(plan({ canLowerThird: true }), none, null, NOW).canLowerThird).toBe(true);
+    expect(computeLimits(plan(), live, plan({ key: 'day_pass', kind: 'day_pass', canLowerThird: true }), NOW).canLowerThird).toBe(true);
     expect(computeLimits(plan(), none, null, NOW).canChromaKey).toBeFalsy();
     expect(computeLimits(plan({ canChromaKey: true }), none, null, NOW).canChromaKey).toBe(true);
     expect(computeLimits(plan(), live, plan({ key: 'day_pass', kind: 'day_pass', canChromaKey: true }), NOW).canChromaKey).toBe(true);

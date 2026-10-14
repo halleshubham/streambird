@@ -93,6 +93,13 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_chroma_key FROM plans WHERE key = 'pro'`)).rows[0].can_chroma_key).toBe(false);
 
+    // Lower thirds (0021): Pro and Business get them, the rest do not; an admin's later choice survives a re-run.
+    const lt = await db.query(`SELECT key, can_lower_third FROM plans ORDER BY sort_order`);
+    expect(lt.rows.map((r) => [r.key, r.can_lower_third])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    await db.query(`UPDATE plans SET can_lower_third = false WHERE key = 'pro'`);
+    await runMigrations(url, { quiet: true });
+    expect((await db.query(`SELECT can_lower_third FROM plans WHERE key = 'pro'`)).rows[0].can_lower_third).toBe(false);
+
     // Mobile numbers (0020): people who signed up before are never flagged to be asked; the columns survive a re-run.
     const before = await db.query(`SELECT phone, phone_required FROM users`);
     expect(before.rows).toEqual([{ phone: null, phone_required: false }]);

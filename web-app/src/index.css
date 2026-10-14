@@ -3761,3 +3761,9 @@ video.chroma-preview {
 .chroma-mode {
   margin: 6px 0 4px;
 }
+
+.lower-third-chip {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}

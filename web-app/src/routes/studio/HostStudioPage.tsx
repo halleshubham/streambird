@@ -37,6 +37,7 @@ import {
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
 import { ChromaPanel } from '../../components/ChromaPanel';
+import { LowerThirdPanel } from '../../components/LowerThirdPanel';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
@@ -79,6 +80,10 @@ export function HostStudioPage() {
     maxResolution,
     canRecord,
     canChromaKey,
+    canLowerThird,
+    lowerThird,
+    lowerThirdLive,
+    lowerThirdPresets,
     cutoutState,
     cutoutError,
     recordingSince,
@@ -665,6 +670,8 @@ export function HostStudioPage() {
           onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
         />
       </div>
+
+      <LowerThirdPanel allowed={canLowerThird} settings={lowerThird} live={lowerThirdLive} presets={lowerThirdPresets} actions={actions} />
 
       <div className="panel">
         <label className="studio-section-label">
