@@ -32,4 +32,5 @@ Usage: `recordStreamUsage(hours)` at end; no cron — `rolloverIfNeeded` resets 
 - **Quality tiers** (`maxResolution`): `sd`/`hd`/`fhd`/`qhd` (2K, 2560x1440, 10 Mbps cap). Seeded on Pro + Business by migration 0017 (Free/Starter stay Full HD, day pass HD). The relay copies video, so nothing server-side changes; the order list lives in `plan.entity.ts`, `useHostStudio.ts` and `HostStudioPage.tsx`.
 
 - **`canRecord`** (plan column `can_record`, default false; migration 0018 turns it on for Pro + Business): local recording in the studio. A day pass that allows it adds it, never removes it. Editable per plan in Admin → Plans.
+- **`canLowerThird`** (plan column `can_lower_third`, default false; migration 0021 turns it on for Pro + Business): the animated lower-third banner in the studio. Same rules as `canRecord`/`canChromaKey` (UI-level gate, day pass adds, editable in Admin → Plans).
 - **`canChromaKey`** (plan column `can_chroma_key`, default false; migration 0019 turns it on for Pro + Business): removing the background in the studio (green screen and the any-background cut-out). Same rules as `canRecord` (day pass adds, never removes; editable in Admin → Plans).

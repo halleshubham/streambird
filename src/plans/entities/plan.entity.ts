@@ -39,6 +39,10 @@ export class Plan {
   @Column({ default: false })
   canChromaKey!: boolean;
 
+  /** May show animated lower-third banners in the studio (drawn client-side). */
+  @Column({ default: false })
+  canLowerThird!: boolean;
+
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   maxSessionHours!: string | null;
 

@@ -64,6 +64,7 @@ export class SuperadminController {
       email: u.email,
       role: u.role,
       companyName: u.account?.name ?? null,
+      phone: u.phone,
       createdAt: u.createdAt,
     }));
   }

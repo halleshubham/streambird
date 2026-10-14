@@ -55,7 +55,9 @@ test.describe('signed-in user', () => {
     const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.fill('#code', code);
     await page.getByRole('button', { name: /Log in/ }).click();
-    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible(); // new accounts wait for approval
+    await page.getByLabel('Mobile number').fill('9876543210'); // new accounts give a number first
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible(); // then wait for approval
 
     await page.request.post(`${CONTROL}/approve?email=${email}`);
     await page.getByRole('button', { name: 'Check again' }).click();
@@ -425,6 +427,29 @@ test.describe('host studio', () => {
     await expect(page.getByText(/cannot be changed once the stream is created/)).toBeVisible();
   });
 
+  test('a new stream is Public by default, whether you go live now or schedule it, and that is what is sent', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Form Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    await page.goto('/streams/new');
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await expect(page.locator('#visibility option:checked')).toHaveText('Public');
+    // Still a choice, and the other two are one click away.
+    await expect(page.locator('#visibility option')).toHaveText(['Public', 'Unlisted', 'Private']);
+
+    // Scheduling uses the same field, so the default carries over.
+    await page.getByRole('tab', { name: /Schedule/ }).click();
+    await expect(page.locator('#visibility')).toHaveValue('public');
+    await page.getByRole('tab', { name: /Go live now/ }).click();
+
+    const sent = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
+    await page.getByLabel(/Form Twitch/).check();
+    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    expect((await sent).postDataJSON().visibility).toBe('public');
+  });
+
   test.describe('with a camera (the config provides a fake one)', () => {
     test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
       const { api } = await signIn(context);
@@ -535,6 +560,102 @@ const canvasPixel = (page: Page, x: number, y: number) =>
     },
     [x, y],
   );
+
+test.describe('lower third banner (Pro)', () => {
+  const purple = (p: [number, number, number]) => Math.abs(p[0] - 124) < 25 && Math.abs(p[1] - 58) < 25 && Math.abs(p[2] - 237) < 25;
+  const setPlan = async (browser: import('@playwright/test').Browser, can: boolean) => {
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { canLowerThird: can }, headers: apiHeaders });
+    await adminCtx.close();
+  };
+  const startStudio = async (page: Page, context: BrowserContext, orientation?: 'landscape' | 'portrait') => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api, orientation);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    const size = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+    return { id, ...size };
+  };
+
+  test('Free plan: the lower third is locked and points to billing', async ({ page, context }) => {
+    await startStudio(page, context);
+    await expect(page.getByLabel('Name or title, e.g. Priya Sharma')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Lower third (Pro plan)' }).click();
+    await expect(page).toHaveURL(/\/billing$/);
+  });
+
+  test.describe('on a plan that allows it', () => {
+    test.beforeEach(async ({ browser }) => setPlan(browser, true));
+    test.afterEach(async ({ browser }) => setPlan(browser, false));
+
+    test('slides in over the picture, hides again, and hides by itself after the chosen time', async ({ page, context }) => {
+      const { width, height } = await startStudio(page, context);
+      const u = height / 720;
+      const stripeAt = () => canvasPixel(page, Math.round(32 * u), Math.round(height - 69 * u));
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeDisabled(); // nothing to show yet
+      await page.locator('#lowerThirdTitle').fill('Priya Sharma');
+      await page.locator('#lowerThirdSubtitle').fill('Founder, ShackyApps');
+      expect(purple(await stripeAt())).toBe(false);
+
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(true);
+      // The text is drawn: some near-white pixels sit inside the box.
+      const white = await page.evaluate(([x0, y0, w, h]) => {
+        const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement;
+        const d = c.getContext('2d')!.getImageData(x0, y0, w, h).data;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) return true;
+        return false;
+      }, [Math.round(40 * u), Math.round(height - 100 * u), Math.round(200 * u), Math.round(60 * u)]);
+      expect(white).toBe(true);
+
+      await page.getByRole('button', { name: 'Hide lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(false);
+
+      await page.locator('#lowerThirdAutoHide').selectOption('5');
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await stripeAt())).toBe(true);
+      await expect.poll(async () => purple(await stripeAt()), { timeout: 10_000 }).toBe(false);
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeVisible();
+      expect(width).toBeGreaterThan(0);
+    });
+
+    test('saved texts and the look stick through a reload, and a saved text shows with one click', async ({ page, context }) => {
+      const { id, height } = await startStudio(page, context);
+      const u = height / 720;
+      await page.locator('#lowerThirdTitle').fill('Alex Rao');
+      await page.locator('#lowerThirdSubtitle').fill('Guest');
+      await page.getByRole('button', { name: 'Glass' }).click();
+      await page.getByRole('button', { name: 'Save text' }).click();
+      await page.reload();
+      await page.getByRole('button', { name: /Start my camera/ }).click();
+      await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+      await expect(page.locator('#lowerThirdTitle')).toHaveValue('Alex Rao');
+      await expect(page.getByRole('button', { name: 'Glass' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByRole('button', { name: 'Show lower third' })).toBeEnabled();
+      await page.locator('#lowerThirdTitle').fill('');
+      await page.getByRole('button', { name: 'Alex Rao', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Hide lower third' })).toBeVisible();
+      await expect(page.locator('#lowerThirdTitle')).toHaveValue('Alex Rao');
+      // Glass has no stripe: the box is lighter than the dark bar styles and the whole banner is on screen.
+      await expect.poll(async () => { const p = await canvasPixel(page, Math.round(40 * u), Math.round(height - 69 * u)); return p[0] + p[1] + p[2]; }).toBeGreaterThan(0);
+      await page.getByRole('button', { name: 'Delete saved text Alex Rao' }).click();
+      await expect(page.getByRole('button', { name: 'Alex Rao', exact: true })).toHaveCount(0);
+      expect(id).toBeTruthy();
+    });
+
+    test('vertical (9:16): the banner sits above the bottom edge, inside the frame', async ({ page, context }) => {
+      const { width, height } = await startStudio(page, context, 'portrait');
+      const u = width / 720;
+      await page.locator('#lowerThirdTitle').fill('Priya Sharma');
+      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await expect.poll(async () => purple(await canvasPixel(page, Math.round(32 * u), Math.round(height * 0.88 - 29 * u)))).toBe(true);
+      // Nothing in the bottom 8% (where the platforms put their own buttons).
+      expect(purple(await canvasPixel(page, Math.round(32 * u), Math.round(height * 0.95)))).toBe(false);
+    });
+  });
+});
 
 test.describe('background removal (Pro)', () => {
   test('Free plan: the Background button is locked and points to billing', async ({ page, context }) => {
@@ -907,6 +1028,69 @@ test.describe('background removal (Pro)', () => {
   });
 });
 
+test.describe('logo position', () => {
+  const RED = solidPng(220, 30, 40);
+  const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+  const size = (page: Page) => page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+
+  test('the logo can sit top left (as before) or top right, and the choice sticks through a reload and a scene', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    const { width } = await size(page);
+    const logoSize = 90; // the default; the picture is square, so it is 90 x 90 and 16 px in from the corner
+    const left = () => canvasPixel(page, 16 + logoSize / 2, 16 + logoSize / 2);
+    const right = () => canvasPixel(page, width - 16 - logoSize / 2, 16 + logoSize / 2);
+
+    await page.locator('#logoInput').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: RED });
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await right())).toBe(false);
+    const position = page.getByRole('group', { name: 'Logo position' });
+    await expect(position.getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+
+    await position.getByRole('button', { name: 'Top right' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+
+    // The logo stays clear of the edge by the same 16 px on the right, whatever its width and size.
+    await page.locator('#logoSizeInput').fill('200');
+    await expect.poll(async () => redish(await canvasPixel(page, width - 16 - 100, 16 + 100)), { timeout: 10_000 }).toBe(true);
+    expect(redish(await canvasPixel(page, width - 8, 16 + 100))).toBe(false); // the 16 px margin is empty
+    await page.locator('#logoSizeInput').fill('90');
+
+    // A scene remembers the position; applying it brings the logo back to that corner.
+    page.once('dialog', (d) => void d.accept('Right logo'));
+    await page.getByRole('button', { name: /Save current as scene/ }).click();
+    await position.getByRole('button', { name: 'Top left' }).click();
+    await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    await page.getByRole('button', { name: 'Right logo' }).click();
+    await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+
+    // And after a reload, the logo comes back in the same corner.
+    await page.reload();
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+    expect(redish(await left())).toBe(false);
+  });
+
+  test('a stream saved before this option existed still shows its logo top left', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.addInitScript(
+      ([key, logo]) => {
+        // What an older version of the studio stored: branding with no logoPosition.
+        localStorage.setItem(key, JSON.stringify({ branding: { logoSize: 90, newsText: '', nameFontSize: 14, newsFontSize: 18 }, logoDataUrl: logo }));
+      },
+      [`streambird:studio:${id}:v1`, `data:image/png;base64,${RED.toString('base64')}`],
+    );
+    await page.goto(`/streams/${id}/studio`);
+    await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
+    await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
 /** A signup that is waiting for approval: the email-code login creates it, nobody approves it. */
 async function pendingSignup(context: BrowserContext): Promise<string> {
   const email = `pend-${crypto.randomBytes(5).toString('hex')}@test.dev`;
@@ -916,6 +1100,38 @@ async function pendingSignup(context: BrowserContext): Promise<string> {
   await context.request.post(`${APP}/api/auth/verify-code`, { data: { email, code }, headers });
   return email;
 }
+
+test.describe('mobile number at sign-up', () => {
+  test('a new sign-up is asked for a number first, then waits for approval; the admin sees it', async ({ page, context, browser }) => {
+    const email = await pendingSignup(context);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'One last thing' })).toBeVisible();
+
+    await page.getByLabel('Mobile number').fill('12345');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('alert')).toContainText('valid mobile number');
+
+    await page.getByLabel('Mobile number').fill('98765 43210');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.getByRole('heading', { name: /studio is being set up/i })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /studio is being set up/i })).toBeVisible(); // asked only once
+
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    expect(admin.email).toBeTruthy();
+    const adminPage = await adminCtx.newPage();
+    await adminPage.goto('/admin');
+    await expect(adminPage.getByRole('row', { name: new RegExp(email) })).toContainText('+919876543210');
+  });
+
+  test('an account that signed up before is never asked', async ({ page, context }) => {
+    await signIn(context);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('heading', { name: 'One last thing' })).toHaveCount(0);
+    await expect(page.locator('nav, header').first()).toBeVisible();
+  });
+});
 
 test.describe('admin console', () => {
   test('nav: labelled, shows how many signups wait, and the count drops when one is approved', async ({ page, context, browser }) => {
@@ -973,12 +1189,12 @@ test.describe('admin console', () => {
     await expect(page.getByText('No companies match "zzz-no-such-company".')).toBeVisible();
   });
 
-  test('plans: quality, recording and background removal read as words, not codes', async ({ page, context }) => {
+  test('plans: quality, recording and background removal and lower thirds read as words, not codes', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/plans');
     const pro = page.getByRole('row', { name: /^Pro / });
     await expect(pro).toContainText('2K 1440p');
-    await expect(pro.getByText('Yes')).toHaveCount(2); // recording and background removal
+    await expect(pro.getByText('Yes')).toHaveCount(3); // recording, background removal and lower thirds
     const free = page.getByRole('row', { name: /^Free / });
     await expect(free).toContainText('Full HD 1080p');
     await expect(free.getByText('Yes')).toHaveCount(0);
@@ -1192,6 +1408,8 @@ test.describe('UI polish', () => {
     const { code } = await (await page.request.get(`${CONTROL}/code?email=${email}`)).json();
     await page.fill('#code', code);
     await page.getByRole('button', { name: /Log in/ }).click();
+    await page.getByLabel('Mobile number').fill('9876543210');
+    await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
     await expect(page.getByText(`as ${email}`)).toBeVisible();
@@ -1223,6 +1441,8 @@ test.describe('UI polish', () => {
     const { code } = await (await p.request.get(`${CONTROL}/code?email=${email}`)).json();
     await p.fill('#code', code);
     await p.getByRole('button', { name: /Log in/ }).click();
+    await p.getByLabel('Mobile number').fill('9876543210');
+    await p.getByRole('button', { name: 'Continue' }).click();
     await expect(p.getByRole('heading', { name: 'Your studio is being set up!' })).toBeVisible();
     expect(await p.locator('.pending-bird').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     expect(await p.locator('.pending-ring--1').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');

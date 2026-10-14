@@ -68,6 +68,7 @@ export class UsersService {
       accountId: account.id,
       role: Role.USER,
       approvedAt: null,
+      phoneRequired: !isReviewAccountEmail(email),
     });
     await this.users.save(user);
 
@@ -116,6 +117,7 @@ export class UsersService {
       accountId: account.id,
       role: Role.COMPANY_ADMIN,
       approvedAt: null,
+      phoneRequired: !isReviewAccountEmail(email),
     });
     await this.users.save(user);
 
@@ -156,6 +158,13 @@ export class UsersService {
     return { user, company };
   }
 
+  /** Saves the caller's own mobile number (already normalised to E.164 by the caller). */
+  async setPhone(userId: string, phone: string): Promise<User> {
+    const user = await this.findByIdOrThrow(userId);
+    user.phone = phone;
+    return this.users.save(user);
+  }
+
   /** All Users belonging to one Account ("team members"), oldest first. */
   async listForAccount(accountId: string): Promise<User[]> {
     return this.users.find({ where: { accountId }, order: { createdAt: 'ASC' } });
@@ -189,6 +198,7 @@ export class UsersService {
       accountId,
       role: Role.USER,
       approvedAt: new Date(),
+      phoneRequired: true,
     });
     return this.users.save(user);
   }

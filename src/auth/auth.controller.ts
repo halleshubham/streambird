@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
+  Patch,
   Post,
   Query,
   Req,
@@ -23,6 +25,10 @@ import { SuperadminVerifyDto } from './dto/superadmin-verify.dto';
 import { SessionGuard, SessionRequest } from '../common/guards/session.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { UsersService } from '../users/users.service';
+import { Role } from '../common/enums/role.enum';
+import { normalizePhone } from '../common/phone.util';
+import { SetPhoneDto } from './dto/set-phone.dto';
 
 const SESSION_COOKIE_NAME = 'sb_session';
 const OAUTH_STATE_COOKIE_NAME = 'sb_oauth_state';
@@ -31,7 +37,15 @@ const FACEBOOK_LOGIN_BASE_PATH = '/api/auth/facebook';
 const FACEBOOK_LOGIN_STATE_COOKIE_NAME = 'sb_fb_login_state';
 
 interface AuthResponse {
-  user: { id: string; email: string; role: string; approvedAt: Date | null };
+  user: {
+    id: string;
+    email: string;
+    role: string;
+    approvedAt: Date | null;
+    phone: string | null;
+    /** True until a person who must give a mobile number has done so (see PhoneStepPage). */
+    needsPhone: boolean;
+  };
   accountId: string;
 }
 
@@ -42,6 +56,7 @@ export class AuthController {
     private readonly googleOAuth: GoogleOAuthService,
     private readonly facebookLogin: FacebookLoginService,
     private readonly config: ConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
   private cookieOptions(expiresAt?: Date) {
@@ -60,7 +75,14 @@ export class AuthController {
 
   private toAuthResponse(user: User, accountId: string): AuthResponse {
     return {
-      user: { id: user.id, email: user.email, role: user.role, approvedAt: user.approvedAt },
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        approvedAt: user.approvedAt,
+        phone: user.phone,
+        needsPhone: user.phoneRequired && !user.phone && user.role !== Role.SUPERADMIN,
+      },
       accountId,
     };
   }
@@ -294,5 +316,20 @@ export class AuthController {
   @UseGuards(SessionGuard)
   async me(@CurrentUser() user: User, @Req() req: SessionRequest): Promise<AuthResponse> {
     return this.toAuthResponse(user, req.account!.id);
+  }
+
+  /**
+   * The signed-in person adds or changes their own mobile number. Behind SessionGuard like /me, because
+   * the "add your number" step comes before approval. Stored as E.164.
+   */
+  @Patch('me/phone')
+  @UseGuards(SessionGuard)
+  async setPhone(@CurrentUser() user: User, @Req() req: SessionRequest, @Body() dto: SetPhoneDto): Promise<AuthResponse> {
+    const phone = normalizePhone(dto.phone);
+    if (!phone) {
+      throw new BadRequestException('Enter a valid mobile number, with the country code if it is not an Indian number.');
+    }
+    const updated = await this.usersService.setPhone(user.id, phone);
+    return this.toAuthResponse(updated, req.account!.id);
   }
 }

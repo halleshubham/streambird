@@ -14,6 +14,10 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   approvedAt: string | null;
+  /** Mobile number (E.164), or null when not given. */
+  phone?: string | null;
+  /** True until a person who must give a mobile number has done so. */
+  needsPhone?: boolean;
   createdAt?: string;
 }
 
@@ -34,6 +38,7 @@ export interface PendingApproval {
   email: string;
   role: UserRole;
   companyName: string | null;
+  phone: string | null;
   createdAt: string;
 }
 
@@ -267,6 +272,7 @@ export interface AccountListResponse {
 export interface AccountUser {
   id: string;
   email: string;
+  phone: string | null;
   role: UserRole;
   approvedAt: string | null;
   suspendedAt: string | null;
@@ -322,6 +328,7 @@ export interface PublicPlan {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: number | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -340,6 +347,7 @@ export interface AdminPlan {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: string | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -361,6 +369,7 @@ export interface PlanPayload {
   maxResolution?: Resolution;
   canRecord?: boolean;
   canChromaKey?: boolean;
+  canLowerThird?: boolean;
   maxSessionHours?: number | null;
   validityHours?: number | null;
   priceInr?: number | null;
@@ -381,6 +390,7 @@ export interface EffectiveLimits {
   maxResolution: Resolution;
   canRecord: boolean;
   canChromaKey: boolean;
+  canLowerThird: boolean;
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: string } | null;
   /** When a purchased plan lapses (null = no expiry). */

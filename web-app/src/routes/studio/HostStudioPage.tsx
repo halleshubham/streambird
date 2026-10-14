@@ -37,6 +37,7 @@ import {
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
 import { ChromaPanel } from '../../components/ChromaPanel';
+import { LowerThirdPanel } from '../../components/LowerThirdPanel';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge } from '../../components/PlatformBadge';
@@ -79,6 +80,10 @@ export function HostStudioPage() {
     maxResolution,
     canRecord,
     canChromaKey,
+    canLowerThird,
+    lowerThird,
+    lowerThirdLive,
+    lowerThirdPresets,
     cutoutState,
     cutoutError,
     recordingSince,
@@ -612,9 +617,19 @@ export function HostStudioPage() {
 
       <div className="panel">
         <label className="studio-section-label" htmlFor="logoInput">
-          <ImageIcon size={14} /> Logo (shown top-left)
+          <ImageIcon size={14} /> Logo
         </label>
         <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
+
+        <label id="logoPositionLabel">Logo position</label>
+        <div className="segmented" role="group" aria-labelledby="logoPositionLabel">
+          <button type="button" className={branding.logoPosition === 'left' ? 'active' : ''} aria-pressed={branding.logoPosition === 'left'} onClick={() => actions.setLogoPosition('left')}>
+            Top left
+          </button>
+          <button type="button" className={branding.logoPosition === 'right' ? 'active' : ''} aria-pressed={branding.logoPosition === 'right'} onClick={() => actions.setLogoPosition('right')}>
+            Top right
+          </button>
+        </div>
 
         <label htmlFor="logoSizeInput">Logo size: {branding.logoSize}px</label>
         <input
@@ -655,6 +670,8 @@ export function HostStudioPage() {
           onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
         />
       </div>
+
+      <LowerThirdPanel allowed={canLowerThird} settings={lowerThird} live={lowerThirdLive} presets={lowerThirdPresets} actions={actions} />
 
       <div className="panel">
         <label className="studio-section-label">

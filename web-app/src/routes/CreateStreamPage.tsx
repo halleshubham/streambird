@@ -19,7 +19,7 @@ export function CreateStreamPage() {
   const [connections, setConnections] = useState<PlatformConnection[] | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'private'>('unlisted');
+  const [visibility, setVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<'now' | 'schedule'>('now');

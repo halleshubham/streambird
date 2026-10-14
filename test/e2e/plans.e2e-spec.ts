@@ -91,10 +91,12 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
 
   it('green screen is a plan feature: Pro and Business have it, Free does not, and an admin can switch it', async () => {
     const pub = (await new Client(h.baseUrl).get('/plans/public')).body.filter((p: any) => !p.key.startsWith('e2e_'));
+    expect(pub.map((p: any) => [p.key, p.canLowerThird])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
     expect(pub.map((p: any) => [p.key, p.canChromaKey])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
 
     const { client } = await h.signIn();
     expect((await client.get('/plans/me')).body.canChromaKey).toBe(false);
+    expect((await client.get('/plans/me')).body.canLowerThird).toBe(false);
     try {
       expect((await admin.patch('/superadmin/plans/free', { canChromaKey: true })).body.canChromaKey).toBe(true);
       expect((await client.get('/plans/me')).body.canChromaKey).toBe(true);

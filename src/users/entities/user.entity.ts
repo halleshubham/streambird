@@ -65,6 +65,15 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   suspendedAt!: Date | null;
 
+  // Mobile number in E.164, collected from people who register after migration 0020.
+  @Column({ type: 'text', nullable: true })
+  phone!: string | null;
+
+  // True for accounts created after 0020 (and not review/superadmin accounts): the app asks for a
+  // number before anything else until `phone` is set. Older accounts are never asked.
+  @Column({ default: false })
+  phoneRequired!: boolean;
+
   @CreateDateColumn()
   createdAt!: Date;
 

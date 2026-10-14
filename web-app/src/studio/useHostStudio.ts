@@ -1,4 +1,12 @@
 import { ChromaKeyer, DEFAULT_CHROMA, normalizeChroma, smoothMask, type ChromaSettings, type MaskBytes } from './chromaKey';
+import {
+  DEFAULT_LOWER_THIRD,
+  drawLowerThird,
+  normalizeLowerThird,
+  normalizePresets,
+  stepLowerThirdProgress,
+} from './lowerThird';
+import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -122,8 +130,12 @@ export interface ParticipantView {
   stream: MediaStream | null;
 }
 
+export type LogoPosition = 'left' | 'right';
+
 export interface Branding {
   logoSize: number;
+  /** Which top corner the logo sits in. */
+  logoPosition: LogoPosition;
   newsText: string;
   nameFontSize: number;
   /** Ticker text size in canvas pixels (the bar grows with it). */
@@ -132,6 +144,7 @@ export interface Branding {
 
 const DEFAULT_BRANDING: Branding = {
   logoSize: BRANDING_RANGES.logoSize.default,
+  logoPosition: 'left',
   newsText: '',
   nameFontSize: BRANDING_RANGES.nameFontSize.default,
   newsFontSize: BRANDING_RANGES.newsFontSize.default,
@@ -210,6 +223,8 @@ interface PersistedStudioState {
   branding: Branding;
   themeId: string;
   scenes: Scene[];
+  lowerThird: LowerThirdSettings;
+  lowerThirdPresets: LowerThirdPreset[];
   logoDataUrl: string | null;
   wentLive: boolean;
   /** The host's own green-screen settings (guests' are per visit and not kept). */
@@ -328,6 +343,18 @@ export function useHostStudio(streamId: string | undefined) {
   /** Plan allows green screen (Pro and up). Client-side only: the keying happens in this browser. */
   const [canChromaKey, setCanChromaKey] = useState(false);
   const canChromaKeyRef = useRef(false);
+  /** Plan allows animated lower-third banners (Pro and up). Drawn client-side, like green screen. */
+  const [canLowerThird, setCanLowerThird] = useState(false);
+  const canLowerThirdRef = useRef(false);
+  /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
+  const [lowerThird, setLowerThirdState] = useState<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
+  const lowerThirdRef = useRef<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
+  const [lowerThirdLive, setLowerThirdLive] = useState(false);
+  const lowerThirdLiveRef = useRef(false);
+  const lowerThirdProgressRef = useRef(0);
+  const lowerThirdFrameRef = useRef<number | null>(null);
+  const lowerThirdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [lowerThirdPresets, setLowerThirdPresets] = useState<LowerThirdPreset[]>([]);
   /** The person cut-out model: loaded the first time someone turns "Any background" on. */
   const [cutoutState, setCutoutState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [cutoutError, setCutoutError] = useState<string | null>(null);
@@ -592,8 +619,21 @@ export function useHostStudio(streamId: string | undefined) {
     }
     const scale = b.logoSize / b.logoImg.naturalHeight;
     ctx.globalAlpha = alpha;
-    ctx.drawImage(b.logoImg, 16, 16 + yOffset, b.logoImg.naturalWidth * scale, b.logoSize);
+    const logoW = b.logoImg.naturalWidth * scale;
+    const logoX = b.logoPosition === 'right' ? ctx.canvas.width - 16 - logoW : 16;
+    ctx.drawImage(b.logoImg, logoX, 16 + yOffset, logoW, b.logoSize);
     ctx.globalAlpha = 1;
+  }
+
+  function drawLowerThirdBanner(w: number, h: number, now: number) {
+    const dt = lowerThirdFrameRef.current === null ? 0 : now - lowerThirdFrameRef.current;
+    lowerThirdFrameRef.current = now;
+    const allowed = canLowerThirdRef.current;
+    lowerThirdProgressRef.current = stepLowerThirdProgress(lowerThirdProgressRef.current, allowed && lowerThirdLiveRef.current, dt);
+    if (!allowed || lowerThirdProgressRef.current <= 0) return;
+    const b = brandingRef.current;
+    const reserve = b.newsText ? newsBarHeight(b.newsFontSize) : 0;
+    drawLowerThird(ctxRef.current!, w, h, lowerThirdRef.current, lowerThirdProgressRef.current, reserve);
   }
 
   function drawNewsline(w: number, h: number, now: number) {
@@ -1035,6 +1075,7 @@ export function useHostStudio(streamId: string | undefined) {
 
       drawLogo(now);
       drawNewsline(w, h, now);
+      drawLowerThirdBanner(w, h, now);
 
       const transition = transitionStateRef.current;
       if (transition) {
@@ -1315,6 +1356,12 @@ export function useHostStudio(streamId: string | undefined) {
           if (saved.branding.newsText) tickerAppearedAtRef.current = performance.now();
         }
         if (saved.scenes) setScenes(saved.scenes);
+        if (saved.lowerThird) {
+          const lt = normalizeLowerThird(saved.lowerThird);
+          lowerThirdRef.current = lt;
+          setLowerThirdState(lt);
+        }
+        if (saved.lowerThirdPresets) setLowerThirdPresets(normalizePresets(saved.lowerThirdPresets));
         if (saved.chroma) hostChromaRef.current.settings = normalizeChroma(saved.chroma);
         const savedBg = loadSavedChromaBg(streamRow.id);
         if (savedBg) {
@@ -1426,6 +1473,8 @@ export function useHostStudio(streamId: string | undefined) {
     savePersisted(stream.id, { layoutMode, resolution, branding, themeId, scenes });
   }, [stream, layoutMode, resolution, branding, themeId, scenes]);
 
+  useEffect(() => () => clearLowerThirdTimer(), []);
+
   // Plan quality cap: fetch once, and pull a saved/default resolution down to it.
   useEffect(() => {
     getMyLimits()
@@ -1434,6 +1483,8 @@ export function useHostStudio(streamId: string | undefined) {
         setCanRecord(!!l.canRecord);
         canChromaKeyRef.current = !!l.canChromaKey;
         setCanChromaKey(!!l.canChromaKey);
+        canLowerThirdRef.current = !!l.canLowerThird;
+        setCanLowerThird(!!l.canLowerThird);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
       })
       .catch(() => {});
@@ -1693,6 +1744,12 @@ export function useHostStudio(streamId: string | undefined) {
     }
   }
 
+  function setLogoPosition(position: LogoPosition) {
+    if (position !== 'left' && position !== 'right') return;
+    brandingRef.current.logoPosition = position;
+    setBranding((b) => ({ ...b, logoPosition: position }));
+  }
+
   function setNewsText(text: string) {
     const trimmed = text.trim();
     if (!brandingRef.current.newsText && trimmed) {
@@ -1701,6 +1758,60 @@ export function useHostStudio(streamId: string | undefined) {
     brandingRef.current.newsText = trimmed;
     newsScrollXRef.current = null;
     setBranding((b) => ({ ...b, newsText: trimmed }));
+  }
+
+  function setLowerThird(patch: Partial<LowerThirdSettings>) {
+    const next = normalizeLowerThird({ ...lowerThirdRef.current, ...patch });
+    lowerThirdRef.current = next;
+    setLowerThirdState(next);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { lowerThird: next });
+  }
+
+  function clearLowerThirdTimer() {
+    if (lowerThirdTimerRef.current) clearTimeout(lowerThirdTimerRef.current);
+    lowerThirdTimerRef.current = null;
+  }
+
+  function hideLowerThird() {
+    clearLowerThirdTimer();
+    lowerThirdLiveRef.current = false;
+    setLowerThirdLive(false);
+  }
+
+  /** Slides the banner in (replaying the entrance if it was already showing); auto-hides if the host chose a time. */
+  function showLowerThird() {
+    if (!canLowerThirdRef.current || !lowerThirdRef.current.title.trim()) return;
+    clearLowerThirdTimer();
+    if (lowerThirdLiveRef.current) lowerThirdProgressRef.current = 0;
+    lowerThirdLiveRef.current = true;
+    setLowerThirdLive(true);
+    const sec = lowerThirdRef.current.autoHideSec;
+    if (sec > 0) lowerThirdTimerRef.current = setTimeout(hideLowerThird, sec * 1000);
+  }
+
+  function saveLowerThirdPreset() {
+    const { title, subtitle } = lowerThirdRef.current;
+    if (!title.trim()) return;
+    const next = normalizePresets([
+      ...lowerThirdPresets.filter((p) => !(p.title === title && p.subtitle === subtitle)),
+      { title, subtitle },
+    ]);
+    setLowerThirdPresets(next);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { lowerThirdPresets: next });
+  }
+
+  function deleteLowerThirdPreset(index: number) {
+    const next = lowerThirdPresets.filter((_, i) => i !== index);
+    setLowerThirdPresets(next);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { lowerThirdPresets: next });
+  }
+
+  /** Loads a saved text and shows it straight away. */
+  function playLowerThirdPreset(index: number) {
+    const preset = lowerThirdPresets[index];
+    if (!preset) return;
+    setLowerThird({ title: preset.title, subtitle: preset.subtitle });
+    showLowerThird();
   }
 
   function setNameFontSize(size: number) {
@@ -1946,6 +2057,7 @@ export function useHostStudio(streamId: string | undefined) {
       themeId: themeIdRef.current,
       branding: {
         logoSize: brandingRef.current.logoSize,
+        logoPosition: brandingRef.current.logoPosition,
         newsText: brandingRef.current.newsText,
         nameFontSize: brandingRef.current.nameFontSize,
         newsFontSize: brandingRef.current.newsFontSize,
@@ -1967,6 +2079,7 @@ export function useHostStudio(streamId: string | undefined) {
     }
     const sceneBranding: Branding = { ...DEFAULT_BRANDING, ...scene.branding };
     brandingRef.current.logoSize = sceneBranding.logoSize;
+    brandingRef.current.logoPosition = sceneBranding.logoPosition === 'right' ? 'right' : 'left';
     brandingRef.current.newsText = sceneBranding.newsText;
     brandingRef.current.nameFontSize = sceneBranding.nameFontSize;
     brandingRef.current.newsFontSize = sceneBranding.newsFontSize;
@@ -2315,6 +2428,10 @@ export function useHostStudio(streamId: string | undefined) {
     maxResolution,
     canRecord,
     canChromaKey,
+    canLowerThird,
+    lowerThird,
+    lowerThirdLive,
+    lowerThirdPresets,
     cutoutState,
     cutoutError,
     recordingSince,
@@ -2351,6 +2468,7 @@ export function useHostStudio(streamId: string | undefined) {
       dropParticipant,
       setLogoFile,
       setLogoSize,
+      setLogoPosition,
       setNewsText,
       setNameFontSize,
       setNewsFontSize,
@@ -2372,6 +2490,12 @@ export function useHostStudio(streamId: string | undefined) {
       stopScreenShare,
       saveScene,
       applyScene,
+      setLowerThird,
+      showLowerThird,
+      hideLowerThird,
+      saveLowerThirdPreset,
+      deleteLowerThirdPreset,
+      playLowerThirdPreset,
     },
   };
 }

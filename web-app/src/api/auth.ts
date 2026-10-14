@@ -33,6 +33,11 @@ export function logout(): Promise<void> {
   return api.post('/auth/logout');
 }
 
+/** Saves the signed-in person's own mobile number; the server normalises it to E.164. */
+export function setPhone(phone: string): Promise<MeResponse> {
+  return api.patch('/auth/me/phone', { phone });
+}
+
 export function me(): Promise<MeResponse> {
   return api.get('/auth/me');
 }
