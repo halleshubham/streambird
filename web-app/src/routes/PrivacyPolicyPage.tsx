@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useConsentBannerEnabled } from '../lib/consent';
 
 const CONTACT_EMAIL = 'support@shackyapps.in';
 
@@ -13,6 +14,7 @@ const CONTACT_EMAIL = 'support@shackyapps.in';
  */
 export function PrivacyPolicyPage() {
   const { status } = useAuth();
+  const consentMode = useConsentBannerEnabled();
 
   return (
     <div className="legal-page">
@@ -117,12 +119,21 @@ export function PrivacyPolicyPage() {
             layout, logo and lower-third texts in local storage so they survive a reload. The service cannot work
             without these, so they do not need consent.
           </li>
-          <li>
-            <strong>Analytics (only if you accept):</strong> Google Analytics, which tells us which pages are used.
-            It is not loaded at all until you press Accept in the cookie banner, and it never loads if you press
-            Reject or do not answer. You can change your choice any time with the "Cookie settings" link at the
-            bottom of the page.
-          </li>
+          {consentMode ? (
+            <li>
+              <strong>Analytics (only if you accept):</strong> Google Analytics, which tells us which pages are used.
+              It is not loaded at all until you press Accept in the cookie banner, and it never loads if you press
+              Reject or do not answer. You can change your choice any time with the "Cookie settings" link at the
+              bottom of the page.
+            </li>
+          ) : (
+            <li>
+              <strong>Analytics:</strong> we use Google Analytics to see which pages are used, so we can improve
+              StreamBird. It sets its own cookies and sends page-visit information to Google. You can block it with
+              your browser's privacy settings or a tracking-protection extension, or tell us at{' '}
+              <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> if you have a concern.
+            </li>
+          )}
           <li>We do not use advertising or marketing cookies.</li>
         </ul>
 
@@ -137,7 +148,7 @@ export function PrivacyPolicyPage() {
         <h2>Your rights and how to reach us</h2>
         <p>
           Wherever you live, you can ask us to show you the information we hold about you, correct it, or delete it,
-          and you can withdraw your cookie choice at any time. Where GDPR applies (EU/UK) you also have the rights to
+          and you can object to analytics tracking at any time. Where GDPR applies (EU/UK) you also have the rights to
           object to or restrict processing and to data portability, and the right to complain to your data protection
           authority. Under India's Digital Personal Data Protection Act you can nominate someone to act for you and
           raise a grievance with us first. For any of this, email{' '}

@@ -69,5 +69,8 @@ Every admin page is `PageHeader` + `Section`/`DataTable` from `web-app/src/compo
 
 - **Admin sign-in** (`AdminLoginPage`): same identity as the admin header (logo + ADMIN badge, amber top rule), two labelled steps ("Sign in" then "Check your email"), errors as `role=alert`. Tests: `admin login page` block in smoke.spec.
 
-## Cookie consent
-Google Analytics is the only non-essential script and is **not in `index.html`**: `lib/consent.ts` injects it only after the visitor presses Accept (choice in localStorage `streambird:consent:v1`, `initConsent()` in `main.tsx`). `components/CookieBanner.tsx` (mounted in `App.tsx`, hidden on `/join/*` and `*/studio`) shows Accept/Reject with equal weight; `CookieSettingsLink` in the landing, login and app footers reopens it. Never add another tracking/marketing script outside this gate, and keep `/privacy#cookies` accurate. Playwright's `use.storageState` pre-answers the banner (Reject) for every test; the `cookie consent` tests clear it.
+## Cookie consent (optional, off by default)
+Google Analytics is **not in `index.html`**; `lib/consent.ts` injects it. The server decides the mode with `COOKIE_CONSENT_BANNER` (default `false`, served by `GET /api/config/public`, fetched by `initConsent()` in `main.tsx`):
+- **off (default):** no banner, no "Cookie settings" link, analytics loads for every visitor, and `/privacy` says so.
+- **on:** `components/CookieBanner.tsx` (mounted in `App.tsx`, hidden on `/join/*` and `*/studio`) shows Accept/Reject with equal weight; analytics loads only after Accept (choice in localStorage `streambird:consent:v1`); `CookieSettingsLink` in the landing, login and app footers reopens the banner; `/privacy` describes the opt-in. Use this for EU/UK visitors (GDPR/ePrivacy need opt-in).
+If the setting can't be fetched, nothing loads. Never add another tracking/marketing script outside this module, and keep `/privacy#cookies` accurate. Playwright's `use.storageState` pre-answers the banner (Reject) for every test; the `cookie consent` tests stub `/api/config/public` to pick a mode.

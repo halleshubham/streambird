@@ -7,7 +7,7 @@ import { AuthProvider } from './context/AuthProvider.tsx';
 import { BusyOverlay } from './components/BusyOverlay.tsx';
 import { initConsent } from './lib/consent.ts';
 
-initConsent(); // Google Analytics loads only for a visitor who already accepted
+void initConsent(); // loads Google Analytics, or waits for consent, as the server's COOKIE_CONSENT_BANNER says
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

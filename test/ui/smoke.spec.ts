@@ -20,8 +20,25 @@ async function signIn(context: BrowserContext, opts: { superadmin?: boolean } = 
 }
 const apiHeaders = { Origin: APP, 'Content-Type': 'application/json' };
 
+// The server's COOKIE_CONSENT_BANNER decides the mode (default off); these tests answer /api/config/public themselves.
+const bannerMode = (page: Page, on: boolean) =>
+  page.route('**/api/config/public', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ cookieConsentBanner: on }) }));
+
 test.describe('cookie consent', () => {
   test.use({ storageState: { cookies: [], origins: [] } }); // a first-time visitor
+
+  test('default (banner off): no banner, no Cookie settings link, and Google Analytics loads for everyone', async ({ page }) => {
+    const hits = googleRequests(page);
+    await page.route(/googletagmanager\.com/, (route) => route.fulfill({ contentType: 'text/javascript', body: '' }));
+    const real = await (await page.request.get('/api/config/public')).json();
+    expect(real).toEqual({ cookieConsentBanner: false }); // the fixture server runs with the default
+    await page.goto('/');
+    await expect.poll(() => hits.length).toBeGreaterThan(0);
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cookie settings' })).toHaveCount(0);
+    await page.goto('/privacy');
+    await expect(page.getByText('we use Google Analytics to see which pages are used')).toBeVisible();
+  });
 
   const googleRequests = (page: Page) => {
     const hits: string[] = [];
@@ -30,6 +47,7 @@ test.describe('cookie consent', () => {
   };
 
   test('first visit: a banner with equal Accept and Reject; nothing from Google loads until Accept', async ({ page }) => {
+    await bannerMode(page, true);
     const hits = googleRequests(page);
     await page.route(/googletagmanager\.com/, (route) => route.fulfill({ contentType: 'text/javascript', body: '' }));
     await page.goto('/');
@@ -51,6 +69,7 @@ test.describe('cookie consent', () => {
   });
 
   test('Reject: Google never loads, even after a reload and on other pages; Cookie settings brings the banner back', async ({ page }) => {
+    await bannerMode(page, true);
     const hits = googleRequests(page);
     await page.goto('/');
     await page.getByRole('region', { name: 'Cookie consent' }).getByRole('button', { name: 'Reject' }).click();
@@ -63,7 +82,8 @@ test.describe('cookie consent', () => {
     expect(hits).toEqual([]);
   });
 
-  test('the privacy policy explains cookies and analytics, and the mobile number', async ({ page }) => {
+  test('the privacy policy (banner mode) explains the choice, cookies and the mobile number', async ({ page }) => {
+    await bannerMode(page, true);
     await page.goto('/privacy#cookies');
     await expect(page.getByRole('heading', { name: /Cookies, analytics/ })).toBeVisible();
     await expect(page.getByText('Mobile number:')).toBeVisible();
@@ -71,6 +91,7 @@ test.describe('cookie consent', () => {
   });
 
   test('the studio is never covered by the banner', async ({ page, context }) => {
+    await bannerMode(page, true);
     const { api } = await signIn(context);
     const id = await newStream(context, api);
     await page.goto(`/streams/${id}/studio`);

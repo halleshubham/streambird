@@ -1,8 +1,13 @@
+import { useSyncExternalStore } from 'react';
+
 /**
- * Cookie / analytics consent. Google Analytics is the only non-essential thing the site loads, and it is not
- * loaded at all until the visitor says yes (opt-in, as GDPR/ePrivacy require); "Reject" and "no answer yet"
- * both mean it never loads. The choice is kept in localStorage. Login and OAuth cookies and the studio's saved
- * layout are strictly necessary and are not covered by this choice.
+ * Google Analytics and the optional cookie-consent banner. The server decides which mode the site runs in
+ * (COOKIE_CONSENT_BANNER, served by GET /api/config/public; default off):
+ *  - off: no banner, and analytics loads for every visitor;
+ *  - on: opt-in. Analytics is not loaded at all until the visitor presses Accept; Reject and "no answer yet"
+ *    both mean it never loads. The choice is kept in localStorage.
+ * If the setting cannot be fetched, nothing is loaded and no banner is shown. Login and OAuth cookies and the
+ * studio's saved layout are strictly necessary and are not covered by this.
  */
 export type ConsentChoice = 'granted' | 'denied';
 
@@ -40,6 +45,9 @@ export function loadAnalytics(): void {
   document.head.appendChild(s);
 }
 
+/** null until the server's setting is known (or if it could not be fetched). */
+let bannerEnabled: boolean | null = null;
+
 export function setConsent(choice: ConsentChoice): void {
   try {
     localStorage.setItem(KEY, choice);
@@ -50,9 +58,28 @@ export function setConsent(choice: ConsentChoice): void {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: choice }));
 }
 
-/** Called once at start-up: loads analytics only for a visitor who already said yes. */
-export function initConsent(): void {
-  if (getConsent() === 'granted') loadAnalytics();
+/** Called once at start-up: reads the server setting, then loads analytics if the mode and choice allow it. */
+export async function initConsent(): Promise<void> {
+  try {
+    const res = await fetch('/api/config/public');
+    if (!res.ok) return;
+    const cfg = (await res.json()) as { cookieConsentBanner?: boolean };
+    bannerEnabled = !!cfg.cookieConsentBanner;
+  } catch {
+    return;
+  }
+  if (!bannerEnabled || getConsent() === 'granted') loadAnalytics();
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+function subscribe(cb: () => void): () => void {
+  window.addEventListener(CHANGE_EVENT, cb);
+  return () => window.removeEventListener(CHANGE_EVENT, cb);
+}
+
+/** True only when the server runs the opt-in banner mode. */
+export function useConsentBannerEnabled(): boolean {
+  return useSyncExternalStore(subscribe, () => bannerEnabled === true);
 }
 
 /** "Cookie settings" links call this to bring the banner back so the choice can be changed. */

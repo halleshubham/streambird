@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { CONSENT_EVENTS, getConsent, setConsent } from '../lib/consent';
+import { CONSENT_EVENTS, getConsent, setConsent, useConsentBannerEnabled } from '../lib/consent';
 
 /** The studio and the guest page are working screens: no banner over the controls (no answer = no analytics). */
 function isWorkingScreen(path: string): boolean {
@@ -13,6 +13,7 @@ function isWorkingScreen(path: string): boolean {
  */
 export function CookieBanner() {
   const { pathname } = useLocation();
+  const enabled = useConsentBannerEnabled();
   const [open, setOpen] = useState(() => getConsent() === null);
 
   useEffect(() => {
@@ -21,7 +22,7 @@ export function CookieBanner() {
     return () => window.removeEventListener(CONSENT_EVENTS.open, reopen);
   }, []);
 
-  if (!open || isWorkingScreen(pathname)) return null;
+  if (!enabled || !open || isWorkingScreen(pathname)) return null;
 
   const choose = (choice: 'granted' | 'denied') => {
     setConsent(choice);

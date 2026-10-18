@@ -45,7 +45,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <footer className="app-footer">
-        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link> · <CookieSettingsLink />
+        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
       </footer>
     </div>
   );
