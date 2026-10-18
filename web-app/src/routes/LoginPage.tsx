@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CookieSettingsLink } from '../components/CookieSettingsLink';
 import type { FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -139,7 +140,7 @@ export function LoginPage() {
         )}
 
         <p className="auth-legal-links">
-          <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+          <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link> · <CookieSettingsLink />
         </p>
       </div>
     </div>

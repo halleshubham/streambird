@@ -18,7 +18,7 @@ export function PrivacyPolicyPage() {
     <div className="legal-page">
       <div className="legal-page-inner">
         <h1>StreamBird Privacy Policy</h1>
-        <p className="legal-updated">Last updated: October 1, 2026</p>
+        <p className="legal-updated">Last updated: October 18, 2026</p>
 
         <p>
           StreamBird ("StreamBird", "we", "us") is a multi-platform live-streaming
@@ -33,6 +33,10 @@ export function PrivacyPolicyPage() {
             name if you provide one. We use email-based magic-code sign-in and,
             optionally, "Sign in with Google" -- in both cases, your email address
             is the identity on your account.
+          </li>
+          <li>
+            <strong>Mobile number:</strong> when you sign up we ask for a mobile number so our team can reach you about
+            your account and setup. We do not use it for marketing or share it.
           </li>
           <li>
             <strong>Connected platform credentials:</strong> when you connect a
@@ -105,12 +109,40 @@ export function PrivacyPolicyPage() {
           Account's security settings.
         </p>
 
+        <h2 id="cookies">Cookies, analytics and similar storage</h2>
+        <ul>
+          <li>
+            <strong>Essential (always on):</strong> a sign-in session cookie (<code>sb_session</code>) and short-lived
+            cookies used while you connect Google, Facebook or another platform. Your browser also keeps your studio
+            layout, logo and lower-third texts in local storage so they survive a reload. The service cannot work
+            without these, so they do not need consent.
+          </li>
+          <li>
+            <strong>Analytics (only if you accept):</strong> Google Analytics, which tells us which pages are used.
+            It is not loaded at all until you press Accept in the cookie banner, and it never loads if you press
+            Reject or do not answer. You can change your choice any time with the "Cookie settings" link at the
+            bottom of the page.
+          </li>
+          <li>We do not use advertising or marketing cookies.</li>
+        </ul>
+
         <h2>4. Sharing</h2>
         <p>
           We share stream media and metadata with the destination platforms you
           explicitly choose to publish to (e.g. YouTube, Twitch) -- that is the
           entire function of the service. We do not otherwise share your
           information with third parties, except where required by law.
+        </p>
+
+        <h2>Your rights and how to reach us</h2>
+        <p>
+          Wherever you live, you can ask us to show you the information we hold about you, correct it, or delete it,
+          and you can withdraw your cookie choice at any time. Where GDPR applies (EU/UK) you also have the rights to
+          object to or restrict processing and to data portability, and the right to complain to your data protection
+          authority. Under India's Digital Personal Data Protection Act you can nominate someone to act for you and
+          raise a grievance with us first. For any of this, email{' '}
+          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> (ShackyApps, Grievance contact); we reply within 30
+          days.
         </p>
 
         <h2>5. Data retention and deletion</h2>

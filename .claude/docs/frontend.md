@@ -68,3 +68,6 @@ Every admin page is `PageHeader` + `Section`/`DataTable` from `web-app/src/compo
 - Destructive actions confirm (`window.confirm`): reject signup, suspend user, suspend account, force end. Row actions use `btn-sm` (+ `danger-button`); page-level actions sit in `PageHeader actions`.
 
 - **Admin sign-in** (`AdminLoginPage`): same identity as the admin header (logo + ADMIN badge, amber top rule), two labelled steps ("Sign in" then "Check your email"), errors as `role=alert`. Tests: `admin login page` block in smoke.spec.
+
+## Cookie consent
+Google Analytics is the only non-essential script and is **not in `index.html`**: `lib/consent.ts` injects it only after the visitor presses Accept (choice in localStorage `streambird:consent:v1`, `initConsent()` in `main.tsx`). `components/CookieBanner.tsx` (mounted in `App.tsx`, hidden on `/join/*` and `*/studio`) shows Accept/Reject with equal weight; `CookieSettingsLink` in the landing, login and app footers reopens it. Never add another tracking/marketing script outside this gate, and keep `/privacy#cookies` accurate. Playwright's `use.storageState` pre-answers the banner (Reject) for every test; the `cookie consent` tests clear it.
