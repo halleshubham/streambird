@@ -21,6 +21,8 @@ interface PlanForm {
   canRecord: boolean;
   canChromaKey: boolean;
   canLowerThird: boolean;
+  assetStorageMb: string;
+  watermark: boolean;
   maxSessionHours: string;
   validityHours: string;
   priceInr: string;
@@ -32,7 +34,7 @@ interface PlanForm {
 
 const EMPTY: PlanForm = {
   key: '', name: '', kind: 'monthly', includedHours: '10', unlimitedHours: false, graceMultiplier: '1',
-  maxDestinations: '2', maxGuests: '4', maxResolution: 'hd', canRecord: false, canChromaKey: false, canLowerThird: false, maxSessionHours: '', validityHours: '',
+  maxDestinations: '2', maxGuests: '4', maxResolution: 'hd', canRecord: false, canChromaKey: false, canLowerThird: false, assetStorageMb: '0', watermark: false, maxSessionHours: '', validityHours: '',
   priceInr: '', priceUsd: '', isPublic: true, isActive: true, sortOrder: '100',
 };
 
@@ -41,7 +43,7 @@ function toForm(p: AdminPlan): PlanForm {
     key: p.key, name: p.name, kind: p.kind,
     includedHours: p.includedHoursPerMonth ?? '', unlimitedHours: p.includedHoursPerMonth === null,
     graceMultiplier: p.graceMultiplier, maxDestinations: String(p.maxDestinations), maxGuests: String(p.maxGuests),
-    maxResolution: p.maxResolution, canRecord: p.canRecord, canChromaKey: p.canChromaKey, canLowerThird: p.canLowerThird, maxSessionHours: p.maxSessionHours ?? '',
+    maxResolution: p.maxResolution, canRecord: p.canRecord, canChromaKey: p.canChromaKey, canLowerThird: p.canLowerThird, assetStorageMb: String(p.assetStorageMb), watermark: p.watermark, maxSessionHours: p.maxSessionHours ?? '',
     validityHours: p.validityHours === null ? '' : String(p.validityHours),
     priceInr: p.priceInr === null ? '' : String(p.priceInr), priceUsd: p.priceUsd ?? '',
     isPublic: p.isPublic, isActive: p.isActive, sortOrder: String(p.sortOrder),
@@ -62,6 +64,8 @@ function toPayload(f: PlanForm, creating: boolean): PlanPayload {
     canRecord: f.canRecord,
     canChromaKey: f.canChromaKey,
     canLowerThird: f.canLowerThird,
+    assetStorageMb: Math.max(0, Math.floor(Number(f.assetStorageMb) || 0)),
+    watermark: f.watermark,
     maxSessionHours: numOrNull(f.maxSessionHours),
     validityHours: f.kind === 'day_pass' ? numOrNull(f.validityHours) : null,
     priceInr: numOrNull(f.priceInr),
@@ -164,6 +168,8 @@ export function AdminPlansPage() {
             <th scope="col">Recording</th>
             <th scope="col">Background removal</th>
             <th scope="col">Lower thirds</th>
+            <th scope="col">Brand storage</th>
+            <th scope="col">Watermark</th>
             <th scope="col">Session cap</th>
             <th scope="col">₹ / $</th>
             <th scope="col">Visibility</th>
@@ -182,6 +188,8 @@ export function AdminPlansPage() {
               <td>{p.canRecord ? <Badge tone="success">Yes</Badge> : '—'}</td>
               <td>{p.canChromaKey ? <Badge tone="success">Yes</Badge> : '—'}</td>
               <td>{p.canLowerThird ? <Badge tone="success">Yes</Badge> : '—'}</td>
+              <td className="num">{p.assetStorageMb > 0 ? `${p.assetStorageMb} MB` : '—'}</td>
+              <td>{p.watermark ? <Badge tone="warning">Shown</Badge> : '—'}</td>
               <td>{p.maxSessionHours === null ? '—' : `${Number(p.maxSessionHours)} h`}</td>
               <td className="nowrap">{p.priceInr ?? '—'} / {p.priceUsd ?? '—'}</td>
               <td>{!p.isActive ? <Badge>Inactive</Badge> : p.isPublic ? <Badge tone="info">Public</Badge> : <Badge tone="warning">Hidden</Badge>}</td>
@@ -253,6 +261,10 @@ export function AdminPlansPage() {
             <label className="checkbox-row"><input type="checkbox" checked={form.canRecord} onChange={(e) => set('canRecord', e.target.checked)} /> Can record the stream to their own computer</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.canChromaKey} onChange={(e) => set('canChromaKey', e.target.checked)} /> Can remove the background behind people (green screen or any-background cut-out)</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.canLowerThird} onChange={(e) => set('canLowerThird', e.target.checked)} /> Can show animated lower-third banners (title, name or text over the picture)</label>
+            <label>Brand storage (MB, 0 = browser-only)
+              <input type="number" min="0" step="1" value={form.assetStorageMb} onChange={(e) => set('assetStorageMb', e.target.value)} />
+            </label>
+            <label className="checkbox-row"><input type="checkbox" checked={form.watermark} onChange={(e) => set('watermark', e.target.checked)} /> Show the "Powered by StreamBird" mark on streams (a day pass removes it)</label>
             <label className="checkbox-row"><input type="checkbox" checked={form.isActive} onChange={(e) => set('isActive', e.target.checked)} /> Active</label>
           </p>
           <button type="submit" disabled={saving}>{saving && <BirdBusy />} Save plan</button>{' '}

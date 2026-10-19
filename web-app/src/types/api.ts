@@ -329,6 +329,8 @@ export interface PublicPlan {
   canRecord: boolean;
   canChromaKey: boolean;
   canLowerThird: boolean;
+  assetStorageMb: number;
+  watermark: boolean;
   maxSessionHours: number | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -348,6 +350,8 @@ export interface AdminPlan {
   canRecord: boolean;
   canChromaKey: boolean;
   canLowerThird: boolean;
+  assetStorageMb: number;
+  watermark: boolean;
   maxSessionHours: string | null;
   validityHours: number | null;
   priceInr: number | null;
@@ -370,6 +374,8 @@ export interface PlanPayload {
   canRecord?: boolean;
   canChromaKey?: boolean;
   canLowerThird?: boolean;
+  assetStorageMb?: number;
+  watermark?: boolean;
   maxSessionHours?: number | null;
   validityHours?: number | null;
   priceInr?: number | null;
@@ -391,6 +397,8 @@ export interface EffectiveLimits {
   canRecord: boolean;
   canChromaKey: boolean;
   canLowerThird: boolean;
+  assetStorageMb: number;
+  watermark: boolean;
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: string } | null;
   /** When a purchased plan lapses (null = no expiry). */
@@ -479,3 +487,45 @@ export interface AdminBilling {
   subscriptions: AdminSubscription[];
   payments: AdminPayment[];
 }
+
+export type AssetKind = 'logo' | 'wallpaper' | 'background' | 'other';
+
+export interface LibraryAsset {
+  id: string;
+  kind: AssetKind;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  createdAt: string;
+  /** Names of the brand kits using this file (a used file cannot be deleted). */
+  usedBy: string[];
+}
+
+export interface AssetLibrary {
+  /** Storage is configured on this server. */
+  enabled: boolean;
+  /** The plan's allowance in bytes; 0 = this plan keeps assets in the browser only. */
+  quotaBytes: number;
+  usedBytes: number;
+  items: LibraryAsset[];
+}
+
+export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
+
+export interface BrandKit {
+  id: string;
+  name: string;
+  logoAssetId: string | null;
+  logoPosition: 'left' | 'right';
+  logoSize: number;
+  wallpaperAssetId: string | null;
+  wallpaperDim: number;
+  lowerThirdStyle: LowerThirdStyleId;
+  isDefault: boolean;
+  /** The channels/pages (platform connections) using this kit. */
+  connectionIds: string[];
+}
+
+export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & { isDefault?: boolean };

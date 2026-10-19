@@ -34,6 +34,10 @@ export class PlatformConnection {
   @Column({ default: true })
   isActive!: boolean;
 
+  /** The brand kit (look) this channel/page uses; several connections may share one. Null = the account default. */
+  @Column({ type: 'uuid', nullable: true })
+  brandKitId!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

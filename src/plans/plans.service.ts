@@ -22,6 +22,10 @@ export interface EffectiveLimits {
   canChromaKey: boolean;
   /** Animated lower-third banners in the studio. */
   canLowerThird: boolean;
+  /** Brand storage allowance in MB (0 = browser-only). A day pass never adds any. */
+  assetStorageMb: number;
+  /** Show the "Powered by StreamBird" mark on this account's streams (a day pass removes it). */
+  watermark: boolean;
   /** A single live session ends after this many hours; null = no cap. */
   maxSessionHours: number | null;
   dayPass: { planKey: string; name: string; expiresAt: Date } | null;
@@ -54,6 +58,7 @@ export function computeLimits(
   let canRecord = plan.canRecord;
   let canChromaKey = plan.canChromaKey;
   let canLowerThird = plan.canLowerThird;
+  let watermark = plan.watermark;
   let maxSessionHours = num(plan.maxSessionHours);
   let graceMultiplier = Number(plan.graceMultiplier);
   let activePass: EffectiveLimits['dayPass'] = null;
@@ -71,6 +76,7 @@ export function computeLimits(
     canRecord = canRecord || dayPass.canRecord;
     canChromaKey = canChromaKey || dayPass.canChromaKey;
     canLowerThird = canLowerThird || dayPass.canLowerThird;
+    watermark = false; // paying for a day removes the mark
     const passSession = num(dayPass.maxSessionHours);
     // A pass with no session cap removes the plan's; otherwise the longer of the two.
     maxSessionHours = passSession === null || maxSessionHours === null ? null : Math.max(maxSessionHours, passSession);
@@ -88,6 +94,8 @@ export function computeLimits(
     canRecord,
     canChromaKey,
     canLowerThird,
+    assetStorageMb: plan.assetStorageMb,
+    watermark,
     maxSessionHours,
     dayPass: activePass,
     planExpiresAt: null,
@@ -180,6 +188,8 @@ export class PlansService {
     if (dto.canRecord !== undefined) out.canRecord = dto.canRecord;
     if (dto.canChromaKey !== undefined) out.canChromaKey = dto.canChromaKey;
     if (dto.canLowerThird !== undefined) out.canLowerThird = dto.canLowerThird;
+    if (dto.assetStorageMb !== undefined) out.assetStorageMb = dto.assetStorageMb;
+    if (dto.watermark !== undefined) out.watermark = dto.watermark;
     if ('maxSessionHours' in dto) out.maxSessionHours = str(dto.maxSessionHours);
     if ('validityHours' in dto) out.validityHours = dto.validityHours ?? null;
     if ('priceInr' in dto) out.priceInr = dto.priceInr ?? null;

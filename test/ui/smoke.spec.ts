@@ -641,6 +641,127 @@ const canvasPixel = (page: Page, x: number, y: number) =>
     [x, y],
   );
 
+test.describe('brand library and kits', () => {
+  const setStorage = async (browser: import('@playwright/test').Browser, mb: number) => {
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { assetStorageMb: mb }, headers: apiHeaders });
+    await adminCtx.close();
+  };
+
+  test('Free plan: the Brand page says assets stay in the browser and links to plans', async ({ page, context }) => {
+    await signIn(context);
+    await page.goto('/dashboard');
+    await page.getByRole('link', { name: 'Brand' }).click();
+    await expect(page.getByTestId('brand-free-notice')).toContainText('stay saved in this browser');
+    await expect(page.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
+    await expect(page.getByLabel('Image (PNG, JPG or WebP, up to 4 MB)')).toHaveCount(0);
+  });
+
+  test.describe('on a plan with brand storage', () => {
+    test.beforeEach(async ({ browser }) => setStorage(browser, 5));
+    test.afterEach(async ({ browser }) => setStorage(browser, 0));
+
+    test('upload a file, share it between two kits, give channels a kit, and a file in use cannot be deleted', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      for (const label of ['Hindi channel', 'English channel']) {
+        const r = await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label, ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders });
+        expect(r.ok()).toBeTruthy();
+      }
+      await page.goto('/brand');
+      await expect(page.getByTestId('brand-usage')).toContainText('0.0 MB of 5.0 MB used');
+
+      await page.getByLabel('Type').selectOption('logo');
+      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'main-logo.png', mimeType: 'image/png', buffer: solidPng(220, 30, 40) });
+      await page.getByRole('button', { name: 'Upload' }).click();
+      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
+      await expect(card).toBeVisible();
+      await expect(card).toContainText('Logo');
+      // The image really comes back from the server.
+      await expect.poll(() => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+
+      // Kit 1: that logo on the Hindi channel; kit 2 reuses the same file on the English channel.
+      const kit1 = page.getByRole('form', { name: 'New brand kit' });
+      await kit1.getByLabel('Kit name').fill('Hindi');
+      await kit1.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
+      await kit1.getByRole('button', { name: 'Top right' }).click();
+      await kit1.getByLabel(/Hindi channel/).check();
+      await kit1.getByRole('button', { name: 'Create kit' }).click();
+      await expect(page.getByRole('form', { name: 'Brand kit Hindi' })).toContainText('Account default'); // the first kit is the default
+
+      const kit2 = page.getByRole('form', { name: 'New brand kit' });
+      await kit2.getByLabel('Kit name').fill('English');
+      await kit2.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
+      await kit2.getByLabel(/English channel/).check();
+      await kit2.getByRole('button', { name: 'Create kit' }).click();
+      const english = page.getByRole('form', { name: 'Brand kit English' });
+      await expect(english).toBeVisible();
+      await expect(english.getByLabel(/English channel/)).toBeChecked();
+      await expect(english.getByLabel(/Hindi channel/)).not.toBeChecked();
+      await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByLabel(/Hindi channel/)).toBeChecked();
+      await expect(card).toContainText('used by Hindi, English');
+
+      // It survives a reload (it is on the server, not in the browser).
+      await page.reload();
+      await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+
+      // A file in use is refused; once the kits are gone it can be deleted.
+      page.on('dialog', (d) => void d.accept());
+      await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await expect(page.getByRole('alert')).toContainText('used by the brand kits');
+      await page.getByRole('form', { name: 'Brand kit English' }).getByRole('button', { name: 'Delete kit' }).click();
+      await expect(page.getByRole('form', { name: 'Brand kit English' })).toHaveCount(0);
+      await page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Delete kit' }).click();
+      await expect(page.getByRole('form', { name: 'Brand kit Hindi' })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await expect(page.getByText('No files yet')).toBeVisible();
+    });
+
+    test('an upload that is not an image, or is too big for the plan, is refused with a message', async ({ page, context }) => {
+      await signIn(context);
+      await page.goto('/brand');
+      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'notes.png', mimeType: 'image/png', buffer: Buffer.from('definitely not a picture') });
+      await page.getByRole('button', { name: 'Upload' }).click();
+      await expect(page.getByRole('alert')).toContainText('PNG, JPG or WebP');
+    });
+  });
+});
+
+test.describe('Powered-by mark (Free plan)', () => {
+  const setMark = async (browser: import('@playwright/test').Browser, on: boolean) => {
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { watermark: on }, headers: apiHeaders });
+    await adminCtx.close();
+  };
+  test.afterEach(async ({ browser }) => setMark(browser, true));
+
+  test('the small mark sits bottom-right on a Free stream and is gone when the plan does not show it', async ({ page, context, browser }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    const { width, height } = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+    const u = height / 720;
+    // The pill's text is white; the fake camera has no white pixels there (it is green, with black bars at the sides).
+    const markShown = () => page.evaluate(([x0, y0, w, h]) => {
+      const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement;
+      const d = c.getContext('2d')!.getImageData(x0, y0, w, h).data;
+      let white = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235) white++;
+      return white > 30;
+    }, [Math.round(width - 20 * u - 190 * u), Math.round(height - 20 * u - 34 * u), Math.round(170 * u), Math.round(28 * u)]);
+    await expect.poll(markShown).toBe(true);
+
+    await setMark(browser, false);
+    await page.reload();
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    await expect.poll(markShown).toBe(false);
+  });
+});
+
 test.describe('lower third banner (Pro)', () => {
   const purple = (p: [number, number, number]) => Math.abs(p[0] - 124) < 25 && Math.abs(p[1] - 58) < 25 && Math.abs(p[2] - 237) < 25;
   const setPlan = async (browser: import('@playwright/test').Browser, can: boolean) => {

@@ -46,6 +46,12 @@ export class CreatePlanDto {
   @IsOptional() @IsBoolean()
   canLowerThird?: boolean;
 
+  @IsOptional() @IsInt() @Min(0) @Max(102400)
+  assetStorageMb?: number;
+
+  @IsOptional() @IsBoolean()
+  watermark?: boolean;
+
   /** null = no per-session cap. */
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsNumber() @Min(0.25) @Max(168)
@@ -105,6 +111,12 @@ export class UpdatePlanDto {
 
   @IsOptional() @IsBoolean()
   canLowerThird?: boolean;
+
+  @IsOptional() @IsInt() @Min(0) @Max(102400)
+  assetStorageMb?: number;
+
+  @IsOptional() @IsBoolean()
+  watermark?: boolean;
 
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsNumber() @Min(0.25) @Max(168)

@@ -96,6 +96,15 @@ export class Client {
   get = <T = any>(path: string) => this.call<T>('GET', path);
   post = <T = any>(path: string, body?: unknown) => this.call<T>('POST', path, { body });
   patch = <T = any>(path: string, body?: unknown) => this.call<T>('PATCH', path, { body });
+  put = <T = any>(path: string, body?: unknown) => this.call<T>('PUT', path, { body });
+
+  /** GET returning the raw bytes and headers (for file downloads). */
+  async getBytes(path: string): Promise<{ status: number; contentType: string | null; data: Buffer }> {
+    const res = await fetch(`${this.baseUrl}/api${path}`, {
+      headers: { Origin: this.baseUrl, ...(this.cookies.size ? { Cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ') } : {}) },
+    });
+    return { status: res.status, contentType: res.headers.get('content-type'), data: Buffer.from(await res.arrayBuffer()) };
+  }
   del = <T = any>(path: string) => this.call<T>('DELETE', path);
 }
 

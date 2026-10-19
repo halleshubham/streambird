@@ -1,3 +1,4 @@
+import { withPoweredBy } from './powered-by';
 import {
   Inject,
   Injectable,
@@ -49,6 +50,16 @@ export class StreamsService {
     private readonly studioSessions: StudioSessionsService,
     private readonly accountsService: AccountsService,
   ) {}
+
+  /**
+   * The description to send to the platforms: the host's own, plus the "Powered by StreamBird" line when the
+   * account's plan shows the mark (Free). Never stored, so it follows the plan and never shows in the edit box.
+   */
+  async platformDescription(accountId: string, description: string | null | undefined): Promise<string | undefined> {
+    const limits = await this.accountsService.getLimits(accountId);
+    if (limits.watermark) return withPoweredBy(description);
+    return description ?? undefined;
+  }
 
   /** Public: StreamSchedulingService pre-creates/updates/deletes platform broadcasts through the same providers. */
   resolveProvider(connection: PlatformConnection): StreamProvider {
@@ -120,6 +131,7 @@ export class StreamsService {
     // Fan out createBroadcast() in parallel; a rejection here never blocks
     // the destinations that succeeded — that is the whole point of
     // Promise.allSettled over Promise.all for this step.
+    const platformDescription = await this.platformDescription(stream.accountId, meta.description);
     const settled = await Promise.allSettled(
       connections.map(async (conn) => {
         const reused = reuse?.get(conn.id);
@@ -127,7 +139,7 @@ export class StreamsService {
         const provider = this.resolveProvider(conn);
         const result = await provider.createBroadcast(conn, {
           title: meta.title,
-          description: meta.description,
+          description: platformDescription,
           scheduledAt: meta.scheduledAt,
           visibility: meta.visibility,
         });
@@ -506,7 +518,7 @@ export class StreamsService {
     try {
       const result = await provider.createBroadcast(conn, {
         title: stream.title,
-        description: stream.description ?? undefined,
+        description: await this.platformDescription(stream.accountId, stream.description),
         scheduledAt: stream.scheduledAt ?? undefined,
         visibility: (stream.visibility as 'public' | 'unlisted' | 'private' | null) ?? undefined,
       });

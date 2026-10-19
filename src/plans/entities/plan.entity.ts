@@ -43,6 +43,14 @@ export class Plan {
   @Column({ default: false })
   canLowerThird!: boolean;
 
+  /** Brand storage allowance in MB (Cloudflare R2); 0 = browser-only. */
+  @Column({ type: 'int', default: 0 })
+  assetStorageMb!: number;
+
+  /** Streams on this plan carry a small "Powered by StreamBird" mark and description line. */
+  @Column({ default: false })
+  watermark!: boolean;
+
   @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
   maxSessionHours!: string | null;
 

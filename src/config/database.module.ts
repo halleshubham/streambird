@@ -18,6 +18,8 @@ import { StudioHostToken } from '../studio/entities/studio-host-token.entity';
 import { User } from '../users/entities/user.entity';
 import { LoginCode } from '../auth/entities/login-code.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
+import { Asset } from '../assets/entities/asset.entity';
+import { BrandKit } from '../assets/entities/brand-kit.entity';
 import { Company } from '../companies/entities/company.entity';
 import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-log-entry.entity';
 
@@ -48,6 +50,8 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
           UserSession,
           Company,
           SuperadminAuditLogEntry,
+          Asset,
+          BrandKit,
         ],
         namingStrategy: new SnakeNamingStrategy(),
         // Schema is owned by migrations/*.sql (see src/config/migrate.ts), never by TypeORM.

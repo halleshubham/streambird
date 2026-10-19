@@ -23,6 +23,7 @@ import { AdminAccountDetailPage } from './routes/admin/AdminAccountDetailPage';
 import { AdminPlansPage } from './routes/admin/AdminPlansPage';
 import { AdminBillingPage } from './routes/admin/AdminBillingPage';
 import { BillingPage } from './routes/BillingPage';
+import { BrandPage } from './routes/BrandPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
@@ -77,6 +78,7 @@ export function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/billing" element={<BillingPage />} />
+          <Route path="/brand" element={<BrandPage />} />
           <Route path="/streams/new" element={<CreateStreamPage />} />
           <Route path="/streams/upcoming" element={<UpcomingStreamsPage />} />
           <Route path="/streams/:streamId" element={<StreamDetailPage />} />

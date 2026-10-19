@@ -16,8 +16,9 @@ export class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
+    // A multipart body (FormData) must set its own Content-Type with the boundary, so only JSON calls get one.
     headers: {
-      'Content-Type': 'application/json',
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...options.headers,
     },
     ...options,
@@ -46,5 +47,8 @@ export const api = {
     request<T>(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  postForm: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
