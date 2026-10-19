@@ -15,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
 import { TeamModule } from './team/team.module';
 import { SuperadminModule } from './superadmin/superadmin.module';
 import { AppController } from './app.controller';
+import { AssetsModule } from './assets/assets.module';
 
 @Module({
   controllers: [AppController],
@@ -38,6 +39,7 @@ import { AppController } from './app.controller';
       serveStaticOptions: { maxAge: 0 },
     }),
     DatabaseModule,
+    AssetsModule,
     CommonModule,
     AccountsModule,
     PlansModule,

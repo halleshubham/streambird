@@ -37,6 +37,11 @@ export function PrivacyPolicyPage() {
             is the identity on your account.
           </li>
           <li>
+            <strong>Brand files (paid plans):</strong> logos, wallpapers and pictures you choose to upload to your
+            Brand library are stored privately in Cloudflare R2 object storage, in your account only, until you
+            delete them. On the Free plan these stay in your own browser instead.
+          </li>
+          <li>
             <strong>Mobile number:</strong> when you sign up we ask for a mobile number so our team can reach you about
             your account and setup. We do not use it for marketing or share it.
           </li>

@@ -18,6 +18,8 @@ export function toPublicPlan(p: Plan) {
     canRecord: p.canRecord,
     canChromaKey: p.canChromaKey,
     canLowerThird: p.canLowerThird,
+    assetStorageMb: p.assetStorageMb,
+    watermark: p.watermark,
     maxSessionHours: p.maxSessionHours === null ? null : Number(p.maxSessionHours),
     validityHours: p.validityHours,
     priceInr: p.priceInr,

@@ -24,6 +24,9 @@ export function AppShell() {
           <NavLink to="/connections" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Connections
           </NavLink>
+          <NavLink to="/brand" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Brand
+          </NavLink>
           <NavLink to="/billing" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Billing
           </NavLink>

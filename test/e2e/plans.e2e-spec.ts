@@ -97,6 +97,8 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
     const { client } = await h.signIn();
     expect((await client.get('/plans/me')).body.canChromaKey).toBe(false);
     expect((await client.get('/plans/me')).body.canLowerThird).toBe(false);
+    const me = (await client.get('/plans/me')).body;
+    expect([me.watermark, me.assetStorageMb]).toEqual([true, 0]); // Free: the Powered-by mark, browser-only assets
     try {
       expect((await admin.patch('/superadmin/plans/free', { canChromaKey: true })).body.canChromaKey).toBe(true);
       expect((await client.get('/plans/me')).body.canChromaKey).toBe(true);

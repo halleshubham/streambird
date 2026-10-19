@@ -43,6 +43,8 @@ export interface AppConfig {
   cookieSecure: boolean;
   /** COOKIE_CONSENT_BANNER (default off): ask visitors before loading Google Analytics. Off = analytics loads for everyone and no banner is shown. */
   cookieConsentBanner: boolean;
+  /** Cloudflare R2 for brand assets. All four set = R2; none = in-memory in development, off in production. */
+  assetStorage: { accountId: string; accessKeyId: string; secretAccessKey: string; bucket: string };
   resendApiKey: string;
   emailFrom: string;
   /** Seeded/reconciled on every boot -- see SuperadminSeedService. Both
@@ -145,6 +147,12 @@ export default (): AppConfig => ({
   legacyHosts: parseLegacyHosts(process.env.LEGACY_HOSTS),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   cookieSecure: process.env.NODE_ENV === 'production',
+  assetStorage: {
+    accountId: process.env.R2_ACCOUNT_ID ?? '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
+    bucket: process.env.R2_BUCKET ?? '',
+  },
   cookieConsentBanner: ['true', '1', 'yes', 'on'].includes((process.env.COOKIE_CONSENT_BANNER ?? '').trim().toLowerCase()),
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.app>',

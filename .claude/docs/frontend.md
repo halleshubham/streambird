@@ -74,3 +74,6 @@ Google Analytics is **not in `index.html`**; `lib/consent.ts` injects it. The se
 - **off (default):** no banner, no "Cookie settings" link, analytics loads for every visitor, and `/privacy` says so.
 - **on:** `components/CookieBanner.tsx` (mounted in `App.tsx`, hidden on `/join/*` and `*/studio`) shows Accept/Reject with equal weight; analytics loads only after Accept (choice in localStorage `streambird:consent:v1`); `CookieSettingsLink` in the landing, login and app footers reopens the banner; `/privacy` describes the opt-in. Use this for EU/UK visitors (GDPR/ePrivacy need opt-in).
 If the setting can't be fetched, nothing loads. Never add another tracking/marketing script outside this module, and keep `/privacy#cookies` accurate. Playwright's `use.storageState` pre-answers the banner (Reject) for every test; the `cookie consent` tests stub `/api/config/public` to pick a mode.
+
+## Brand page
+`/brand` (`routes/BrandPage.tsx`, nav link "Brand"): the asset library (upload, rename, delete, usage meter) and brand kits (a `KitEditor` form per kit plus a "New brand kit" form; channel checkboxes assign connections to the kit). Free shows `data-testid="brand-free-notice"` and no forms. API in `api/assets.ts`; images are `<img src=/api/assets/:id/file>`.

@@ -7,6 +7,7 @@ import {
   stepLowerThirdProgress,
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
+import { drawPoweredBy } from './poweredBy';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -346,6 +347,8 @@ export function useHostStudio(streamId: string | undefined) {
   /** Plan allows animated lower-third banners (Pro and up). Drawn client-side, like green screen. */
   const [canLowerThird, setCanLowerThird] = useState(false);
   const canLowerThirdRef = useRef(false);
+  /** Free plan: draw the small "Powered by StreamBird" mark (see poweredBy.ts). */
+  const showMarkRef = useRef(false);
   /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
   const [lowerThird, setLowerThirdState] = useState<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
   const lowerThirdRef = useRef<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
@@ -1076,6 +1079,15 @@ export function useHostStudio(streamId: string | undefined) {
       drawLogo(now);
       drawNewsline(w, h, now);
       drawLowerThirdBanner(w, h, now);
+      if (showMarkRef.current) {
+        if (!brandImgRef.current) {
+          const mark = new Image();
+          mark.src = '/logo.png';
+          brandImgRef.current = mark;
+        }
+        const b = brandingRef.current;
+        drawPoweredBy(ctx, w, h, brandImgRef.current, b.newsText ? newsBarHeight(b.newsFontSize) : 0);
+      }
 
       const transition = transitionStateRef.current;
       if (transition) {
@@ -1484,6 +1496,7 @@ export function useHostStudio(streamId: string | undefined) {
         canChromaKeyRef.current = !!l.canChromaKey;
         setCanChromaKey(!!l.canChromaKey);
         canLowerThirdRef.current = !!l.canLowerThird;
+        showMarkRef.current = !!l.watermark;
         setCanLowerThird(!!l.canLowerThird);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
       })

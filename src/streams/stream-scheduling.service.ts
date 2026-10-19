@@ -435,10 +435,10 @@ export class StreamSchedulingService {
     return this.destinations.find({ where: { liveStreamId: streamId }, relations: ['platformConnection'] });
   }
 
-  private broadcastMeta(stream: LiveStream): BroadcastMeta {
+  private async broadcastMeta(stream: LiveStream): Promise<BroadcastMeta> {
     return {
       title: stream.title,
-      description: stream.description ?? undefined,
+      description: await this.streamsService.platformDescription(stream.accountId, stream.description),
       scheduledAt: stream.scheduledAt ?? undefined,
       visibility: (stream.visibility as BroadcastMeta['visibility']) ?? undefined,
       precreate: true,
@@ -468,7 +468,7 @@ export class StreamSchedulingService {
         if (!provider.canPrescheduleBroadcast) return;
 
         try {
-          const result = await provider.createBroadcast(conn, this.broadcastMeta(stream));
+          const result = await provider.createBroadcast(conn, await this.broadcastMeta(stream));
           Object.assign(row, {
             platformBroadcastId: result.platformBroadcastId,
             ingestUrl: result.ingestUrl,
@@ -500,7 +500,7 @@ export class StreamSchedulingService {
         if (!conn || !row.platformBroadcastId) return;
         const provider = this.streamsService.resolveProvider(conn);
         try {
-          await provider.updateBroadcast?.(conn, row.platformBroadcastId, this.broadcastMeta(stream));
+          await provider.updateBroadcast?.(conn, row.platformBroadcastId, await this.broadcastMeta(stream));
         } catch (err) {
           warnings.push(`${this.describe(row)}: couldn't update it on the platform (${(err as Error).message}).`);
         }

@@ -131,6 +131,7 @@ describe('StreamsService', () => {
             assertCanStartStream: jest.fn(async () => undefined),
             assertDestinationCount: jest.fn(async () => undefined),
             recordStreamUsage: jest.fn(async () => undefined),
+            getLimits: jest.fn(async () => ({ watermark: false })),
           },
         },
       ],
@@ -308,6 +309,23 @@ describe('StreamsService', () => {
       expect.objectContaining({ visibility: 'public' }),
     );
     expect(stream.destinations[0].watchUrl).toBe('https://watch.example/youtube-broadcast-1');
+  });
+
+  it('adds the Powered-by-StreamBird line to the platform description only for accounts whose plan shows the mark', async () => {
+    const mark = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const withMark = await build([mark]);
+    (withMark.accountsService.getLimits as jest.Mock).mockResolvedValue({ watermark: true });
+    const c1 = makeConnection('c1', Platform.YOUTUBE);
+    withMark.connectionRepo.rows.set(c1.id, c1);
+    await withMark.service.create('acc_1', { title: 'Free show', description: 'About us', destinationConnectionIds: ['c1'] });
+    expect(mark.createBroadcast).toHaveBeenCalledWith(c1, expect.objectContaining({ description: 'About us\n\nPowered by StreamBird - https://streambird.app' }));
+
+    const clean = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const noMark = await build([clean]);
+    const c2 = makeConnection('c2', Platform.YOUTUBE);
+    noMark.connectionRepo.rows.set(c2.id, c2);
+    await noMark.service.create('acc_1', { title: 'Paid show', description: 'About us', destinationConnectionIds: ['c2'] });
+    expect(clean.createBroadcast).toHaveBeenCalledWith(c2, expect.objectContaining({ description: 'About us' }));
   });
 
   it('getStatus surfaces the provider-reported platformStatus alongside the (possibly optimistic) internal status', async () => {

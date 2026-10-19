@@ -100,6 +100,25 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_lower_third FROM plans WHERE key = 'pro'`)).rows[0].can_lower_third).toBe(false);
 
+    // Brand storage and the watermark (0022): paid plans get an allowance, Free shows the mark; an admin's edit survives a re-run.
+    const st = await db.query(`SELECT key, asset_storage_mb, watermark FROM plans ORDER BY sort_order`);
+    expect(st.rows.map((r) => [r.key, r.asset_storage_mb, r.watermark])).toEqual([['free', 0, true], ['starter', 50, false], ['pro', 500, false], ['enterprise', 2048, false], ['day_pass', 0, false]]);
+    await db.query(`UPDATE plans SET asset_storage_mb = 800, watermark = false WHERE key IN ('pro', 'free')`);
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0022%'`);
+    await runMigrations(url, { quiet: true });
+    expect((await db.query(`SELECT asset_storage_mb FROM plans WHERE key = 'pro'`)).rows[0].asset_storage_mb).toBe(800);
+
+    // Asset library and brand kits (0023, 0024): a file in use cannot be deleted, deleting a kit frees its connections.
+    const acct = (await db.query(`SELECT id FROM accounts LIMIT 1`)).rows[0].id;
+    const asset = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'logo', 'l', 'image/png', 10, 1, 1, 'k') RETURNING id`, [acct])).rows[0].id;
+    const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, logo_asset_id, is_default) VALUES ($1, 'Main', $2, true) RETURNING id`, [acct, asset])).rows[0].id;
+    await expect(db.query(`DELETE FROM assets WHERE id = $1`, [asset])).rejects.toThrow();
+    await expect(db.query(`INSERT INTO brand_kits (account_id, name, is_default) VALUES ($1, 'Second default', true)`, [acct])).rejects.toThrow(); // one default per account
+    await expect(db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'video', 'v', 'x', 1, 1, 1, 'k2')`, [acct])).rejects.toThrow();
+    await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]);
+    await db.query(`DELETE FROM assets WHERE id = $1`, [asset]);
+    await expect(db.query(`SELECT brand_kit_id FROM platform_connections LIMIT 1`)).resolves.toBeDefined();
+
     // Mobile numbers (0020): people who signed up before are never flagged to be asked; the columns survive a re-run.
     const before = await db.query(`SELECT phone, phone_required FROM users`);
     expect(before.rows).toEqual([{ phone: null, phone_required: false }]);
