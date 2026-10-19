@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CookieSettingsLink } from '../components/CookieSettingsLink';
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -389,7 +390,7 @@ export function LandingPage() {
           </a>
         </span>
         <span>
-          <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link>
+          <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
         </span>
         <span>
           <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>

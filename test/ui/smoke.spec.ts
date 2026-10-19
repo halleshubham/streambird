@@ -20,6 +20,86 @@ async function signIn(context: BrowserContext, opts: { superadmin?: boolean } = 
 }
 const apiHeaders = { Origin: APP, 'Content-Type': 'application/json' };
 
+// The server's COOKIE_CONSENT_BANNER decides the mode (default off); these tests answer /api/config/public themselves.
+const bannerMode = (page: Page, on: boolean) =>
+  page.route('**/api/config/public', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ cookieConsentBanner: on }) }));
+
+test.describe('cookie consent', () => {
+  test.use({ storageState: { cookies: [], origins: [] } }); // a first-time visitor
+
+  test('default (banner off): no banner, no Cookie settings link, and Google Analytics loads for everyone', async ({ page }) => {
+    const hits = googleRequests(page);
+    await page.route(/googletagmanager\.com/, (route) => route.fulfill({ contentType: 'text/javascript', body: '' }));
+    const real = await (await page.request.get('/api/config/public')).json();
+    expect(real).toEqual({ cookieConsentBanner: false }); // the fixture server runs with the default
+    await page.goto('/');
+    await expect.poll(() => hits.length).toBeGreaterThan(0);
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Cookie settings' })).toHaveCount(0);
+    await page.goto('/privacy');
+    await expect(page.getByText('we use Google Analytics to see which pages are used')).toBeVisible();
+  });
+
+  const googleRequests = (page: Page) => {
+    const hits: string[] = [];
+    page.on('request', (r) => { if (/googletagmanager\.com|google-analytics\.com/.test(r.url())) hits.push(r.url()); });
+    return hits;
+  };
+
+  test('first visit: a banner with equal Accept and Reject; nothing from Google loads until Accept', async ({ page }) => {
+    await bannerMode(page, true);
+    const hits = googleRequests(page);
+    await page.route(/googletagmanager\.com/, (route) => route.fulfill({ contentType: 'text/javascript', body: '' }));
+    await page.goto('/');
+    const banner = page.getByRole('region', { name: 'Cookie consent' });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole('link', { name: /how we use cookies/ })).toHaveAttribute('href', '/privacy#cookies');
+    const [a, r] = await Promise.all([banner.getByRole('button', { name: 'Accept' }).boundingBox(), banner.getByRole('button', { name: 'Reject' }).boundingBox()]);
+    expect(a!.width).toBeCloseTo(r!.width, 0);
+    expect(a!.height).toBeCloseTo(r!.height, 0);
+    await page.waitForTimeout(500);
+    expect(hits).toEqual([]);
+
+    await banner.getByRole('button', { name: 'Accept' }).click();
+    await expect(banner).toHaveCount(0);
+    await expect.poll(() => hits.length).toBeGreaterThan(0);
+    await page.reload(); // remembered: no banner, analytics loads again
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toHaveCount(0);
+    expect(await page.evaluate(() => !!document.querySelector('script[src*="googletagmanager"]'))).toBe(true);
+  });
+
+  test('Reject: Google never loads, even after a reload and on other pages; Cookie settings brings the banner back', async ({ page }) => {
+    await bannerMode(page, true);
+    const hits = googleRequests(page);
+    await page.goto('/');
+    await page.getByRole('region', { name: 'Cookie consent' }).getByRole('button', { name: 'Reject' }).click();
+    await page.goto('/login');
+    await page.reload();
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cookie settings' }).click();
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(hits).toEqual([]);
+  });
+
+  test('the privacy policy (banner mode) explains the choice, cookies and the mobile number', async ({ page }) => {
+    await bannerMode(page, true);
+    await page.goto('/privacy#cookies');
+    await expect(page.getByRole('heading', { name: /Cookies, analytics/ })).toBeVisible();
+    await expect(page.getByText('Mobile number:')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your rights and how to reach us' })).toBeVisible();
+  });
+
+  test('the studio is never covered by the banner', async ({ page, context }) => {
+    await bannerMode(page, true);
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await expect(page.getByRole('button', { name: /Start my camera/ })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Cookie consent' })).toHaveCount(0);
+  });
+});
+
 test.describe('public pages', () => {
   test('login offers email, Google and Facebook sign-in', async ({ page }) => {
     await page.goto('/login');
@@ -1031,7 +1111,10 @@ test.describe('background removal (Pro)', () => {
 test.describe('logo position', () => {
   const RED = solidPng(220, 30, 40);
   const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
-  const size = (page: Page) => page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+  const size = async (page: Page) => {
+    await page.locator('canvas.studio-canvas').waitFor(); // the studio is still loading right after goto
+    return page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
+  };
 
   test('the logo can sit top left (as before) or top right, and the choice sticks through a reload and a scene', async ({ page, context }) => {
     const { api } = await signIn(context);
@@ -1086,6 +1169,7 @@ test.describe('logo position', () => {
       [`streambird:studio:${id}:v1`, `data:image/png;base64,${RED.toString('base64')}`],
     );
     await page.goto(`/streams/${id}/studio`);
+    await page.locator('canvas.studio-canvas').waitFor();
     await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
     await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
   });

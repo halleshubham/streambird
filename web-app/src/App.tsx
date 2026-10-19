@@ -26,9 +26,11 @@ import { BillingPage } from './routes/BillingPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
+import { CookieBanner } from './components/CookieBanner';
 
 export function App() {
   return (
+    <>
     <Routes>
       {/* Anonymous -> public marketing page; logged in -> straight to
           /dashboard. See HomeRoute. */}
@@ -84,5 +86,7 @@ export function App() {
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    <CookieBanner />
+    </>
   );
 }

@@ -1,4 +1,5 @@
 import { Outlet, Link, NavLink } from 'react-router-dom';
+import { CookieSettingsLink } from './CookieSettingsLink';
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DocsLink } from './DocsLink';
@@ -44,7 +45,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <footer className="app-footer">
-        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
       </footer>
     </div>
   );

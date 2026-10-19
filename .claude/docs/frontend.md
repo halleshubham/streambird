@@ -68,3 +68,9 @@ Every admin page is `PageHeader` + `Section`/`DataTable` from `web-app/src/compo
 - Destructive actions confirm (`window.confirm`): reject signup, suspend user, suspend account, force end. Row actions use `btn-sm` (+ `danger-button`); page-level actions sit in `PageHeader actions`.
 
 - **Admin sign-in** (`AdminLoginPage`): same identity as the admin header (logo + ADMIN badge, amber top rule), two labelled steps ("Sign in" then "Check your email"), errors as `role=alert`. Tests: `admin login page` block in smoke.spec.
+
+## Cookie consent (optional, off by default)
+Google Analytics is **not in `index.html`**; `lib/consent.ts` injects it. The server decides the mode with `COOKIE_CONSENT_BANNER` (default `false`, served by `GET /api/config/public`, fetched by `initConsent()` in `main.tsx`):
+- **off (default):** no banner, no "Cookie settings" link, analytics loads for every visitor, and `/privacy` says so.
+- **on:** `components/CookieBanner.tsx` (mounted in `App.tsx`, hidden on `/join/*` and `*/studio`) shows Accept/Reject with equal weight; analytics loads only after Accept (choice in localStorage `streambird:consent:v1`); `CookieSettingsLink` in the landing, login and app footers reopens the banner; `/privacy` describes the opt-in. Use this for EU/UK visitors (GDPR/ePrivacy need opt-in).
+If the setting can't be fetched, nothing loads. Never add another tracking/marketing script outside this module, and keep `/privacy#cookies` accurate. Playwright's `use.storageState` pre-answers the banner (Reject) for every test; the `cookie consent` tests stub `/api/config/public` to pick a mode.

@@ -21,6 +21,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     permissions: ['camera', 'microphone'],
+    // Every test starts as a visitor who already answered the cookie banner (Reject), so the strip never sits
+    // over the page under test. The consent tests clear this with test.use({ storageState: ... }).
+    storageState: { cookies: [], origins: [{ origin: APP, localStorage: [{ name: 'streambird:consent:v1', value: 'denied' }] }] },
     launchOptions: {
       executablePath: process.env.PW_CHROMIUM || undefined,
       args: ['--no-sandbox', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'],

@@ -41,6 +41,8 @@ export interface AppConfig {
   legacyHosts: string[];
   nodeEnv: string;
   cookieSecure: boolean;
+  /** COOKIE_CONSENT_BANNER (default off): ask visitors before loading Google Analytics. Off = analytics loads for everyone and no banner is shown. */
+  cookieConsentBanner: boolean;
   resendApiKey: string;
   emailFrom: string;
   /** Seeded/reconciled on every boot -- see SuperadminSeedService. Both
@@ -143,6 +145,7 @@ export default (): AppConfig => ({
   legacyHosts: parseLegacyHosts(process.env.LEGACY_HOSTS),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   cookieSecure: process.env.NODE_ENV === 'production',
+  cookieConsentBanner: ['true', '1', 'yes', 'on'].includes((process.env.COOKIE_CONSENT_BANNER ?? '').trim().toLowerCase()),
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   emailFrom: process.env.EMAIL_FROM ?? 'StreamBird <login@streambird.app>',
   superadminEmail: process.env.SUPERADMIN_EMAIL ?? '',
