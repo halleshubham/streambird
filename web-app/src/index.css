@@ -3834,3 +3834,55 @@ video.chroma-preview {
 .brand-kit { border-top: 1px solid var(--border); padding: 14px 0; display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
 .brand-channels { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .brand-kit h3 .badge { margin-left: 8px; }
+
+/* Brand page polish: feedback, drop zone, kit cards and the live preview */
+.brand-feedback { min-height: 0; }
+.brand-notice { display: flex; align-items: center; gap: 6px; margin: 8px 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-h); font-weight: 600; }
+.brand-notice svg { color: var(--accent); }
+.brand-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand-section-head h2, .brand-section-head h3 { margin: 0; }
+.brand-meter--warn .brand-meter-fill { background: var(--warning); }
+.brand-upload { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 16px; }
+.brand-upload-row { display: flex; align-items: center; gap: 10px; }
+.brand-upload-row select { width: auto; margin: 0; }
+.brand-upload-row label { margin: 0; }
+.brand-drop { position: relative; display: flex; align-items: center; gap: 14px; padding: 18px; border: 2px dashed var(--border); border-radius: 12px; cursor: pointer; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+.brand-drop:hover, .brand-drop--over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.brand-drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.brand-drop input[type='file'] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; margin: 0; padding: 0; }
+.brand-drop-preview { width: 64px; height: 64px; object-fit: contain; border-radius: 8px; background: var(--border); }
+.brand-drop-text { display: flex; flex-direction: column; gap: 2px; }
+.brand-empty { display: flex; align-items: center; gap: 14px; padding: 18px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text); }
+.brand-empty svg { flex: none; color: var(--accent); }
+.brand-empty p { margin: 0; }
+.brand-kit-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 14px; }
+.brand-kit-card { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--card-bg); }
+.brand-kit-summary { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.brand-kit-info { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; flex: 1 1 200px; }
+.brand-kit-info h3 { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand-kit--editing { border-top: 0; padding: 0; max-width: 560px; }
+.kit-preview { position: relative; flex: none; width: 240px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: linear-gradient(135deg, #1b1038, #0e0e16); border: 1px solid var(--border); }
+.brand-kit--editing .kit-preview { width: 100%; }
+.kit-preview-wall { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.kit-preview-dim { position: absolute; inset: 0; background: #000; }
+.kit-preview-logo { position: absolute; top: 4%; max-width: 40%; object-fit: contain; }
+.kit-preview-logo--left { left: 3%; }
+.kit-preview-logo--right { right: 3%; }
+.kit-preview-lt { position: absolute; left: 4%; bottom: 8%; display: flex; flex-direction: column; padding: 3% 4%; font-size: 9px; line-height: 1.25; color: #fff; background: rgba(17, 14, 34, 0.92); }
+.kit-preview-lt b { font-size: 11px; }
+.kit-preview-lt span { color: #d9ccff; }
+.kit-preview-lt--accent { border-left: 3px solid #7c3aed; }
+.kit-preview-lt--glass { background: rgba(255, 255, 255, 0.22); border: 1px solid rgba(255, 255, 255, 0.55); }
+.kit-preview-lt--glass span { color: #fff; }
+@media (max-width: 640px) {
+  .kit-preview { width: 100%; }
+  .brand-drop { padding: 14px; }
+}
+.on-air { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--error); }
+.on-air::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: on-air-pulse 1.4s ease-in-out infinite; }
+@keyframes on-air-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .on-air::before { animation: none; } }
+
+.brand-upload { align-items: stretch; text-align: left; }
+.brand-upload .studio-toolbar { justify-content: flex-start; }
+.brand-drop { width: 100%; box-sizing: border-box; }

@@ -40,7 +40,7 @@ export function LowerThirdPanel({ allowed, settings, live, presets, actions }: P
   return (
     <div className="panel" data-testid="lower-third-panel">
       <label className="studio-section-label" htmlFor="lowerThirdTitle">
-        <TextCursorInput size={14} /> Lower third
+        <TextCursorInput size={14} /> Lower third {live && <span className="on-air" role="status">On air</span>}
       </label>
       <input
         id="lowerThirdTitle"
@@ -49,7 +49,14 @@ export function LowerThirdPanel({ allowed, settings, live, presets, actions }: P
         maxLength={LOWER_THIRD_LIMITS.title}
         value={settings.title}
         onChange={(e) => actions.setLowerThird({ title: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && hasTitle) {
+            e.preventDefault();
+            actions.showLowerThird();
+          }
+        }}
       />
+      <p className="field-hint">Press Enter to show it{live ? ' again' : ''}.</p>
       <label htmlFor="lowerThirdSubtitle">Second line (optional)</label>
       <input
         id="lowerThirdSubtitle"
@@ -58,6 +65,12 @@ export function LowerThirdPanel({ allowed, settings, live, presets, actions }: P
         maxLength={LOWER_THIRD_LIMITS.subtitle}
         value={settings.subtitle}
         onChange={(e) => actions.setLowerThird({ subtitle: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && hasTitle) {
+            e.preventDefault();
+            actions.showLowerThird();
+          }
+        }}
       />
 
       <label id="lowerThirdStyleLabel">Look</label>
