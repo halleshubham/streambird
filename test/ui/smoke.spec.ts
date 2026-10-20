@@ -672,8 +672,12 @@ test.describe('brand library and kits', () => {
       await expect(page.getByTestId('brand-usage')).toContainText('0.0 MB of 5.0 MB used');
 
       await page.getByLabel('Type').selectOption('logo');
+      await expect(page.getByRole('button', { name: 'Upload' })).toBeDisabled(); // nothing chosen yet
       await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'main-logo.png', mimeType: 'image/png', buffer: solidPng(220, 30, 40) });
+      await expect(page.locator('.brand-drop')).toContainText('main-logo.png'); // the chosen file is shown, with a preview
+      await expect(page.locator('.brand-drop-preview')).toBeVisible();
       await page.getByRole('button', { name: 'Upload' }).click();
+      await expect(page.getByRole('status').filter({ hasText: 'Uploaded "main-logo"' })).toBeVisible();
       const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
       await expect(card).toBeVisible();
       await expect(card).toContainText('Logo');
@@ -681,38 +685,52 @@ test.describe('brand library and kits', () => {
       await expect.poll(() => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
 
       // Kit 1: that logo on the Hindi channel; kit 2 reuses the same file on the English channel.
+      await page.getByRole('button', { name: 'New brand kit' }).click();
       const kit1 = page.getByRole('form', { name: 'New brand kit' });
       await kit1.getByLabel('Kit name').fill('Hindi');
       await kit1.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
       await kit1.getByRole('button', { name: 'Top right' }).click();
       await kit1.getByLabel(/Hindi channel/).check();
       await kit1.getByRole('button', { name: 'Create kit' }).click();
-      await expect(page.getByRole('form', { name: 'Brand kit Hindi' })).toContainText('Account default'); // the first kit is the default
+      await expect(page.getByRole('status').filter({ hasText: 'Created "Hindi"' })).toBeVisible(); // feedback after saving
+      const hindiCard = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Hindi/ }) });
+      await expect(hindiCard).toContainText('Account default'); // the first kit is the default
+      await expect(hindiCard).toContainText('Used by Hindi channel');
 
+      await page.getByRole('button', { name: 'New brand kit' }).click();
       const kit2 = page.getByRole('form', { name: 'New brand kit' });
       await kit2.getByLabel('Kit name').fill('English');
       await kit2.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
       await kit2.getByLabel(/English channel/).check();
       await kit2.getByRole('button', { name: 'Create kit' }).click();
-      const english = page.getByRole('form', { name: 'Brand kit English' });
-      await expect(english).toBeVisible();
-      await expect(english.getByLabel(/English channel/)).toBeChecked();
-      await expect(english.getByLabel(/Hindi channel/)).not.toBeChecked();
-      await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByLabel(/Hindi channel/)).toBeChecked();
+      const englishCard = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^English/ }) });
+      await expect(englishCard).toContainText('Used by English channel');
+      await expect(englishCard).not.toContainText('Account default');
       await expect(card).toContainText('used by Hindi, English');
 
-      // It survives a reload (it is on the server, not in the browser).
+      // It survives a reload (it is on the server, not in the browser), and the live preview follows the form.
       await page.reload();
-      await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+      await page.getByRole('button', { name: 'Edit Hindi' }).click();
+      const hindiForm = page.getByRole('form', { name: 'Brand kit Hindi' });
+      await expect(hindiForm.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(hindiForm.locator('.kit-preview-logo--right')).toBeVisible();
+      await hindiForm.getByRole('button', { name: 'Top left' }).click();
+      await expect(hindiForm.locator('.kit-preview-logo--left')).toBeVisible();
+      await expect(hindiForm.getByRole('button', { name: 'Save kit' })).toBeEnabled(); // a change was made
+      await hindiForm.getByRole('button', { name: 'Close without saving' }).click();
+      await page.getByRole('button', { name: 'Edit Hindi' }).click();
+      await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Save kit' })).toBeDisabled(); // nothing changed since
 
       // A file in use is refused; once the kits are gone it can be deleted.
       page.on('dialog', (d) => void d.accept());
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
       await expect(page.getByRole('alert')).toContainText('used by the brand kits');
-      await page.getByRole('form', { name: 'Brand kit English' }).getByRole('button', { name: 'Delete kit' }).click();
-      await expect(page.getByRole('form', { name: 'Brand kit English' })).toHaveCount(0);
       await page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Delete kit' }).click();
-      await expect(page.getByRole('form', { name: 'Brand kit Hindi' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: /^Hindi/ })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Edit English' }).click();
+      await page.getByRole('form', { name: 'Brand kit English' }).getByRole('button', { name: 'Delete kit' }).click();
+      await expect(page.getByRole('heading', { name: /^English/ })).toHaveCount(0);
+      await expect(page.getByText('No brand kits yet')).toBeVisible();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
       await expect(page.getByText('No files yet')).toBeVisible();
     });
@@ -800,7 +818,8 @@ test.describe('lower third banner (Pro)', () => {
       await page.locator('#lowerThirdSubtitle').fill('Founder, ShackyApps');
       expect(purple(await stripeAt())).toBe(false);
 
-      await page.getByRole('button', { name: 'Show lower third' }).click();
+      await page.locator('#lowerThirdSubtitle').press('Enter'); // Enter shows it, no need to find the button
+      await expect(page.getByText('On air')).toBeVisible();
       await expect.poll(async () => purple(await stripeAt())).toBe(true);
       // The text is drawn: some near-white pixels sit inside the box.
       const white = await page.evaluate(([x0, y0, w, h]) => {
