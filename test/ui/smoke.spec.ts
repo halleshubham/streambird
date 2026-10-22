@@ -1378,6 +1378,53 @@ test.describe('admin console', () => {
     else await expect(badge).toHaveCount(0);
   });
 
+  test.describe('registration: pause and resume', () => {
+    test.afterEach(async ({ browser }) => {
+      const ctx = await browser.newContext();
+      const admin = await signIn(ctx, { superadmin: true });
+      await admin.api.put(`${APP}/api/superadmin/registration`, { data: { autoApprove: false }, headers: apiHeaders });
+      await ctx.close();
+    });
+
+    test('manual by default; auto-approve lets new signups straight in; pausing queues them; approve all clears the queue', async ({ page, context, browser }) => {
+      const waitingEmail = await pendingSignup(await browser.newContext());
+      await signIn(context, { superadmin: true });
+      await page.goto('/admin');
+      const section = page.getByRole('heading', { name: /Registration: paused/ });
+      await expect(section).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Manual review' })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('registration-history')).toContainText('waiting for approval now');
+
+      // Open: a brand-new signup is approved the moment it signs in.
+      await page.getByRole('button', { name: 'Auto-approve' }).click();
+      await expect(page.getByRole('heading', { name: /Registration: open/ })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: 'Auto-approve is on' })).toBeVisible();
+      const openCtx = await browser.newContext();
+      const openEmail = await pendingSignup(openCtx);
+      const me = await (await openCtx.request.get(`${APP}/api/auth/me`)).json();
+      expect(me.user.email).toBe(openEmail);
+      expect(me.user.approvedAt).not.toBeNull();
+      await openCtx.close();
+
+      // Paused again: the setting sticks through a reload, and the next signup waits.
+      await page.getByRole('button', { name: 'Manual review' }).click();
+      await expect(page.getByRole('status').filter({ hasText: 'Registrations paused' })).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole('heading', { name: /Registration: paused/ })).toBeVisible();
+      const pausedEmail = await pendingSignup(await browser.newContext());
+      await page.reload();
+      await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toBeVisible();
+      await expect(page.getByRole('row', { name: new RegExp(waitingEmail) })).toBeVisible();
+
+      // Approve everyone waiting in one go.
+      page.on('dialog', (d) => void d.accept());
+      await page.getByRole('button', { name: /Approve all waiting/ }).click();
+      await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup/ })).toBeVisible();
+      await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Approve all waiting/ })).toHaveCount(0);
+    });
+  });
+
   test('phone: the Approve and Reject buttons stay on screen (secondary columns are folded under the email)', async ({ page, context, browser }) => {
     const email = await pendingSignup(await browser.newContext());
     await signIn(context, { superadmin: true });

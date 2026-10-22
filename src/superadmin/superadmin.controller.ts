@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Inject,
   Logger,
@@ -8,12 +9,15 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { RegistrationSettingsService } from '../users/registration-settings.service';
 import { UsersService } from '../users/users.service';
+import { SetRegistrationDto } from './dto/set-registration.dto';
 import { AccountGuard } from '../common/guards/account.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -42,6 +46,7 @@ export class SuperadminController {
 
   constructor(
     private readonly usersService: UsersService,
+    private readonly registration: RegistrationSettingsService,
     private readonly auditLog: AuditLogService,
     private readonly streamsService: StreamsService,
     private readonly config: ConfigService,
@@ -67,6 +72,30 @@ export class SuperadminController {
       phone: u.phone,
       createdAt: u.createdAt,
     }));
+  }
+
+  /** The registration switch plus a little history to decide it by: signups in the last day/week and how many wait. */
+  @Get('registration')
+  async registrationStatus() {
+    const [autoApprove, counts] = await Promise.all([this.registration.isAutoApprove(), this.usersService.signupCounts()]);
+    return { autoApprove, ...counts };
+  }
+
+  /** Auto-approve on = new signups get in immediately; off = they queue for approval (registrations "paused"). */
+  @Put('registration')
+  async setRegistration(@CurrentUser() admin: User, @Body() dto: SetRegistrationDto) {
+    await this.registration.setAutoApprove(dto.autoApprove);
+    await this.auditLog.log(admin, dto.autoApprove ? 'enable_auto_approve' : 'disable_auto_approve', 'registration', null);
+    return this.registrationStatus();
+  }
+
+  /** Lets in everyone currently waiting (for when auto-approve is turned on and the queue should clear). */
+  @Post('pending-approvals/approve-all')
+  async approveAll(@CurrentUser() admin: User) {
+    const emails = await this.usersService.approveAllPending(admin.id);
+    if (emails.length > 0) await this.auditLog.log(admin, 'approve_all_pending', 'registration', null, { count: emails.length });
+    for (const to of emails) await this.notifyDecision(to, 'approved');
+    return { approved: emails.length };
   }
 
   @Post('users/:userId/approve')
