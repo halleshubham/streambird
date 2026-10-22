@@ -13,6 +13,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import { Company } from '../companies/entities/company.entity';
 import { Role } from '../common/enums/role.enum';
 import { isReviewAccountEmail, reviewAccountPlanKey } from './review-accounts';
+import { RegistrationSettingsService } from './registration-settings.service';
 
 const MIN_EMAIL_SEARCH_LENGTH = 2;
 const MAX_EMAIL_SEARCH_RESULTS = 50;
@@ -25,6 +26,7 @@ export class UsersService {
     @InjectRepository(Company)
     private readonly companies: Repository<Company>,
     private readonly accountsService: AccountsService,
+    private readonly registration: RegistrationSettingsService,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -52,9 +54,11 @@ export class UsersService {
    * surfaced here; AccountsService.create() still mints one for API-key
    * access, it's just not shown to this login flow.
    *
-   * approvedAt is explicitly left null -- a brand-new solo account is
-   * gated by the Superadmin approval queue exactly like a new Company
-   * Admin signup (see AccountGuard, listPendingApprovals/approveUser).
+   * approvedAt is left null -- a brand-new solo account is gated by the
+   * Superadmin approval queue exactly like a new Company Admin signup (see
+   * AccountGuard, listPendingApprovals/approveUser) -- unless the superadmin
+   * switched registrations to auto-approve (RegistrationSettingsService), in
+   * which case it is approved right here, with no approver recorded.
    */
   async findOrCreateForEmail(email: string): Promise<{ user: User; account: Account }> {
     const existing = await this.findByEmail(email);
@@ -62,12 +66,13 @@ export class UsersService {
       return this.provisionIfReviewAccount(existing, existing.account);
     }
 
+    const autoApproveNow = (await this.registration.isAutoApprove()) ? new Date() : null;
     const { account } = await this.accountsService.create({ name: email });
     const user = this.users.create({
       email,
       accountId: account.id,
       role: Role.USER,
-      approvedAt: null,
+      approvedAt: autoApproveNow,
       phoneRequired: !isReviewAccountEmail(email),
     });
     await this.users.save(user);
@@ -108,6 +113,7 @@ export class UsersService {
       );
     }
 
+    const autoApproveNow = (await this.registration.isAutoApprove()) ? new Date() : null;
     const { account } = await this.accountsService.create({ name: companyName });
     const company = this.companies.create({ name: companyName, accountId: account.id });
     await this.companies.save(company);
@@ -116,7 +122,7 @@ export class UsersService {
       email,
       accountId: account.id,
       role: Role.COMPANY_ADMIN,
-      approvedAt: null,
+      approvedAt: autoApproveNow,
       phoneRequired: !isReviewAccountEmail(email),
     });
     await this.users.save(user);
@@ -235,6 +241,30 @@ export class UsersService {
       relations: ['account'],
       order: { createdAt: 'ASC' },
     });
+  }
+
+  /** Approves everyone currently waiting; returns the addresses so the caller can tell them. */
+  async approveAllPending(approvedByUserId: string): Promise<string[]> {
+    const pending = await this.listPendingApprovals();
+    const now = new Date();
+    for (const u of pending) {
+      u.approvedAt = now;
+      u.approvedById = approvedByUserId;
+    }
+    if (pending.length > 0) await this.users.save(pending);
+    return pending.map((u) => u.email);
+  }
+
+  /** Signups in the last 24 hours and 7 days (accounts created), for the registration card's "usage history". */
+  async signupCounts(): Promise<{ last24h: number; last7d: number; waiting: number }> {
+    const q = (hours: number) =>
+      this.users
+        .createQueryBuilder('u')
+        .where('u.role IN (:...roles)', { roles: [Role.USER, Role.COMPANY_ADMIN] })
+        .andWhere(`u.created_at > now() - (:h || ' hours')::interval`, { h: String(hours) })
+        .getCount();
+    const [last24h, last7d, waiting] = await Promise.all([q(24), q(24 * 7), this.users.count({ where: { role: In([Role.USER, Role.COMPANY_ADMIN]), approvedAt: IsNull() } })]);
+    return { last24h, last7d, waiting };
   }
 
   async approveUser(userId: string, approvedByUserId: string): Promise<User> {

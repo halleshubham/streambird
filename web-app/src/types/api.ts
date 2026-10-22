@@ -529,3 +529,12 @@ export interface BrandKit {
 }
 
 export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & { isDefault?: boolean };
+
+/** The superadmin's registration switch and the signup history it is decided by. */
+export interface RegistrationStatus {
+  /** true = new signups are approved immediately; false = they queue for approval ("paused"). */
+  autoApprove: boolean;
+  last24h: number;
+  last7d: number;
+  waiting: number;
+}

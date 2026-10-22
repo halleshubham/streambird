@@ -9,12 +9,25 @@ import type {
   AuditLogEntry,
   LiveStreamRow,
   PendingApproval,
+  RegistrationStatus,
   UpdateSubscriptionPayload,
   UsageAlert,
 } from '../types/api';
 
 export function listPendingApprovals(): Promise<PendingApproval[]> {
   return api.get('/superadmin/pending-approvals');
+}
+
+export function getRegistration(): Promise<RegistrationStatus> {
+  return api.get('/superadmin/registration');
+}
+
+export function setRegistration(autoApprove: boolean): Promise<RegistrationStatus> {
+  return api.put('/superadmin/registration', { autoApprove });
+}
+
+export function approveAllPending(): Promise<{ approved: number }> {
+  return api.post('/superadmin/pending-approvals/approve-all');
 }
 
 export function approveUser(userId: string): Promise<{ id: string; approvedAt: string }> {

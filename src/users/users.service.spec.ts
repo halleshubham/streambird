@@ -11,6 +11,7 @@ import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
 import { Company } from '../companies/entities/company.entity';
 import { AccountsService } from '../accounts/accounts.service';
+import { RegistrationSettingsService } from './registration-settings.service';
 import { Role } from '../common/enums/role.enum';
 
 // Minimal stand-in for TypeORM's FindOperator (e.g. IsNull(), ILike(), In())
@@ -80,16 +81,18 @@ describe('UsersService', () => {
       (v: Partial<User>) => ({ createdAt: new Date(), ...v }) as User,
     );
 
+    const registration = { isAutoApprove: jest.fn(async () => false) };
     const moduleRef = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getRepositoryToken(User), useValue: users },
         { provide: getRepositoryToken(Company), useValue: companies },
         { provide: AccountsService, useValue: accountsService },
+        { provide: RegistrationSettingsService, useValue: registration },
       ],
     }).compile();
 
-    return { service: moduleRef.get(UsersService), users, companies, accountsService };
+    return { service: moduleRef.get(UsersService), users, companies, accountsService, registration };
   }
 
   it('creates exactly one Account+User pair on first-ever login for an email, pending approval', async () => {
@@ -104,6 +107,22 @@ describe('UsersService', () => {
     // A brand-new solo signup is gated by the Superadmin approval queue
     // exactly like a new Company Admin signup -- see AccountGuard.
     expect(user.approvedAt).toBeNull();
+  });
+
+  it('with auto-approve on, new solo and company signups are approved at once and no approver is recorded; invited-by-admin rules are unchanged', async () => {
+    const { service, registration } = await build();
+    registration.isAutoApprove.mockResolvedValue(true);
+
+    const { user } = await service.findOrCreateForEmail('open@example.com');
+    expect(user.approvedAt).toBeInstanceOf(Date);
+    expect(user.approvedById ?? null).toBeNull();
+
+    const { user: admin } = await service.createCompanyAdmin('Open Co', 'boss@example.com');
+    expect(admin.approvedAt).toBeInstanceOf(Date);
+
+    registration.isAutoApprove.mockResolvedValue(false);
+    const { user: queued } = await service.findOrCreateForEmail('later@example.com');
+    expect(queued.approvedAt).toBeNull();
   });
 
   it('a returning email resolves the same User/Account instead of creating a new pair', async () => {
