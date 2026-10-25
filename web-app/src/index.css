@@ -3886,3 +3886,15 @@ video.chroma-preview {
 .brand-upload { align-items: stretch; text-align: left; }
 .brand-upload .studio-toolbar { justify-content: flex-start; }
 .brand-drop { width: 100%; box-sizing: border-box; }
+
+/* "Platforms need a few seconds" notice right after Go live */
+.studio-golive-notice { position: relative; display: flex; align-items: center; gap: 12px; border-color: var(--accent); font-size: 14px; overflow: hidden; }
+.studio-golive-notice > span:first-of-type { flex: 1; }
+.studio-golive-notice-icon { flex: none; color: var(--accent); animation: golive-pulse 1.4s ease-in-out infinite; }
+.studio-golive-progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--accent); transform-origin: left; animation: golive-progress 10s linear forwards; }
+@keyframes golive-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes golive-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .studio-golive-notice-icon { animation: none; }
+  .studio-golive-progress { animation: none; transform: scaleX(0); }
+}

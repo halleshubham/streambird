@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   Focus,
   Radio,
+  X,
   PhoneOff,
   UserX,
   Mic,
@@ -40,13 +41,22 @@ import { ChromaPanel } from '../../components/ChromaPanel';
 import { LowerThirdPanel } from '../../components/LowerThirdPanel';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
-import { PlatformBadge } from '../../components/PlatformBadge';
+import { PlatformBadge, PLATFORM_LABELS } from '../../components/PlatformBadge';
+import type { Platform, PlatformConnection, StreamStatusDestination } from '../../types/api';
 import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
 import { formatElapsed } from '../../studio/recorder';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
+
+/** "YouTube and Twitch", "YouTube, Facebook and Twitch", or "Your platforms" when none are known yet. */
+function goLiveNames(destinations: StreamStatusDestination[], byId: Map<string, PlatformConnection>): string {
+  const names = [...new Set(destinations.map((d) => byId.get(d.platformConnectionId)?.platform).filter((p): p is Platform => !!p).map((p) => PLATFORM_LABELS[p]))];
+  if (names.length === 0) return 'Your platforms';
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
@@ -90,6 +100,7 @@ export function HostStudioPage() {
     cameraStarting,
     cameraStarted,
     isLive,
+    goLiveNotice,
     ending,
     screenSharing,
     branding,
@@ -189,6 +200,19 @@ export function HostStudioPage() {
           <button type="button" className="icon-btn icon-btn--accent" disabled={startingScheduled} onClick={() => void actions.startScheduledStream()}>
             {startingScheduled && <BirdBusy />} Start stream
           </button>
+        </div>
+      )}
+
+      {goLiveNotice && isLive && (
+        <div className="panel studio-golive-notice" role="status" data-testid="golive-notice">
+          <Radio size={18} className="studio-golive-notice-icon" aria-hidden="true" />
+          <span>
+            <strong>You’re live.</strong> {goLiveNames(destinations, connectionById)} can take about 5–10 seconds to start showing your stream. Keep this tab open.
+          </span>
+          <button type="button" className="icon-btn icon-btn--small" aria-label="Dismiss this notice" onClick={actions.dismissGoLiveNotice}>
+            <X size={14} />
+          </button>
+          <span className="studio-golive-progress" aria-hidden="true" />
         </div>
       )}
 

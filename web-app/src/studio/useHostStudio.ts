@@ -71,6 +71,9 @@ const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, auto
 /** 'grid' and 'spotlight' are the original layouts; the rest are framed (see compose.ts). */
 export type LayoutMode = LayoutId;
 
+/** How long the "platforms need a few seconds" notice stays after Go live. */
+export const GO_LIVE_NOTICE_MS = 10_000;
+
 export type StreamResolution = 'sd' | 'hd' | 'fhd' | 'qhd';
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
@@ -388,6 +391,9 @@ export function useHostStudio(streamId: string | undefined) {
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  /** Shown for a few seconds after the host presses Go live: the platforms need a moment to start showing the stream. */
+  const [goLiveNotice, setGoLiveNotice] = useState(false);
+  const goLiveNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ending, setEnding] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
   const [branding, setBranding] = useState<Branding>({ ...DEFAULT_BRANDING });
@@ -2191,7 +2197,14 @@ export function useHostStudio(streamId: string | undefined) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [recordingSince]);
 
-  const goLive = useCallback(async () => {
+  const hideGoLiveNotice = useCallback(() => {
+    if (goLiveNoticeTimerRef.current) clearTimeout(goLiveNoticeTimerRef.current);
+    goLiveNoticeTimerRef.current = null;
+    setGoLiveNotice(false);
+  }, []);
+
+  /** `announce: false` is for quiet re-publishes (restoring a studio after a reload): the platforms are already showing the stream. */
+  const goLive = useCallback(async (opts?: { announce?: boolean }) => {
     if (!stream?.whipUrl) {
       setStatus({ text: 'This stream has no publish URL yet.', isError: true });
       return;
@@ -2283,13 +2296,19 @@ export function useHostStudio(streamId: string | undefined) {
 
       setIsLive(true);
       setStatus({ text: 'LIVE — publishing.', isError: false });
+      if (opts?.announce !== false) {
+        setGoLiveNotice(true);
+        if (goLiveNoticeTimerRef.current) clearTimeout(goLiveNoticeTimerRef.current);
+        goLiveNoticeTimerRef.current = setTimeout(hideGoLiveNotice, GO_LIVE_NOTICE_MS);
+      }
     } catch (err) {
       setStatus({ text: `Failed to go live: ${(err as Error).message}`, isError: true });
     }
-  }, [stream, resolution]);
+  }, [stream, resolution, hideGoLiveNotice]);
 
   const endStream = useCallback(async () => {
     await stopRecording();
+    hideGoLiveNotice();
     setEnding(true);
     endingStreamRef.current = true;
     setStatus({ text: 'Ending stream…', isError: false, busy: true });
@@ -2376,7 +2395,7 @@ export function useHostStudio(streamId: string | undefined) {
     setAudioBlocked(ctx ? ctx.state !== 'running' : false);
 
     if (!whipPcRef.current || whipPcRef.current.connectionState === 'failed' || whipPcRef.current.connectionState === 'closed') {
-      await goLive();
+      await goLive({ announce: false });
     }
   }, [startCamera, goLive]);
 
@@ -2451,6 +2470,7 @@ export function useHostStudio(streamId: string | undefined) {
     cameraStarting,
     cameraStarted,
     isLive,
+    goLiveNotice,
     ending,
     screenSharing,
     branding,
@@ -2471,6 +2491,7 @@ export function useHostStudio(streamId: string | undefined) {
       setLayout,
       setResolution,
       goLive,
+      dismissGoLiveNotice: hideGoLiveNotice,
       startRecording,
       stopRecording,
       endStream,

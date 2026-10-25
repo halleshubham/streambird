@@ -780,6 +780,50 @@ test.describe('Powered-by mark (Free plan)', () => {
   });
 });
 
+test.describe('after Go live: platforms need a few seconds', () => {
+  /** The studio's publish goes to MediaMTX over WHIP; answer it locally so the page believes it is on air. */
+  const fakeWhip = async (page: Page) => {
+    await page.addInitScript(() => {
+      RTCPeerConnection.prototype.setRemoteDescription = async () => undefined;
+    });
+    await page.route('**/*whip*', (route) => route.fulfill({ status: 201, contentType: 'application/sdp', headers: { Location: '/whip/resource' }, body: 'v=0\r\n' }));
+  };
+  const openStudio = async (page: Page, context: BrowserContext) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await fakeWhip(page);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    return id;
+  };
+
+  test('a notice names the platforms, counts down about ten seconds, and goes away by itself', async ({ page, context }) => {
+    await openStudio(page, context);
+    await expect(page.getByTestId('golive-notice')).toHaveCount(0); // nothing before Go live
+    await page.getByRole('button', { name: /Go live/ }).click();
+    const notice = page.getByTestId('golive-notice');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('You’re live.');
+    await expect(notice).toContainText('Twitch can take about 5–10 seconds to start showing your stream');
+    await expect(notice).toHaveCount(0, { timeout: 15_000 }); // timed, no click needed
+    await expect(page.getByRole('button', { name: 'Live' })).toBeVisible(); // still live
+  });
+
+  test('it can be dismissed, and reloading a stream that is already live does not show it again', async ({ page, context }) => {
+    const id = await openStudio(page, context);
+    await page.getByRole('button', { name: /Go live/ }).click();
+    await expect(page.getByTestId('golive-notice')).toBeVisible();
+    await page.getByRole('button', { name: 'Dismiss this notice' }).click();
+    await expect(page.getByTestId('golive-notice')).toHaveCount(0);
+
+    await page.reload(); // the studio restores itself quietly: the platforms are already showing the stream
+    await page.waitForTimeout(2500);
+    await expect(page.getByTestId('golive-notice')).toHaveCount(0);
+    expect(id).toBeTruthy();
+  });
+});
+
 test.describe('lower third banner (Pro)', () => {
   const purple = (p: [number, number, number]) => Math.abs(p[0] - 124) < 25 && Math.abs(p[1] - 58) < 25 && Math.abs(p[2] - 237) < 25;
   const setPlan = async (browser: import('@playwright/test').Browser, can: boolean) => {
