@@ -23,7 +23,7 @@ export default defineConfig({
     permissions: ['camera', 'microphone'],
     // Every test starts as a visitor who already answered the cookie banner (Reject), so the strip never sits
     // over the page under test. The consent tests clear this with test.use({ storageState: ... }).
-    storageState: { cookies: [], origins: [{ origin: APP, localStorage: [{ name: 'streambird:consent:v1', value: 'denied' }] }] },
+    storageState: { cookies: [], origins: [{ origin: APP, localStorage: [{ name: 'streambird:consent:v1', value: 'denied' }, { name: 'streambird:tour:studio:v1', value: 'done' }] }] },
     launchOptions: {
       executablePath: process.env.PW_CHROMIUM || undefined,
       args: ['--no-sandbox', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
