@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import type { Platform } from '../types/api';
 import { PlatformLogo } from './PlatformLogo';
 
-const LABELS: Record<Platform, string> = {
+export const PLATFORM_LABELS: Record<Platform, string> = {
   youtube: 'YouTube',
   facebook: 'Facebook',
   twitch: 'Twitch',
@@ -23,7 +23,7 @@ export function PlatformBadge({ platform }: { platform: Platform }) {
       style={{ '--badge-color': COLORS[platform] } as CSSProperties}
     >
       <PlatformLogo platform={platform} />
-      {LABELS[platform]}
+      {PLATFORM_LABELS[platform]}
     </span>
   );
 }
