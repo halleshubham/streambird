@@ -1,6 +1,6 @@
 import { NameBadge } from '../../components/NameBadge';
 import { formatWhen } from '../../lib/schedule';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera,
@@ -39,6 +39,7 @@ import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStud
 import { SlideControls } from '../../components/SlideControls';
 import { ChromaPanel } from '../../components/ChromaPanel';
 import { LowerThirdPanel } from '../../components/LowerThirdPanel';
+import { StudioTour, markStudioTourSeen, studioTourSeen } from '../../components/StudioTour';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
 import { PlatformBadge, PLATFORM_LABELS } from '../../components/PlatformBadge';
@@ -114,6 +115,20 @@ export function HostStudioPage() {
     actions,
   } = useHostStudio(streamId);
   const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
+
+  // First-run tour: offered once per browser, only for a stream that can go live right now.
+  const [tourOpen, setTourOpen] = useState(false);
+  const tourOffered = useRef(false);
+  useEffect(() => {
+    if (loading || !stream?.whipUrl || tourOffered.current || studioTourSeen()) return;
+    tourOffered.current = true;
+    const t = setTimeout(() => setTourOpen(true), 700);
+    return () => clearTimeout(t);
+  }, [loading, stream?.whipUrl]);
+  const closeTour = () => {
+    markStudioTourSeen();
+    setTourOpen(false);
+  };
   const onStageCount = participants.filter((p) => p.onStage && !p.isScreenShare).length;
 
   const passwordUnsaved = requireInvitePassword && invitePassword.trim() !== savedInvitePassword;
@@ -203,6 +218,18 @@ export function HostStudioPage() {
         </div>
       )}
 
+      {stream.status === 'live' && !isLive && !resumeAttempted && stream.whipUrl && (
+        <div className="panel studio-preview-banner" role="status" data-testid="preview-banner">
+          <Radio size={18} className="studio-preview-icon" aria-hidden="true" />
+          <span>
+            <strong>You’re in preview, not live yet.</strong> Press <strong>Go live</strong> in the top bar to start streaming to {goLiveNames(destinations, connectionById)}.
+          </span>
+          <button type="button" className="link-button link-button--inline" onClick={() => setTourOpen(true)}>
+            Show me around
+          </button>
+        </div>
+      )}
+
       {goLiveNotice && isLive && (
         <div className="panel studio-golive-notice" role="status" data-testid="golive-notice">
           <Radio size={18} className="studio-golive-notice-icon" aria-hidden="true" />
@@ -234,6 +261,7 @@ export function HostStudioPage() {
           <button
             type="button"
             className="tb-btn"
+            data-tour="camera"
             aria-label={cameraStarted ? 'Camera on' : 'Start my camera'}
             title={cameraStarted ? 'Camera is on' : 'Start my camera'}
             onClick={() => void actions.startCamera()}
@@ -262,7 +290,7 @@ export function HostStudioPage() {
         </div>
 
         <div className="studio-topbar-group studio-invite-group">
-          <button type="button" className="tb-btn" aria-label="Create guest invite" title="Create a guest invite link and copy it" onClick={createInvite}>
+          <button type="button" className="tb-btn" data-tour="invite" aria-label="Create guest invite" title="Create a guest invite link and copy it" onClick={createInvite}>
             <Copy size={18} /> <span className="tb-label">Invite</span>
           </button>
           <button
@@ -380,7 +408,8 @@ export function HostStudioPage() {
         <div className="studio-topbar-group studio-topbar-live">
           <button
             type="button"
-            className={`go-live-button go-live-button--bar${isLive ? ' go-live-button--live' : ''}`}
+            data-tour="golive"
+            className={`go-live-button go-live-button--bar${isLive ? ' go-live-button--live' : ' go-live-button--hint'}`}
             onClick={() => void actions.goLive()}
             disabled={!stream.whipUrl || isLive}
           >
@@ -724,6 +753,7 @@ export function HostStudioPage() {
           ))}
         </div>
       </div>
+      <StudioTour open={tourOpen} platforms={goLiveNames(destinations, connectionById).replace(/^Your platforms$/, 'your platforms')} onClose={closeTour} />
     </div>
   );
 }

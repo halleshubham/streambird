@@ -780,6 +780,80 @@ test.describe('Powered-by mark (Free plan)', () => {
   });
 });
 
+test.describe('first-run studio tour', () => {
+  test.use({ storageState: { cookies: [], origins: [{ origin: APP, localStorage: [{ name: 'streambird:consent:v1', value: 'denied' }] }] } }); // a brand-new visitor: the tour has not been seen
+
+  const open = async (page: Page, context: BrowserContext) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    return id;
+  };
+
+  test('a new user is walked through four steps that end on the Go live button, once', async ({ page, context }) => {
+    const id = await open(page, context);
+    const tour = page.getByRole('dialog', { name: 'Studio tour' });
+    await expect(tour).toBeVisible();
+    await expect(tour).toContainText('Nothing reaches Twitch until you press Go live');
+    await expect(tour).toContainText('1 of 4');
+
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('Turn on your camera');
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('Bring a guest');
+    await tour.getByRole('button', { name: 'Back' }).click();
+    await expect(tour).toContainText('Turn on your camera');
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('Press Go live to start');
+    await expect(tour).toContainText('5–10 seconds');
+    // The spotlight sits on the real Go live button (it glides there, so wait for it to settle).
+    const offBy = async () => {
+      const spot = await page.locator('.studio-tour-spot').boundingBox();
+      const btn = await page.getByRole('button', { name: /Go live/ }).boundingBox();
+      return spot && btn ? Math.abs(spot.x + 6 - btn.x) + Math.abs(spot.y + 6 - btn.y) : 999;
+    };
+    await expect.poll(offBy).toBeLessThan(4);
+
+    await tour.getByRole('button', { name: 'Got it' }).click();
+    await expect(tour).toHaveCount(0);
+    await page.goto(`/streams/${id}/studio`); // seen: not offered again
+    await page.waitForTimeout(1500);
+    await expect(page.getByRole('dialog', { name: 'Studio tour' })).toHaveCount(0);
+  });
+
+  test('it can be skipped (button or Escape), and the preview banner can bring it back', async ({ page, context }) => {
+    const id = await open(page, context);
+    const tour = page.getByRole('dialog', { name: 'Studio tour' });
+    await expect(tour).toBeVisible();
+    await tour.getByRole('button', { name: 'Skip tour' }).click();
+    await expect(tour).toHaveCount(0);
+
+    const banner = page.getByTestId('preview-banner');
+    await expect(banner).toContainText('You’re in preview, not live yet');
+    await expect(banner).toContainText('start streaming to Twitch');
+    await banner.getByRole('button', { name: 'Show me around' }).click();
+    await expect(tour).toBeVisible();
+    await expect(tour).toContainText('1 of 4'); // starts over
+    await page.keyboard.press('Escape');
+    await expect(tour).toHaveCount(0);
+    expect(id).toBeTruthy();
+  });
+
+  test('the Go live button is nudged until the stream is live, and the preview banner goes once it is', async ({ page, context }) => {
+    await page.addInitScript(() => { RTCPeerConnection.prototype.setRemoteDescription = async () => undefined; });
+    await page.route('**/*whip*', (route) => route.fulfill({ status: 201, contentType: 'application/sdp', headers: { Location: '/whip/resource' }, body: 'v=0\r\n' }));
+    await open(page, context);
+    await page.getByRole('dialog', { name: 'Studio tour' }).getByRole('button', { name: 'Skip tour' }).click();
+    await expect(page.getByRole('button', { name: /Go live/ })).toHaveClass(/go-live-button--hint/);
+    await expect(page.getByTestId('preview-banner')).toBeVisible();
+    await page.getByRole('button', { name: /Go live/ }).click();
+    await expect(page.getByRole('button', { name: 'Live' })).toBeVisible();
+    await expect(page.getByTestId('preview-banner')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Live' })).not.toHaveClass(/go-live-button--hint/);
+  });
+});
+
 test.describe('after Go live: platforms need a few seconds', () => {
   /** The studio's publish goes to MediaMTX over WHIP; answer it locally so the page believes it is on air. */
   const fakeWhip = async (page: Page) => {
