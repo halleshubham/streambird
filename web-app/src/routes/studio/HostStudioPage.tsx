@@ -1,6 +1,7 @@
 import { NameBadge } from '../../components/NameBadge';
 import { formatWhen } from '../../lib/schedule';
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Camera,
@@ -34,6 +35,8 @@ import {
   Check,
   Circle,
   Square,
+  TextCursorInput,
+  Users,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
@@ -58,6 +61,15 @@ function goLiveNames(destinations: StreamStatusDestination[], byId: Map<string, 
   if (names.length === 1) return names[0];
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
+
+type SideTabId = 'people' | 'look' | 'titles' | 'scenes';
+const SIDE_TAB_KEY = 'streambird:studio:sidetab:v1';
+const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
+  { id: 'people', label: 'People', icon: Users },
+  { id: 'look', label: 'Look', icon: Palette },
+  { id: 'titles', label: 'Titles', icon: TextCursorInput },
+  { id: 'scenes', label: 'Scenes', icon: Clapperboard },
+];
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
@@ -125,6 +137,47 @@ export function HostStudioPage() {
     const t = setTimeout(() => setTourOpen(true), 700);
     return () => clearTimeout(t);
   }, [loading, stream?.whipUrl]);
+  // The panels beside the picture (People, Look, Titles, Scenes): one open at a time, so nothing needs scrolling to reach.
+  const [sideTab, setSideTab] = useState<SideTabId>(() => {
+    try {
+      const saved = localStorage.getItem(SIDE_TAB_KEY);
+      return SIDE_TABS.some((t) => t.id === saved) ? (saved as SideTabId) : 'people';
+    } catch {
+      return 'people';
+    }
+  });
+  const chooseSideTab = (id: SideTabId) => {
+    setSideTab(id);
+    try {
+      localStorage.setItem(SIDE_TAB_KEY, id);
+    } catch {
+      // best-effort
+    }
+  };
+  const onSideTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const i = SIDE_TABS.findIndex((t) => t.id === sideTab);
+    let next = -1;
+    if (e.key === 'ArrowRight') next = (i + 1) % SIDE_TABS.length;
+    else if (e.key === 'ArrowLeft') next = (i - 1 + SIDE_TABS.length) % SIDE_TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = SIDE_TABS.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    chooseSideTab(SIDE_TABS[next].id);
+    document.getElementById(`studio-tab-${SIDE_TABS[next].id}`)?.focus();
+  };
+  // Keep the side panels just under the sticky top bar, whatever height it wraps to.
+  const [topbarOffset, setTopbarOffset] = useState(110);
+  useEffect(() => {
+    const el = document.querySelector('.studio-topbar');
+    if (!el) return;
+    const measure = () => setTopbarOffset(Math.round(el.getBoundingClientRect().height) + 20);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading, stream?.id]);
+
   const closeTour = () => {
     markStudioTourSeen();
     setTourOpen(false);
@@ -436,321 +489,357 @@ export function HostStudioPage() {
         </div>
       </div>
 
-      <div className="studio-video-wrap">
-        <canvas
-          ref={canvasRef}
-          width={canvasSize.width}
-          height={canvasSize.height}
-          className={`studio-canvas${orientation === 'portrait' ? ' studio-canvas--portrait' : ''}`}
-        />
-      </div>
+      <div className="studio-main" style={{ '--studio-top': `${topbarOffset}px` } as CSSProperties}>
+        <div className="studio-main-video">
+          <div className="studio-video-wrap">
+            <canvas
+              ref={canvasRef}
+              width={canvasSize.width}
+              height={canvasSize.height}
+              className={`studio-canvas${orientation === 'portrait' ? ' studio-canvas--portrait' : ''}`}
+            />
+          </div>
 
-      <p className="docs-hint studio-layout-note">
-        {LAYOUT_BY_ID[layoutMode].description}
-        {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
-          ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
-        {orientation === 'portrait' && ' Vertical stream: a landscape webcam is cropped to the middle of the frame, so keep yourself centred (a phone camera held upright fills it).'}
-        {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
-          ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
-      </p>
+          <p className="docs-hint studio-layout-note">
+            {LAYOUT_BY_ID[layoutMode].description}
+            {screenSharing && !LAYOUT_BY_ID[layoutMode].hasSlide && layoutMode !== 'grid' && layoutMode !== 'spotlight' &&
+              ' Your screen share only shows in layouts with a slide area (or Grid and Spotlight).'}
+            {orientation === 'portrait' && ' Vertical stream: a landscape webcam is cropped to the middle of the frame, so keep yourself centred (a phone camera held upright fills it).'}
+            {onStageCount > LAYOUT_BY_ID[layoutMode].maxPeople &&
+              ` This layout has room for ${LAYOUT_BY_ID[layoutMode].maxPeople} ${LAYOUT_BY_ID[layoutMode].maxPeople === 1 ? 'person' : 'people'}; the others stay in the audio mix but are not drawn.`}
+          </p>
 
-      <SlideControls
-        slides={slides}
-        slideIndex={slideIndex}
-        layoutHasSlide={LAYOUT_BY_ID[layoutMode].hasSlide}
-        screenSharing={screenSharing}
-        maxSlides={MAX_SLIDES}
-        onAdd={(files) => void actions.addSlides(files)}
-        onPrev={actions.prevSlide}
-        onNext={actions.nextSlide}
-        onGoto={actions.gotoSlide}
-        onClear={actions.clearSlides}
-        onUseSlideLayout={() => actions.setLayout((LAYOUTS.find((l) => l.hasSlide) ?? LAYOUTS[0]).id as LayoutMode)}
-      />
-
-      {(status || inviteMessage) && (
-        <div className="studio-status-toast">
-          {status && (
-            <p className={`status${status.isError ? ' error' : ''}`}>
-              {isInProgress(status.text) && <BirdBusy overlay={!!status.busy} />}
-              {status.text}
-            </p>
-          )}
-          {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
         </div>
-      )}
 
-      {destinations.length > 0 && (
-        <div className="panel">
-          <label className="studio-section-label">
-            <Radio size={14} /> Destinations
-          </label>
-          <div className="connection-list">
-            {destinations.map((d) => {
-              const connection = connectionById.get(d.platformConnectionId);
-              return (
-                <div key={d.id} className="destination-detail-row">
-                  <div className="destination-detail-main">
-                    {connection && <PlatformBadge platform={connection.platform} />}
-                    {connection && <span className="connection-label">{connection.label}</span>}
-                    <span className={`status-dot status-${d.status}`} />
-                    <span>{d.status}</span>
-                    {d.platformStatus && <span className="empty-state">platform reports: {d.platformStatus}</span>}
-                    {d.viewerCount !== null && <span className="empty-state">{d.viewerCount} viewers</span>}
+        <aside className="studio-side panel" aria-label="Studio panels">
+          <div className="studio-tabs" role="tablist" aria-label="Studio panels" onKeyDown={onSideTabKey}>
+            {SIDE_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`studio-tab-${t.id}`}
+                aria-selected={sideTab === t.id}
+                aria-controls={`studio-panel-${t.id}`}
+                tabIndex={sideTab === t.id ? 0 : -1}
+                className={`studio-tab${sideTab === t.id ? ' active' : ''}`}
+                onClick={() => chooseSideTab(t.id)}
+              >
+                <t.icon size={15} aria-hidden="true" /> {t.label}
+                {t.id === 'people' && participants.length > 0 && <span className="studio-tab-count">{participants.length}</span>}
+              </button>
+            ))}
+          </div>
+          <div role="tabpanel" id="studio-panel-people" aria-labelledby="studio-tab-people" hidden={sideTab !== 'people'}>
+                  <div className="panel">
+                    <label className="studio-section-label">Participants</label>
+                    <div className="participant-list">
+                      {participants.map((p) => (
+                        <div key={p.id} className="participant-item">
+                        <div className="participant-row">
+                          <span className="participant-row-name"><NameBadge name={p.displayName} /><span>{p.displayName}</span></span>
+                          {!p.isScreenShare && (
+                            <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
+                          )}
+                          {p.pinned && <span className="badge badge-accent">Pinned</span>}
+                          {p.chroma.enabled && canChromaKey && <span className="badge badge-accent">Background removed</span>}
+                          {(!p.isScreenShare || p.hasAudio) && (
+                            <>
+                              {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
+                              <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
+                                {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
+                                {p.audioEnabled === false ? 'Unmute' : 'Mute'}
+                              </button>
+                            </>
+                          )}
+                          {!p.isScreenShare && (
+                            <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
+                              {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
+                              {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
+                            </button>
+                          )}
+                          {!p.isScreenShare && (
+                            <button
+                              type="button"
+                              className={`icon-btn icon-btn--small${p.chroma.enabled ? ' icon-btn--accent' : ''}`}
+                              aria-expanded={chromaOpenId === p.id}
+                              aria-label={canChromaKey ? `Background for ${p.displayName}` : `Background for ${p.displayName} (Pro plan)`}
+                              title={canChromaKey ? 'Remove the background behind this person' : 'Removing the background is on the Pro plan'}
+                              onClick={() => (canChromaKey ? setChromaOpenId(chromaOpenId === p.id ? null : p.id) : navigate('/billing'))}
+                            >
+                              {canChromaKey ? <Layers size={14} /> : <Lock size={14} />} Background{canChromaKey ? '' : ' · Pro'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className={`icon-btn icon-btn--small${p.pinned ? ' icon-btn--accent' : ''}`}
+                            onClick={() => actions.togglePin(p.id)}
+                          >
+                            {p.pinned ? <PinOff size={14} /> : <Pin size={14} />} {p.pinned ? 'Unpin' : 'Pin to spotlight'}
+                          </button>
+                          {!p.isScreenShare && (
+                            <>
+                              <button
+                                type="button"
+                                className={`icon-btn icon-btn--small${p.onStage ? '' : ' icon-btn--accent'}`}
+                                onClick={() => actions.toggleOnStage(p.id)}
+                              >
+                                {p.onStage ? <EyeOff size={14} /> : <Eye size={14} />} {p.onStage ? 'Send backstage' : 'Bring on stage'}
+                              </button>
+                            </>
+                          )}
+                          {p.isScreenShare ? (
+                            <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.stopScreenShare()}>
+                              <MonitorOff size={14} /> Stop sharing
+                            </button>
+                          ) : (
+                            !p.isLocal && (
+                              <button
+                                type="button"
+                                className="icon-btn icon-btn--small icon-btn--danger"
+                                onClick={() => {
+                                  if (window.confirm(`Remove ${p.displayName} from the studio?`)) actions.dropParticipant(p.id);
+                                }}
+                              >
+                                <UserX size={14} /> Remove
+                              </button>
+                            )
+                          )}
+                        </div>
+                        {canChromaKey && !p.isScreenShare && chromaOpenId === p.id && (
+                          <ChromaPanel
+                            person={p}
+                            onChange={(patch) => actions.setChroma(p.id, patch)}
+                            onBackground={(file) => void actions.setChromaBackground(p.id, file)}
+                            cutout={{ state: cutoutState, error: cutoutError }}
+                            getMask={() => actions.getChromaMask(p.id)}
+                            onOpen={(open) => actions.setChromaPreview(p.id, open)}
+                          />
+                        )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="destination-detail-actions">
-                    {d.watchUrl && (
+
+          </div>
+          <div role="tabpanel" id="studio-panel-look" aria-labelledby="studio-tab-look" hidden={sideTab !== 'look'}>
+                  <div className="panel">
+                    <label className="studio-section-label" htmlFor="wallpaperInput">
+                      <ImagePlus size={14} /> Wallpaper
+                    </label>
+                    <p className="docs-hint">
+                      Best: an image of exactly <strong>{canvasSize.width}x{canvasSize.height}</strong> ({aspectLabel(canvasSize.width, canvasSize.height)}, for the selected quality). Any other image is
+                      cropped to fit, and you choose what stays. It shows behind the tiles in every layout; the canvas style still sets the ticker and tile colours.
+                    </p>
+                    <input
+                      id="wallpaperInput"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        void actions.setWallpaperFile(e.target.files?.[0] ?? null);
+                        e.target.value = '';
+                      }}
+                    />
+                    {wallpaper && (
                       <>
-                        <a href={d.watchUrl} target="_blank" rel="noopener noreferrer" className="icon-btn icon-btn--small">
-                          <ExternalLink size={14} /> Watch
-                        </a>
-                        <button
-                          type="button"
-                          className="icon-btn icon-btn--small"
-                          onClick={() => void copyWatchUrl(d.id, d.watchUrl!)}
-                        >
-                          <Copy size={14} /> {copiedDestinationId === d.id ? 'Copied!' : 'Copy link'}
+                        <p className="docs-hint" data-testid="wallpaper-fit">
+                          <strong>{wallpaper.name}</strong>: {describeWallpaperFit(wallpaper.width, wallpaper.height, canvasSize.width, canvasSize.height).message}
+                        </p>
+                        <label htmlFor="wallpaperFocusX">Crop position, left to right: {wallpaperFocus.x}%</label>
+                        <input
+                          id="wallpaperFocusX"
+                          type="range"
+                          min={WALLPAPER_RANGES.focus.min}
+                          max={WALLPAPER_RANGES.focus.max}
+                          value={wallpaperFocus.x}
+                          onChange={(e) => actions.setWallpaperFocus(parseInt(e.target.value, 10), wallpaperFocus.y)}
+                        />
+                        <label htmlFor="wallpaperFocusY">Crop position, top to bottom: {wallpaperFocus.y}%</label>
+                        <input
+                          id="wallpaperFocusY"
+                          type="range"
+                          min={WALLPAPER_RANGES.focus.min}
+                          max={WALLPAPER_RANGES.focus.max}
+                          value={wallpaperFocus.y}
+                          onChange={(e) => actions.setWallpaperFocus(wallpaperFocus.x, parseInt(e.target.value, 10))}
+                        />
+                        <label htmlFor="wallpaperDim">Darken: {wallpaperDim}%</label>
+                        <input
+                          id="wallpaperDim"
+                          type="range"
+                          min={WALLPAPER_RANGES.dim.min}
+                          max={WALLPAPER_RANGES.dim.max}
+                          value={wallpaperDim}
+                          onChange={(e) => actions.setWallpaperDim(parseInt(e.target.value, 10))}
+                        />
+                        <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={actions.clearWallpaper}>
+                          <Trash2 size={14} /> Remove wallpaper
                         </button>
                       </>
                     )}
                   </div>
-                  {d.errorMessage && <p className="error">{d.errorMessage}</p>}
-                </div>
-              );
-            })}
+
+                  <div className="panel">
+                    <label className="studio-section-label" htmlFor="logoInput">
+                      <ImageIcon size={14} /> Logo
+                    </label>
+                    <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
+
+                    <label id="logoPositionLabel">Logo position</label>
+                    <div className="segmented" role="group" aria-labelledby="logoPositionLabel">
+                      <button type="button" className={branding.logoPosition === 'left' ? 'active' : ''} aria-pressed={branding.logoPosition === 'left'} onClick={() => actions.setLogoPosition('left')}>
+                        Top left
+                      </button>
+                      <button type="button" className={branding.logoPosition === 'right' ? 'active' : ''} aria-pressed={branding.logoPosition === 'right'} onClick={() => actions.setLogoPosition('right')}>
+                        Top right
+                      </button>
+                    </div>
+
+                    <label htmlFor="logoSizeInput">Logo size: {branding.logoSize}px</label>
+                    <input
+                      id="logoSizeInput"
+                      type="range"
+                      min={BRANDING_RANGES.logoSize.min}
+                      max={BRANDING_RANGES.logoSize.max}
+                      value={branding.logoSize}
+                      onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
+                    />
+
+                    <label htmlFor="newsInput">News ticker text (shown at the bottom)</label>
+                    <input
+                      id="newsInput"
+                      type="text"
+                      placeholder="Breaking: ..."
+                      value={branding.newsText}
+                      onChange={(e) => actions.setNewsText(e.target.value)}
+                    />
+
+                    <label htmlFor="nameFontSizeInput">Name label size: {branding.nameFontSize}px</label>
+                    <input
+                      id="nameFontSizeInput"
+                      type="range"
+                      min={BRANDING_RANGES.nameFontSize.min}
+                      max={BRANDING_RANGES.nameFontSize.max}
+                      value={branding.nameFontSize}
+                      onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
+                    />
+
+                    <label htmlFor="newsFontSizeInput">News ticker text size: {branding.newsFontSize}px</label>
+                    <input
+                      id="newsFontSizeInput"
+                      type="range"
+                      min={BRANDING_RANGES.newsFontSize.min}
+                      max={BRANDING_RANGES.newsFontSize.max}
+                      value={branding.newsFontSize}
+                      onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
+                    />
+                  </div>
+
           </div>
-        </div>
-      )}
+          <div role="tabpanel" id="studio-panel-titles" aria-labelledby="studio-tab-titles" hidden={sideTab !== 'titles'}>
+                  <LowerThirdPanel allowed={canLowerThird} settings={lowerThird} live={lowerThirdLive} presets={lowerThirdPresets} actions={actions} />
 
-      <div className="panel">
-        <label className="studio-section-label">Participants</label>
-        <div className="participant-list">
-          {participants.map((p) => (
-            <div key={p.id} className="participant-item">
-            <div className="participant-row">
-              <span className="participant-row-name"><NameBadge name={p.displayName} /><span>{p.displayName}</span></span>
-              {!p.isScreenShare && (
-                <span className={`badge${p.onStage ? '' : ' badge-warning'}`}>{p.onStage ? 'On stage' : 'Backstage'}</span>
+          </div>
+          <div role="tabpanel" id="studio-panel-scenes" aria-labelledby="studio-tab-scenes" hidden={sideTab !== 'scenes'}>
+                  <div className="panel">
+                    <label className="studio-section-label">
+                      <Clapperboard size={14} /> Scenes
+                    </label>
+                    <div className="studio-toolbar">
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn--small"
+                        onClick={() => {
+                          const name = window.prompt('Name this scene:');
+                          if (name && name.trim()) actions.saveScene(name);
+                        }}
+                      >
+                        <Save size={14} /> Save current as scene
+                      </button>
+                      {scenes.map((scene) => (
+                        <button
+                          key={scene.name}
+                          type="button"
+                          className={`icon-btn icon-btn--small${scene.name === activeSceneName ? ' icon-btn--accent' : ''}`}
+                          onClick={() => actions.applyScene(scene.name)}
+                        >
+                          <Clapperboard size={14} /> {scene.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+          </div>
+        </aside>
+
+        <div className="studio-main-below">
+          <SlideControls
+            slides={slides}
+            slideIndex={slideIndex}
+            layoutHasSlide={LAYOUT_BY_ID[layoutMode].hasSlide}
+            screenSharing={screenSharing}
+            maxSlides={MAX_SLIDES}
+            onAdd={(files) => void actions.addSlides(files)}
+            onPrev={actions.prevSlide}
+            onNext={actions.nextSlide}
+            onGoto={actions.gotoSlide}
+            onClear={actions.clearSlides}
+            onUseSlideLayout={() => actions.setLayout((LAYOUTS.find((l) => l.hasSlide) ?? LAYOUTS[0]).id as LayoutMode)}
+          />
+
+          {(status || inviteMessage) && (
+            <div className="studio-status-toast">
+              {status && (
+                <p className={`status${status.isError ? ' error' : ''}`}>
+                  {isInProgress(status.text) && <BirdBusy overlay={!!status.busy} />}
+                  {status.text}
+                </p>
               )}
-              {p.pinned && <span className="badge badge-accent">Pinned</span>}
-              {p.chroma.enabled && canChromaKey && <span className="badge badge-accent">Background removed</span>}
-              {(!p.isScreenShare || p.hasAudio) && (
-                <>
-                  {p.audioEnabled === false && <MicOff size={14} className="participant-row-muted-icon" />}
-                  <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantAudio(p.id)}>
-                    {p.audioEnabled === false ? <MicOff size={14} /> : <Mic size={14} />}
-                    {p.audioEnabled === false ? 'Unmute' : 'Mute'}
-                  </button>
-                </>
-              )}
-              {!p.isScreenShare && (
-                <button type="button" className="icon-btn icon-btn--small" onClick={() => actions.toggleParticipantVideo(p.id)}>
-                  {p.videoEnabled === false ? <VideoOff size={14} /> : <Video size={14} />}
-                  {p.videoEnabled === false ? 'Enable camera' : 'Disable camera'}
-                </button>
-              )}
-              {!p.isScreenShare && (
-                <button
-                  type="button"
-                  className={`icon-btn icon-btn--small${p.chroma.enabled ? ' icon-btn--accent' : ''}`}
-                  aria-expanded={chromaOpenId === p.id}
-                  aria-label={canChromaKey ? `Background for ${p.displayName}` : `Background for ${p.displayName} (Pro plan)`}
-                  title={canChromaKey ? 'Remove the background behind this person' : 'Removing the background is on the Pro plan'}
-                  onClick={() => (canChromaKey ? setChromaOpenId(chromaOpenId === p.id ? null : p.id) : navigate('/billing'))}
-                >
-                  {canChromaKey ? <Layers size={14} /> : <Lock size={14} />} Background{canChromaKey ? '' : ' · Pro'}
-                </button>
-              )}
-              <button
-                type="button"
-                className={`icon-btn icon-btn--small${p.pinned ? ' icon-btn--accent' : ''}`}
-                onClick={() => actions.togglePin(p.id)}
-              >
-                {p.pinned ? <PinOff size={14} /> : <Pin size={14} />} {p.pinned ? 'Unpin' : 'Pin to spotlight'}
-              </button>
-              {!p.isScreenShare && (
-                <>
-                  <button
-                    type="button"
-                    className={`icon-btn icon-btn--small${p.onStage ? '' : ' icon-btn--accent'}`}
-                    onClick={() => actions.toggleOnStage(p.id)}
-                  >
-                    {p.onStage ? <EyeOff size={14} /> : <Eye size={14} />} {p.onStage ? 'Send backstage' : 'Bring on stage'}
-                  </button>
-                </>
-              )}
-              {p.isScreenShare ? (
-                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => actions.stopScreenShare()}>
-                  <MonitorOff size={14} /> Stop sharing
-                </button>
-              ) : (
-                !p.isLocal && (
-                  <button
-                    type="button"
-                    className="icon-btn icon-btn--small icon-btn--danger"
-                    onClick={() => {
-                      if (window.confirm(`Remove ${p.displayName} from the studio?`)) actions.dropParticipant(p.id);
-                    }}
-                  >
-                    <UserX size={14} /> Remove
-                  </button>
-                )
-              )}
+              {inviteMessage && <p className={`status${inviteMessage.isError ? ' error' : ''}`}>{inviteMessage.text}</p>}
             </div>
-            {canChromaKey && !p.isScreenShare && chromaOpenId === p.id && (
-              <ChromaPanel
-                person={p}
-                onChange={(patch) => actions.setChroma(p.id, patch)}
-                onBackground={(file) => void actions.setChromaBackground(p.id, file)}
-                cutout={{ state: cutoutState, error: cutoutError }}
-                getMask={() => actions.getChromaMask(p.id)}
-                onOpen={(open) => actions.setChromaPreview(p.id, open)}
-              />
-            )}
+          )}
+
+          {destinations.length > 0 && (
+            <div className="panel">
+              <label className="studio-section-label">
+                <Radio size={14} /> Destinations
+              </label>
+              <div className="connection-list">
+                {destinations.map((d) => {
+                  const connection = connectionById.get(d.platformConnectionId);
+                  return (
+                    <div key={d.id} className="destination-detail-row">
+                      <div className="destination-detail-main">
+                        {connection && <PlatformBadge platform={connection.platform} />}
+                        {connection && <span className="connection-label">{connection.label}</span>}
+                        <span className={`status-dot status-${d.status}`} />
+                        <span>{d.status}</span>
+                        {d.platformStatus && <span className="empty-state">platform reports: {d.platformStatus}</span>}
+                        {d.viewerCount !== null && <span className="empty-state">{d.viewerCount} viewers</span>}
+                      </div>
+                      <div className="destination-detail-actions">
+                        {d.watchUrl && (
+                          <>
+                            <a href={d.watchUrl} target="_blank" rel="noopener noreferrer" className="icon-btn icon-btn--small">
+                              <ExternalLink size={14} /> Watch
+                            </a>
+                            <button
+                              type="button"
+                              className="icon-btn icon-btn--small"
+                              onClick={() => void copyWatchUrl(d.id, d.watchUrl!)}
+                            >
+                              <Copy size={14} /> {copiedDestinationId === d.id ? 'Copied!' : 'Copy link'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      {d.errorMessage && <p className="error">{d.errorMessage}</p>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+          )}
 
-      <div className="panel">
-        <label className="studio-section-label" htmlFor="wallpaperInput">
-          <ImagePlus size={14} /> Wallpaper
-        </label>
-        <p className="docs-hint">
-          Best: an image of exactly <strong>{canvasSize.width}x{canvasSize.height}</strong> ({aspectLabel(canvasSize.width, canvasSize.height)}, for the selected quality). Any other image is
-          cropped to fit, and you choose what stays. It shows behind the tiles in every layout; the canvas style still sets the ticker and tile colours.
-        </p>
-        <input
-          id="wallpaperInput"
-          type="file"
-          accept="image/*"
-          onChange={(e) => {
-            void actions.setWallpaperFile(e.target.files?.[0] ?? null);
-            e.target.value = '';
-          }}
-        />
-        {wallpaper && (
-          <>
-            <p className="docs-hint" data-testid="wallpaper-fit">
-              <strong>{wallpaper.name}</strong>: {describeWallpaperFit(wallpaper.width, wallpaper.height, canvasSize.width, canvasSize.height).message}
-            </p>
-            <label htmlFor="wallpaperFocusX">Crop position, left to right: {wallpaperFocus.x}%</label>
-            <input
-              id="wallpaperFocusX"
-              type="range"
-              min={WALLPAPER_RANGES.focus.min}
-              max={WALLPAPER_RANGES.focus.max}
-              value={wallpaperFocus.x}
-              onChange={(e) => actions.setWallpaperFocus(parseInt(e.target.value, 10), wallpaperFocus.y)}
-            />
-            <label htmlFor="wallpaperFocusY">Crop position, top to bottom: {wallpaperFocus.y}%</label>
-            <input
-              id="wallpaperFocusY"
-              type="range"
-              min={WALLPAPER_RANGES.focus.min}
-              max={WALLPAPER_RANGES.focus.max}
-              value={wallpaperFocus.y}
-              onChange={(e) => actions.setWallpaperFocus(wallpaperFocus.x, parseInt(e.target.value, 10))}
-            />
-            <label htmlFor="wallpaperDim">Darken: {wallpaperDim}%</label>
-            <input
-              id="wallpaperDim"
-              type="range"
-              min={WALLPAPER_RANGES.dim.min}
-              max={WALLPAPER_RANGES.dim.max}
-              value={wallpaperDim}
-              onChange={(e) => actions.setWallpaperDim(parseInt(e.target.value, 10))}
-            />
-            <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={actions.clearWallpaper}>
-              <Trash2 size={14} /> Remove wallpaper
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="panel">
-        <label className="studio-section-label" htmlFor="logoInput">
-          <ImageIcon size={14} /> Logo
-        </label>
-        <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
-
-        <label id="logoPositionLabel">Logo position</label>
-        <div className="segmented" role="group" aria-labelledby="logoPositionLabel">
-          <button type="button" className={branding.logoPosition === 'left' ? 'active' : ''} aria-pressed={branding.logoPosition === 'left'} onClick={() => actions.setLogoPosition('left')}>
-            Top left
-          </button>
-          <button type="button" className={branding.logoPosition === 'right' ? 'active' : ''} aria-pressed={branding.logoPosition === 'right'} onClick={() => actions.setLogoPosition('right')}>
-            Top right
-          </button>
-        </div>
-
-        <label htmlFor="logoSizeInput">Logo size: {branding.logoSize}px</label>
-        <input
-          id="logoSizeInput"
-          type="range"
-          min={BRANDING_RANGES.logoSize.min}
-          max={BRANDING_RANGES.logoSize.max}
-          value={branding.logoSize}
-          onChange={(e) => actions.setLogoSize(parseInt(e.target.value, 10))}
-        />
-
-        <label htmlFor="newsInput">News ticker text (shown at the bottom)</label>
-        <input
-          id="newsInput"
-          type="text"
-          placeholder="Breaking: ..."
-          value={branding.newsText}
-          onChange={(e) => actions.setNewsText(e.target.value)}
-        />
-
-        <label htmlFor="nameFontSizeInput">Name label size: {branding.nameFontSize}px</label>
-        <input
-          id="nameFontSizeInput"
-          type="range"
-          min={BRANDING_RANGES.nameFontSize.min}
-          max={BRANDING_RANGES.nameFontSize.max}
-          value={branding.nameFontSize}
-          onChange={(e) => actions.setNameFontSize(parseInt(e.target.value, 10))}
-        />
-
-        <label htmlFor="newsFontSizeInput">News ticker text size: {branding.newsFontSize}px</label>
-        <input
-          id="newsFontSizeInput"
-          type="range"
-          min={BRANDING_RANGES.newsFontSize.min}
-          max={BRANDING_RANGES.newsFontSize.max}
-          value={branding.newsFontSize}
-          onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
-        />
-      </div>
-
-      <LowerThirdPanel allowed={canLowerThird} settings={lowerThird} live={lowerThirdLive} presets={lowerThirdPresets} actions={actions} />
-
-      <div className="panel">
-        <label className="studio-section-label">
-          <Clapperboard size={14} /> Scenes
-        </label>
-        <div className="studio-toolbar">
-          <button
-            type="button"
-            className="icon-btn icon-btn--small"
-            onClick={() => {
-              const name = window.prompt('Name this scene:');
-              if (name && name.trim()) actions.saveScene(name);
-            }}
-          >
-            <Save size={14} /> Save current as scene
-          </button>
-          {scenes.map((scene) => (
-            <button
-              key={scene.name}
-              type="button"
-              className={`icon-btn icon-btn--small${scene.name === activeSceneName ? ' icon-btn--accent' : ''}`}
-              onClick={() => actions.applyScene(scene.name)}
-            >
-              <Clapperboard size={14} /> {scene.name}
-            </button>
-          ))}
         </div>
       </div>
       <StudioTour open={tourOpen} platforms={goLiveNames(destinations, connectionById).replace(/^Your platforms$/, 'your platforms')} onClose={closeTour} />
