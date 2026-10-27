@@ -217,7 +217,7 @@ above are the floor, not the forecast — which is exactly what you want a
 pricing ceiling to be: something that stays profitable even when a
 customer legitimately uses every dollar of what they paid for.
 
-Free tier's worst case (2 hours, 1 destination, no relay) is
+Free tier's worst case (originally 2 hours; raised to 5 by migration 0025, so about 2.5x the figure below; 1 destination, no relay) is
 2 × 1 × $0.0275 = $0.055 plus its share of VM fixed cost — i.e.,
 economically a rounding error, fine to run at $0 as a funnel.
 

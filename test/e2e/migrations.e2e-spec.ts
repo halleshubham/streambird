@@ -120,6 +120,23 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await db.query(`DELETE FROM assets WHERE id = $1`, [asset]);
     await expect(db.query(`SELECT brand_kit_id FROM platform_connections LIMIT 1`)).resolves.toBeDefined();
 
+    // Pricing refresh (0025): Lite exists, Free has 5 hours, Pro and Business include 200; an admin's edits survive a re-run.
+    const ph = await db.query(`SELECT key, included_hours_per_month AS h FROM plans WHERE key IN ('free', 'lite', 'pro', 'enterprise') ORDER BY sort_order`);
+    expect(ph.rows.map((r) => [r.key, Number(r.h)])).toEqual([['free', 5], ['lite', 8], ['pro', 200], ['enterprise', 200]]);
+    expect((await db.query(`SELECT included_hours_per_month AS h FROM accounts WHERE name = 'a-free'`)).rows[0].h).toBe('5.00'); // the account mirror followed
+    await db.query(`UPDATE plans SET included_hours_per_month = 3 WHERE key = 'free'`); // admin edits Free,
+    await db.query(`UPDATE plans SET included_hours_per_month = 50 WHERE key = 'pro'`); // Pro,
+    await db.query(`UPDATE plans SET price_inr = 349, included_hours_per_month = 12 WHERE key = 'lite'`); // and Lite
+    await db.query(`UPDATE plans SET included_hours_per_month = NULL WHERE key = 'enterprise'`); // and leaves Business unlimited (still seeded: gets the cap)
+    await db.query(`UPDATE accounts SET included_hours_override = 7 WHERE name = 'c-pro-custom'`);
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0025%'`);
+    await runMigrations(url, { quiet: true });
+    const kept = await db.query(`SELECT key, included_hours_per_month AS h, price_inr AS p FROM plans WHERE key IN ('free', 'lite', 'pro', 'enterprise') ORDER BY sort_order`);
+    expect(kept.rows.map((r) => [r.key, Number(r.h), r.p])).toEqual([['free', 3, 0], ['lite', 12, 349], ['pro', 50, 1999], ['enterprise', 200, 4999]]); // edits kept, only the still-unlimited plan moved
+    const mirror = await db.query(`SELECT name, included_hours_per_month AS h FROM accounts WHERE name IN ('a-free', 'b-pro-default', 'c-pro-custom') ORDER BY name`);
+    expect(mirror.rows.map((r) => [r.name, Number(r.h)])).toEqual([['a-free', 3], ['b-pro-default', 50], ['c-pro-custom', 7]]); // override first, then the plan's hours
+    expect((await db.query(`SELECT count(*)::int AS n FROM plans WHERE key = 'lite'`)).rows[0].n).toBe(1); // Lite is never duplicated
+
     // Mobile numbers (0020): people who signed up before are never flagged to be asked; the columns survive a re-run.
     const before = await db.query(`SELECT phone, phone_required FROM users`);
     expect(before.rows).toEqual([{ phone: null, phone_required: false }]);

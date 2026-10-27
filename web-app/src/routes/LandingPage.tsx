@@ -1,3 +1,4 @@
+import { monthlyHoursLabel } from '../lib/planCopy';
 import { useEffect, useState } from 'react';
 import { CookieSettingsLink } from '../components/CookieSettingsLink';
 import type { CSSProperties } from 'react';
@@ -158,9 +159,7 @@ function planToTier(p: PublicPlan): Tier {
     price: money(p.priceInr, p.priceUsd),
     hours: dayPass
       ? `${p.maxSessionHours ? `Up to ${p.maxSessionHours} h per stream` : 'Unlimited streams'} for ${p.validityHours === 24 ? 'one day' : `${p.validityHours} h`}`
-      : p.includedHoursPerMonth === null
-        ? 'Unlimited streaming (fair use)'
-        : `${Number(p.includedHoursPerMonth)} stream-hours/mo${p.key === 'pro' || p.key === 'enterprise' ? ' (fair use)' : ''}`,
+      : monthlyHoursLabel(p),
     destinations: `${p.maxDestinations} destination${p.maxDestinations === 1 ? '' : 's'}`,
     guests: `${p.maxGuests} studio guests`,
     highlight: p.key === 'pro',
