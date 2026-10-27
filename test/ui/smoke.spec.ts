@@ -112,7 +112,7 @@ test.describe('public pages', () => {
   test('the home page shows the live plans from the API, with no Buy buttons while payments are off', async ({ page }) => {
     await page.goto('/');
     const pricing = page.locator('#pricing');
-    for (const name of ['Free', 'Starter', 'Pro', 'Business', 'Day Pass']) {
+    for (const name of ['Free', 'Lite', 'Starter', 'Pro', 'Business', 'Day Pass']) {
       await expect(pricing.getByRole('heading', { name })).toBeVisible();
     }
     await expect(pricing.getByRole('link', { name: 'Buy' })).toHaveCount(0);
@@ -171,13 +171,13 @@ test.describe('signed-in user', () => {
     expect((await admin.api.patch(`${APP}/api/superadmin/billing/settings`, { data: { paymentsEnabled: true }, headers: apiHeaders })).ok()).toBeTruthy();
     try {
       await page.reload();
-      await expect(page.getByRole('button', { name: /Subscribe -- autopay/ })).toHaveCount(3); // Starter, Pro, Business
-      await expect(page.getByRole('button', { name: /Or pay once for 30 days/ })).toHaveCount(3);
+      await expect(page.getByRole('button', { name: /Subscribe -- autopay/ })).toHaveCount(4); // Lite, Starter, Pro, Business
+      await expect(page.getByRole('button', { name: /Or pay once for 30 days/ })).toHaveCount(4);
       await expect(page.getByRole('button', { name: 'Buy' })).toHaveCount(1); // the Day Pass
       // The home page redirects signed-in users to the dashboard, so look at pricing as a visitor.
       const visitor = await browser.newPage();
       await visitor.goto(`${APP}/`);
-      await expect(visitor.locator('#pricing').getByRole('link', { name: 'Buy' })).toHaveCount(4); // priced plans only
+      await expect(visitor.locator('#pricing').getByRole('link', { name: 'Buy' })).toHaveCount(5); // priced plans only
       await visitor.close();
     } finally {
       await admin.api.patch(`${APP}/api/superadmin/billing/settings`, { data: { paymentsEnabled: false }, headers: apiHeaders });

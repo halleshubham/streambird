@@ -1331,6 +1331,13 @@ a.icon-btn--danger {
   gap: 20px;
 }
 
+/* Six plans: a clean 3 x 2 on desktop (auto-fit would wrap 4 + 2). */
+@media (min-width: 900px) {
+  .landing-pricing-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .landing-price-card {
   background: var(--bg);
   border: 1px solid var(--border);
