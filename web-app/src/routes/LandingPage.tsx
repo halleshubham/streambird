@@ -1,3 +1,4 @@
+import { monthlyHoursLabel } from '../lib/planCopy';
 import { useEffect, useState } from 'react';
 import { CookieSettingsLink } from '../components/CookieSettingsLink';
 import type { CSSProperties } from 'react';
@@ -92,9 +93,17 @@ const TIERS: {
   {
     name: 'Free',
     price: { USD: '$0', INR: '₹0' },
-    hours: '2 stream-hours/mo',
+    hours: '5 stream-hours/mo',
     destinations: '1 destination',
     guests: '2 studio guests',
+    highlight: false,
+  },
+  {
+    name: 'Lite',
+    price: { USD: '$4', INR: '₹299' },
+    hours: '8 stream-hours/mo',
+    destinations: '1 destination',
+    guests: '3 studio guests',
     highlight: false,
   },
   {
@@ -108,7 +117,7 @@ const TIERS: {
   {
     name: 'Pro',
     price: { USD: '$39', INR: '₹1,999' },
-    hours: 'Unlimited streaming (fair use)',
+    hours: '200 stream-hours/mo (fair use)',
     destinations: '4 destinations',
     guests: '8 studio guests',
     highlight: true,
@@ -116,7 +125,7 @@ const TIERS: {
   {
     name: 'Business',
     price: { USD: '$59', INR: '₹4,999' },
-    hours: 'Unlimited streaming (fair use)',
+    hours: '200 stream-hours/mo (fair use)',
     destinations: '8 destinations',
     guests: '10 studio guests',
     highlight: false,
@@ -150,9 +159,7 @@ function planToTier(p: PublicPlan): Tier {
     price: money(p.priceInr, p.priceUsd),
     hours: dayPass
       ? `${p.maxSessionHours ? `Up to ${p.maxSessionHours} h per stream` : 'Unlimited streams'} for ${p.validityHours === 24 ? 'one day' : `${p.validityHours} h`}`
-      : p.includedHoursPerMonth === null
-        ? 'Unlimited streaming (fair use)'
-        : `${p.includedHoursPerMonth} stream-hours/mo`,
+      : monthlyHoursLabel(p),
     destinations: `${p.maxDestinations} destination${p.maxDestinations === 1 ? '' : 's'}`,
     guests: `${p.maxGuests} studio guests`,
     highlight: p.key === 'pro',

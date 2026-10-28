@@ -15,7 +15,7 @@ const API_KEY_PREFIX = 'sb_';
  * default) so a brand-new signup has a real, usable included-hours
  * allowance from day one instead of the column default of 0. */
 const DEFAULT_INCLUDED_HOURS_BY_TIER: Record<PlanTier, number> = {
-  [PlanTier.FREE]: 2,
+  [PlanTier.FREE]: 5, // keep in step with the Free plan row (migration 0025); the plan row is what enforcement reads
   [PlanTier.STARTER]: 10,
   [PlanTier.PRO]: 30,
   [PlanTier.ENTERPRISE]: 100,

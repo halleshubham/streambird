@@ -1,3 +1,4 @@
+import { monthlyHoursLabel } from '../lib/planCopy';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as billingApi from '../api/billing';
@@ -52,9 +53,7 @@ function describePlan(p: PublicPlan): string[] {
   return [
     p.kind === 'day_pass'
       ? `${p.maxSessionHours ? `Up to ${p.maxSessionHours} h per stream` : 'Unlimited streams'} for ${p.validityHours === 24 ? 'one day' : `${p.validityHours} h`}`
-      : p.includedHoursPerMonth === null
-        ? 'Unlimited streaming (fair use)'
-        : `${p.includedHoursPerMonth} stream-hours / month`,
+      : monthlyHoursLabel(p, 'stream-hours / month'),
     `${p.maxDestinations} destination${p.maxDestinations === 1 ? '' : 's'}`,
     `${p.maxGuests} studio guests`,
   ];

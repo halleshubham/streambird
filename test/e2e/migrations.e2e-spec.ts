@@ -54,10 +54,11 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
 
     const plans = await db.query('SELECT key, included_hours_per_month AS h, max_destinations AS d, max_guests AS g, price_inr AS p FROM plans ORDER BY sort_order');
     expect(plans.rows.map((r) => [r.key, r.h === null ? null : Number(r.h), r.d, r.g, r.p])).toEqual([
-      ['free', 2, 1, 2, 0],
+      ['free', 5, 1, 2, 0],
+      ['lite', 8, 1, 3, 299],
       ['starter', 20, 2, 4, 999],
-      ['pro', null, 4, 8, 1999],
-      ['enterprise', null, 8, 10, 4999],
+      ['pro', 200, 4, 8, 1999],
+      ['enterprise', 200, 8, 10, 4999],
       ['day_pass', null, 4, 10, 199],
     ]);
 
@@ -70,7 +71,7 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
 
     // 2K tier (0017): Pro and Business move up from the seeded Full HD; the rest stay; an admin-edited plan is left alone.
     const q = await db.query(`SELECT key, max_resolution FROM plans ORDER BY sort_order`);
-    expect(q.rows.map((r) => [r.key, r.max_resolution])).toEqual([['free', 'fhd'], ['starter', 'fhd'], ['pro', 'qhd'], ['enterprise', 'qhd'], ['day_pass', 'hd']]);
+    expect(q.rows.map((r) => [r.key, r.max_resolution])).toEqual([['free', 'fhd'], ['lite', 'fhd'], ['starter', 'fhd'], ['pro', 'qhd'], ['enterprise', 'qhd'], ['day_pass', 'hd']]);
     await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0017%'`);
     await db.query(`UPDATE plans SET max_resolution = 'hd' WHERE key = 'pro'`);
     await db.query(`UPDATE plans SET max_resolution = 'fhd' WHERE key = 'enterprise'`);
@@ -81,28 +82,28 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
 
     // Recording (0018): Pro and Business get it, the rest do not; an admin's later choice survives a re-run.
     const rec = await db.query(`SELECT key, can_record FROM plans ORDER BY sort_order`);
-    expect(rec.rows.map((r) => [r.key, r.can_record])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(rec.rows.map((r) => [r.key, r.can_record])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
     await db.query(`UPDATE plans SET can_record = false WHERE key = 'pro'`);
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_record FROM plans WHERE key = 'pro'`)).rows[0].can_record).toBe(false);
 
     // Green screen (0019): Pro and Business get it, the rest do not; an admin's later choice survives a re-run.
     const chroma = await db.query(`SELECT key, can_chroma_key FROM plans ORDER BY sort_order`);
-    expect(chroma.rows.map((r) => [r.key, r.can_chroma_key])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(chroma.rows.map((r) => [r.key, r.can_chroma_key])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
     await db.query(`UPDATE plans SET can_chroma_key = false WHERE key = 'pro'`);
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_chroma_key FROM plans WHERE key = 'pro'`)).rows[0].can_chroma_key).toBe(false);
 
     // Lower thirds (0021): Pro and Business get them, the rest do not; an admin's later choice survives a re-run.
     const lt = await db.query(`SELECT key, can_lower_third FROM plans ORDER BY sort_order`);
-    expect(lt.rows.map((r) => [r.key, r.can_lower_third])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(lt.rows.map((r) => [r.key, r.can_lower_third])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
     await db.query(`UPDATE plans SET can_lower_third = false WHERE key = 'pro'`);
     await runMigrations(url, { quiet: true });
     expect((await db.query(`SELECT can_lower_third FROM plans WHERE key = 'pro'`)).rows[0].can_lower_third).toBe(false);
 
     // Brand storage and the watermark (0022): paid plans get an allowance, Free shows the mark; an admin's edit survives a re-run.
     const st = await db.query(`SELECT key, asset_storage_mb, watermark FROM plans ORDER BY sort_order`);
-    expect(st.rows.map((r) => [r.key, r.asset_storage_mb, r.watermark])).toEqual([['free', 0, true], ['starter', 50, false], ['pro', 500, false], ['enterprise', 2048, false], ['day_pass', 0, false]]);
+    expect(st.rows.map((r) => [r.key, r.asset_storage_mb, r.watermark])).toEqual([['free', 0, true], ['lite', 0, false], ['starter', 50, false], ['pro', 500, false], ['enterprise', 2048, false], ['day_pass', 0, false]]);
     await db.query(`UPDATE plans SET asset_storage_mb = 800, watermark = false WHERE key IN ('pro', 'free')`);
     await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0022%'`);
     await runMigrations(url, { quiet: true });
@@ -118,6 +119,23 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]);
     await db.query(`DELETE FROM assets WHERE id = $1`, [asset]);
     await expect(db.query(`SELECT brand_kit_id FROM platform_connections LIMIT 1`)).resolves.toBeDefined();
+
+    // Pricing refresh (0025): Lite exists, Free has 5 hours, Pro and Business include 200; an admin's edits survive a re-run.
+    const ph = await db.query(`SELECT key, included_hours_per_month AS h FROM plans WHERE key IN ('free', 'lite', 'pro', 'enterprise') ORDER BY sort_order`);
+    expect(ph.rows.map((r) => [r.key, Number(r.h)])).toEqual([['free', 5], ['lite', 8], ['pro', 200], ['enterprise', 200]]);
+    expect((await db.query(`SELECT included_hours_per_month AS h FROM accounts WHERE name = 'a-free'`)).rows[0].h).toBe('5.00'); // the account mirror followed
+    await db.query(`UPDATE plans SET included_hours_per_month = 3 WHERE key = 'free'`); // admin edits Free,
+    await db.query(`UPDATE plans SET included_hours_per_month = 50 WHERE key = 'pro'`); // Pro,
+    await db.query(`UPDATE plans SET price_inr = 349, included_hours_per_month = 12 WHERE key = 'lite'`); // and Lite
+    await db.query(`UPDATE plans SET included_hours_per_month = NULL WHERE key = 'enterprise'`); // and leaves Business unlimited (still seeded: gets the cap)
+    await db.query(`UPDATE accounts SET included_hours_override = 7 WHERE name = 'c-pro-custom'`);
+    await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0025%'`);
+    await runMigrations(url, { quiet: true });
+    const kept = await db.query(`SELECT key, included_hours_per_month AS h, price_inr AS p FROM plans WHERE key IN ('free', 'lite', 'pro', 'enterprise') ORDER BY sort_order`);
+    expect(kept.rows.map((r) => [r.key, Number(r.h), r.p])).toEqual([['free', 3, 0], ['lite', 12, 349], ['pro', 50, 1999], ['enterprise', 200, 4999]]); // edits kept, only the still-unlimited plan moved
+    const mirror = await db.query(`SELECT name, included_hours_per_month AS h FROM accounts WHERE name IN ('a-free', 'b-pro-default', 'c-pro-custom') ORDER BY name`);
+    expect(mirror.rows.map((r) => [r.name, Number(r.h)])).toEqual([['a-free', 3], ['b-pro-default', 50], ['c-pro-custom', 7]]); // override first, then the plan's hours
+    expect((await db.query(`SELECT count(*)::int AS n FROM plans WHERE key = 'lite'`)).rows[0].n).toBe(1); // Lite is never duplicated
 
     // Mobile numbers (0020): people who signed up before are never flagged to be asked; the columns survive a re-run.
     const before = await db.query(`SELECT phone, phone_required FROM users`);

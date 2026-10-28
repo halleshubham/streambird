@@ -75,7 +75,7 @@ describe('AccountsService', () => {
     await service.create({ name: 'Acme' });
 
     const saved = (repo.save as jest.Mock).mock.calls[0][0];
-    expect(saved.includedHoursPerMonth).toBe('2');
+    expect(saved.includedHoursPerMonth).toBe('5');
     expect(saved.billingPeriodStart).toBe(new Date().toISOString().slice(0, 10));
   });
 

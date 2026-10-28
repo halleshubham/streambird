@@ -24,6 +24,7 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
     const plans = (await new Client(h.baseUrl).get('/plans/public')).body.filter((p: any) => !p.key.startsWith('e2e_'));
     expect(plans.map((p: any) => [p.key, p.priceInr, p.maxGuests, p.maxDestinations])).toEqual([
       ['free', 0, 2, 1],
+      ['lite', 299, 3, 1],
       ['starter', 999, 4, 2],
       ['pro', 1999, 8, 4],
       ['enterprise', 4999, 10, 8],
@@ -75,7 +76,7 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
 
   it('recording to the host\'s computer is a plan feature: Pro and Business have it, Free does not, and an admin can switch it', async () => {
     const pub = (await new Client(h.baseUrl).get('/plans/public')).body.filter((p: any) => !p.key.startsWith('e2e_'));
-    expect(pub.map((p: any) => [p.key, p.canRecord])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(pub.map((p: any) => [p.key, p.canRecord])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
 
     const { client } = await h.signIn();
     expect((await client.get('/plans/me')).body.canRecord).toBe(false);
@@ -91,8 +92,8 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
 
   it('green screen is a plan feature: Pro and Business have it, Free does not, and an admin can switch it', async () => {
     const pub = (await new Client(h.baseUrl).get('/plans/public')).body.filter((p: any) => !p.key.startsWith('e2e_'));
-    expect(pub.map((p: any) => [p.key, p.canLowerThird])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
-    expect(pub.map((p: any) => [p.key, p.canChromaKey])).toEqual([['free', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(pub.map((p: any) => [p.key, p.canLowerThird])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
+    expect(pub.map((p: any) => [p.key, p.canChromaKey])).toEqual([['free', false], ['lite', false], ['starter', false], ['pro', true], ['enterprise', true], ['day_pass', false]]);
 
     const { client } = await h.signIn();
     expect((await client.get('/plans/me')).body.canChromaKey).toBe(false);
@@ -126,11 +127,26 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
 
   it('a Free account out of hours is stopped with a clear message', async () => {
     const { client, accountId } = await h.signIn();
-    await h.db.query(`UPDATE accounts SET stream_hour_usage_current_period = 2 WHERE id = $1`, [accountId]);
+    await h.db.query(`UPDATE accounts SET stream_hour_usage_current_period = 5 WHERE id = $1`, [accountId]);
     const a = await twitch(client, 'A');
     const r = await client.post('/streams', { title: 't', destinationConnectionIds: [a] });
     expect(r.status).toBe(403);
     expect(JSON.stringify(r.body)).toMatch(/Free plan/);
+  });
+
+  it('the new Lite plan and the Free and fair-use hours are live: Lite is public and priced, Free has 5 hours, Pro and Business include 200', async () => {
+    const plans = (await new Client(h.baseUrl).get('/plans/public')).body;
+    const by = (k: string) => plans.find((p: any) => p.key === k);
+    expect(by('lite')).toMatchObject({ name: 'Lite', priceInr: 299, maxDestinations: 1, maxGuests: 3, maxResolution: 'fhd', watermark: false, canRecord: false });
+    expect(Number(by('free').includedHoursPerMonth)).toBe(5);
+    expect(Number(by('pro').includedHoursPerMonth)).toBe(200);
+    expect(Number(by('enterprise').includedHoursPerMonth)).toBe(200);
+    // A fresh Free account really gets 5 hours, not 2.
+    const { client, accountId } = await h.signIn();
+    expect((await client.get('/plans/me')).body.includedHours).toBe(5);
+    await h.db.query(`UPDATE accounts SET stream_hour_usage_current_period = 4.5 WHERE id = $1`, [accountId]);
+    const a = await twitch(client, 'L');
+    expect((await client.post('/streams', { title: 'still allowed', destinationConnectionIds: [a] })).status).toBe(201);
   });
 
   it('only superadmins can touch plans', async () => {
