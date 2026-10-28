@@ -18,6 +18,8 @@ async function signIn(context: BrowserContext, opts: { superadmin?: boolean } = 
   await api.post(`${CONTROL}/approve?email=${email}${opts.superadmin ? '&superadmin=1' : ''}`);
   return { email, api };
 }
+/** Opens one of the panels beside the studio picture (People, Look, Titles or Scenes). */
+const studioTab = (page: Page, name: 'People' | 'Look' | 'Titles' | 'Scenes') => page.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 const apiHeaders = { Origin: APP, 'Content-Type': 'application/json' };
 
 // The server's COOKIE_CONSENT_BANNER decides the mode (default off); these tests answer /api/config/public themselves.
@@ -339,6 +341,7 @@ test.describe('host studio', () => {
     await page.goto(`/streams/${id}/studio`);
     const canvas = page.locator('canvas.studio-canvas');
     await expect(canvas).toBeVisible();
+    await studioTab(page, 'Look');
     const [cw, ch] = await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
 
     // The default look is untouched: Grid layout, Vanilla style.
@@ -411,6 +414,7 @@ test.describe('host studio', () => {
     await page.goto(`/streams/${id}/studio`);
     const canvas = page.locator('canvas.studio-canvas');
     await expect(canvas).toBeVisible();
+    await studioTab(page, 'Look');
     const [cw, ch] = await canvas.evaluate((c: HTMLCanvasElement) => [c.width, c.height]);
     // A layout that always draws its own background (the plain grid shows the StreamBird slate with nobody on camera).
     await page.selectOption('#layoutSelect', 'anchor-slide-right');
@@ -912,6 +916,7 @@ test.describe('lower third banner (Pro)', () => {
     await page.goto(`/streams/${id}/studio`);
     await page.getByRole('button', { name: /Start my camera/ }).click();
     await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    await studioTab(page, 'Titles');
     const size = await page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
     return { id, ...size };
   };
@@ -1374,11 +1379,32 @@ test.describe('logo position', () => {
     return page.evaluate(() => { const c = document.querySelector('canvas.studio-canvas') as HTMLCanvasElement; return { width: c.width, height: c.height }; });
   };
 
+  test('studio side panel is tabbed: arrow keys switch, the choice is remembered, and Look is beside the picture without scrolling', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await size(page);
+    const people = page.getByRole('tab', { name: /^People/ });
+    await expect(people).toHaveAttribute('aria-selected', 'true');
+    await people.focus();
+    await page.keyboard.press('ArrowRight');
+    const look = page.getByRole('tab', { name: /^Look/ });
+    await expect(look).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: /Look/ })).toBeVisible();
+    await page.reload();
+    await size(page);
+    await expect(page.getByRole('tab', { name: /^Look/ })).toHaveAttribute('aria-selected', 'true');
+    // desktop: the panel sits next to the picture, inside the first screen
+    const box = await page.locator('#wallpaperInput').boundingBox();
+    expect(box && box.y < 800).toBe(true);
+  });
+
   test('the logo can sit top left (as before) or top right, and the choice sticks through a reload and a scene', async ({ page, context }) => {
     const { api } = await signIn(context);
     const id = await newStream(context, api);
     await page.goto(`/streams/${id}/studio`);
     const { width } = await size(page);
+    await studioTab(page, 'Look');
     const logoSize = 90; // the default; the picture is square, so it is 90 x 90 and 16 px in from the corner
     const left = () => canvasPixel(page, 16 + logoSize / 2, 16 + logoSize / 2);
     const right = () => canvasPixel(page, width - 16 - logoSize / 2, 16 + logoSize / 2);
@@ -1401,11 +1427,15 @@ test.describe('logo position', () => {
     await page.locator('#logoSizeInput').fill('90');
 
     // A scene remembers the position; applying it brings the logo back to that corner.
+    await studioTab(page, 'Scenes');
     page.once('dialog', (d) => void d.accept('Right logo'));
     await page.getByRole('button', { name: /Save current as scene/ }).click();
+    await studioTab(page, 'Look');
     await position.getByRole('button', { name: 'Top left' }).click();
     await expect.poll(async () => redish(await left()), { timeout: 10_000 }).toBe(true);
+    await studioTab(page, 'Scenes');
     await page.getByRole('button', { name: 'Right logo' }).click();
+    await studioTab(page, 'Look');
     await expect(position.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
 
@@ -1428,6 +1458,7 @@ test.describe('logo position', () => {
     );
     await page.goto(`/streams/${id}/studio`);
     await page.locator('canvas.studio-canvas').waitFor();
+    await studioTab(page, 'Look');
     await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
     await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
   });

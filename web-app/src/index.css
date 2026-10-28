@@ -3920,3 +3920,23 @@ video.chroma-preview {
   .go-live-button--hint:not(:disabled) { animation: none; }
   .studio-tour-spot { transition: none; }
 }
+
+/* Host studio: the picture and its panels side by side, so adjusting (background removal, logo, titles...) never means scrolling away from it */
+.studio-main { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'video' 'side' 'below'; }
+.studio-main-video { grid-area: video; min-width: 0; }
+.studio-side { grid-area: side; min-width: 0; padding: 0; }
+.studio-main-below { grid-area: below; min-width: 0; }
+.studio-side [role='tabpanel'] { padding: 14px; }
+.studio-side [role='tabpanel'][hidden] { display: none; }
+.studio-side .panel { border: 0; box-shadow: none; background: none; padding: 0; margin: 0 0 18px; }
+.studio-side .panel:last-child { margin-bottom: 0; }
+.studio-tabs { display: flex; gap: 4px; padding: 8px 8px 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.studio-tab { display: inline-flex; align-items: center; gap: 6px; flex: 1 0 auto; justify-content: center; padding: 8px 12px; margin: 0; border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: none; color: var(--text); font-weight: 600; font-size: 14px; cursor: pointer; }
+.studio-tab:hover { color: var(--text-h); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.studio-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.studio-tab-count { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+@media (min-width: 1100px) {
+  .studio-page { max-width: 1400px; }
+  .studio-main { grid-template-columns: minmax(0, 1fr) 420px; grid-template-areas: 'video side' 'below side'; align-items: start; }
+  .studio-side { position: sticky; top: var(--studio-top, 110px); max-height: calc(100vh - var(--studio-top, 110px) - 12px); overflow-y: auto; }
+}
