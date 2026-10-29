@@ -295,6 +295,26 @@ test.describe('admin', () => {
     await expect(page.getByText('Saved Starter.')).toBeVisible();
   });
 
+  test('Dashboard: "Heavy usage this month" lists accounts, highlights >= 80%, and has an empty state', async ({ page, context }) => {
+    const heavy = await signIn(context);
+    await context.request.post(`${CONTROL}/set-usage?email=${heavy.email}&hours=190&plan=pro`);
+    await signIn(context, { superadmin: true });
+    await page.goto('/admin');
+    const card = page.getByTestId('heavy-usage');
+    await expect(page.getByText('Heavy usage this month')).toBeVisible();
+    const row = card.locator('tr', { hasText: heavy.email });
+    await expect(row).toContainText('190 / 200');
+    await expect(row.locator('.badge')).toHaveText('95%');
+    await expect(row.locator('.badge')).toHaveClass(/badge--warning/);
+    // mobile-safe: no horizontal page scroll on a phone
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.route('**/api/superadmin/analytics/heavy-usage', (r) => r.fulfill({ json: [] }));
+    await page.reload();
+    await expect(page.getByTestId('heavy-usage').getByText('Nobody has used stream hours this period yet.')).toBeVisible();
+  });
+
   test('Billing page: payments switch and setup status', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/billing');

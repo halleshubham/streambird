@@ -5,7 +5,7 @@ import { BirdBusy } from '../../components/BirdBusy';
 import { PENDING_CHANGED_EVENT } from '../../lib/adminEvents';
 import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, Section, When } from '../../components/admin/adminKit';
 import { ApiError } from '../../api/client';
-import type { PendingApproval, RegistrationStatus } from '../../types/api';
+import type { HeavyUsageRow, PendingApproval, RegistrationStatus } from '../../types/api';
 
 /** Everyone waiting for approval -- a new Company Admin signup or a brand-new solo user's first login. */
 export function AdminDashboardPage() {
@@ -15,6 +15,7 @@ export function AdminDashboardPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [heavy, setHeavy] = useState<HeavyUsageRow[] | null>(null);
 
   async function load() {
     try {
@@ -25,6 +26,11 @@ export function AdminDashboardPage() {
       setError(err instanceof ApiError ? err.message : 'Failed to load pending approvals.');
     }
   }
+
+  useEffect(() => {
+    // Read-only watch; a failure here must not block the approvals list.
+    superadminApi.listHeavyUsage().then(setHeavy).catch(() => setHeavy([]));
+  }, []);
 
   useEffect(() => {
     // Fetching on mount -- an async network call, never derivable during render.
@@ -114,6 +120,53 @@ export function AdminDashboardPage() {
           )}
         </Section>
       )}
+      <Section
+        title="Heavy usage this month"
+        hint="Accounts with the most stream hours this billing period. Visibility only: nothing is enforced. Bandwidth cost is a rough estimate (destination-hours x Rs 2.4)."
+      >
+        <div data-testid="heavy-usage">
+          {heavy === null ? (
+            <BirdLoader loading compact label="Loading heavy usage…" />
+          ) : heavy.length === 0 ? (
+            <Empty>Nobody has used stream hours this period yet.</Empty>
+          ) : (
+            <DataTable caption="Accounts with the heaviest usage this month">
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col" className="hide-sm">Plan</th>
+                  <th scope="col">Hours</th>
+                  <th scope="col">Used</th>
+                  <th scope="col" className="hide-sm">Dest-hours</th>
+                  <th scope="col" className="hide-sm">Est. cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {heavy.map((r) => (
+                  <tr key={r.accountId} data-heavy={r.percentUsed !== null && r.percentUsed >= 80 ? 'true' : undefined}>
+                    <td>
+                      <span className="admin-cell-main">{r.accountName}</span>
+                      <span className="admin-cell-sub">{r.ownerEmail ?? '—'}</span>
+                      <span className="admin-cell-sub show-sm">{r.planName} · {r.destinationHours} dest-h · Rs {r.estimatedBandwidthCostInr}</span>
+                    </td>
+                    <td className="hide-sm">{r.planName}</td>
+                    <td className="nowrap">{r.hoursUsed} / {r.includedHours === null ? '∞' : r.includedHours}</td>
+                    <td className="nowrap">
+                      {r.percentUsed === null ? (
+                        <Badge tone="neutral">Unlimited</Badge>
+                      ) : (
+                        <Badge tone={r.percentUsed >= 100 ? 'danger' : r.percentUsed >= 80 ? 'warning' : 'neutral'}>{r.percentUsed}%</Badge>
+                      )}
+                    </td>
+                    <td className="nowrap hide-sm">{r.destinationHours}</td>
+                    <td className="nowrap hide-sm">Rs {r.estimatedBandwidthCostInr}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </div>
+      </Section>
       {error && <p className="error" role="alert">{error}</p>}
       {pending === null ? (
         <BirdLoader loading compact label="Loading pending approvals…" />

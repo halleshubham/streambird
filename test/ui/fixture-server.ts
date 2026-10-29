@@ -5,6 +5,7 @@
  * server exposes the two things a browser can't get for itself:
  *   GET  /code?email=...      the latest login code "emailed" to that address
  *   POST /approve?email=...   approve that user (&superadmin=1 to promote)
+ *   POST /set-usage?email=...&hours=N[&plan=key]   set that user's account hours used + plan
  * It is test-only and never part of the product.
  */
 import * as http from 'http';
@@ -35,6 +36,10 @@ async function main() {
       }
       if (url.pathname === '/make-superadmin' && req.method === 'POST') {
         const r = await h.db.query(`UPDATE users SET role = 'superadmin', approved_at = now(), password_hash = $2 WHERE email = $1`, [email, hashPassword(url.searchParams.get('password') ?? '')]);
+        return send(200, { updated: r.rowCount });
+      }
+      if (url.pathname === '/set-usage' && req.method === 'POST') {
+        const r = await h.db.query(`UPDATE accounts SET stream_hour_usage_current_period = $2, plan_key = $3 WHERE id = (SELECT account_id FROM users WHERE email = $1)`, [email, url.searchParams.get('hours') ?? '0', url.searchParams.get('plan') ?? 'pro']);
         return send(200, { updated: r.rowCount });
       }
       send(404, { error: 'not found' });

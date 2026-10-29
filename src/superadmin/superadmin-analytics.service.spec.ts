@@ -37,6 +37,8 @@ describe('SuperadminAnalyticsService', () => {
       liveStreams as any,
       destinations as any,
       accounts as any,
+      {} as any,
+      {} as any,
     );
     return { service, liveStreams, destinations, accounts };
   }

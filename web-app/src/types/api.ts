@@ -538,3 +538,18 @@ export interface RegistrationStatus {
   last7d: number;
   waiting: number;
 }
+
+/** One row of the superadmin "Heavy usage this month" watch. */
+export interface HeavyUsageRow {
+  accountId: string;
+  accountName: string;
+  ownerEmail: string | null;
+  planKey: string;
+  planName: string;
+  hoursUsed: number;
+  /** null = unlimited plan. */
+  includedHours: number | null;
+  percentUsed: number | null;
+  destinationHours: number;
+  estimatedBandwidthCostInr: number;
+}
