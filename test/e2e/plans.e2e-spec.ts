@@ -134,6 +134,18 @@ describeE2E('plans: admin-configurable limits, enforced', () => {
     expect(JSON.stringify(r.body)).toMatch(/Free plan/);
   });
 
+  it('refusals point to the next plan up, from the plans table, and keep their leading text', async () => {
+    const { client, accountId } = await h.signIn();
+    const a = await twitch(client, 'A');
+    const b = await twitch(client, 'B');
+    const dest = await client.post('/streams', { title: 't', destinationConnectionIds: [a, b] });
+    expect(dest.status).toBe(403);
+    expect(JSON.stringify(dest.body)).toMatch(/Free plan allows up to 1 destination per stream, but 2 were selected\. Remove some or upgrade your plan\. Starter \(₹999\/mo\) allows 2 destinations and \d+ hours: see Billing\./);
+    await h.db.query(`UPDATE accounts SET stream_hour_usage_current_period = 5 WHERE id = $1`, [accountId]);
+    const hrs = await client.post('/streams', { title: 't', destinationConnectionIds: [a] });
+    expect(JSON.stringify(hrs.body)).toMatch(/Free plan.*Lite \(₹299\/mo\) allows 1 destination and \d+ hours: see Billing\./);
+  });
+
   it('the new Lite plan and the Free and fair-use hours are live: Lite is public and priced, Free has 5 hours, Pro and Business include 200', async () => {
     const plans = (await new Client(h.baseUrl).get('/plans/public')).body;
     const by = (k: string) => plans.find((p: any) => p.key === k);

@@ -4,6 +4,7 @@ import { ArrowRight, CalendarPlus, Plug, Radio, Settings2 } from 'lucide-react';
 import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
+import { UpgradeNudge } from '../components/UpgradeNudge';
 import { UsageMeter } from '../components/UsageMeter';
 import { BirdLoader } from '../components/BirdLoader';
 import { StreamListItem } from '../components/StreamListItem';
@@ -44,6 +45,7 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard">
+      <UpgradeNudge account={account} />
       <div className="dashboard-top">
         <UsageMeter account={account} />
         <Link

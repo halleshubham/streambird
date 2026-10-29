@@ -133,6 +133,36 @@ export class PlansService {
     return this.plans.find({ where: { isActive: true, isPublic: true }, order: { sortOrder: 'ASC', key: 'ASC' } });
   }
 
+  /**
+   * The nearest plan above `planKey` (by sort order) that actually raises the limit being hit, computed from the
+   * plans table so names and prices are never hardcoded. Only active, public, paid monthly plans qualify.
+   * `current` is the limit now in force (destinations, or hours with null = unlimited, which nothing beats).
+   */
+  async nextPlanUp(planKey: string, dim: 'destinations' | 'hours', current: number | null): Promise<Plan | null> {
+    if (current === null) return null;
+    const all = await this.plans.find({ where: { isActive: true, isPublic: true, kind: 'monthly' }, order: { sortOrder: 'ASC', key: 'ASC' } });
+    const here = (await this.plans.findOne({ where: { key: planKey } })) ?? all.find((p) => p.key === planKey);
+    const floor = here ? here.sortOrder : -Infinity;
+    return (
+      all.find((p) => {
+        if (p.sortOrder <= floor || !p.priceInr || p.priceInr <= 0) return false;
+        if (dim === 'destinations') return p.maxDestinations > current;
+        const h = num(p.includedHoursPerMonth);
+        return h === null || h > current;
+      }) ?? null
+    );
+  }
+
+  /** " Starter (₹999/mo) allows 2 destinations and 20 hours: see Billing." or '' when there is no higher plan. */
+  async upgradeHint(planKey: string, dim: 'destinations' | 'hours', current: number | null): Promise<string> {
+    const next = await this.nextPlanUp(planKey, dim, current);
+    if (!next) return '';
+    const h = num(next.includedHoursPerMonth);
+    const dests = `${next.maxDestinations} destination${next.maxDestinations === 1 ? '' : 's'}`;
+    const hours = h === null ? 'unlimited hours' : `${h} hour${h === 1 ? '' : 's'}`;
+    return ` ${next.name} (₹${next.priceInr}/mo) allows ${dests} and ${hours}: see Billing.`;
+  }
+
   async findByKeyOrThrow(key: string): Promise<Plan> {
     const plan = await this.plans.findOne({ where: { key } });
     if (!plan) throw new NotFoundException(`Plan '${key}' not found`);

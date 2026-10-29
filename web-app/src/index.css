@@ -3941,5 +3941,23 @@ video.chroma-preview {
   .studio-side { position: sticky; top: var(--studio-top, 110px); max-height: calc(100vh - var(--studio-top, 110px) - 12px); overflow-y: auto; }
 }
 
+.upgrade-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.upgrade-nudge-link {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 /* Host studio: brand kit picker (Look tab) */
 .studio-brandkit select { width: 100%; margin-top: 4px; }
