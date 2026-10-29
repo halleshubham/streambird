@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { PlansService } from '../plans/plans.service';
+import { User } from '../users/entities/user.entity';
 import { LiveStream } from '../streams/entities/live-stream.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { Account } from '../accounts/entities/account.entity';
@@ -42,6 +44,33 @@ export interface UsageAlert extends AccountUsageRanking {
   ratio: number;
 }
 
+/**
+ * Rough bandwidth cost of pushing one stream to ONE destination for one hour, in INR. Used only by the
+ * superadmin "Heavy usage" watch to estimate what a heavy account costs; it is a planning figure, not billing.
+ * Change it here and nowhere else.
+ */
+export const RS_PER_DESTINATION_HOUR = 2.4;
+const HEAVY_USAGE_LIMIT = 20;
+/** Without a billing_period_start (old accounts) destination-hours look back this far. */
+const HEAVY_USAGE_FALLBACK_DAYS = 30;
+
+export interface HeavyUsageRow {
+  accountId: string;
+  accountName: string;
+  ownerEmail: string | null;
+  planKey: string;
+  planName: string;
+  hoursUsed: number;
+  /** null = unlimited plan. */
+  includedHours: number | null;
+  /** hoursUsed / includedHours * 100, one decimal; null when the plan is unlimited. */
+  percentUsed: number | null;
+  /** Streamed hours x destinations (non-failed) for streams started this period; derived from streams + destinations, so approximate. */
+  destinationHours: number;
+  /** destinationHours x RS_PER_DESTINATION_HOUR, in INR. */
+  estimatedBandwidthCostInr: number;
+}
+
 const NEAR_LIMIT_RATIO = 0.8;
 const OVER_LIMIT_RATIO = 1.0;
 const TOP_ACCOUNTS_LIMIT = 10;
@@ -61,7 +90,78 @@ export class SuperadminAnalyticsService {
     private readonly destinations: Repository<LiveStreamDestination>,
     @InjectRepository(Account)
     private readonly accounts: Repository<Account>,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
+    private readonly plans: PlansService,
   ) {}
+
+  /**
+   * Accounts with the highest usage this billing period, for the founder's "heavy usage" watch (visibility only,
+   * nothing is enforced). Limited plans come first by percent used; unlimited-hours plans follow, by hours.
+   * Destination-hours are derived, no extra column: for every stream started on/after the account's
+   * billing_period_start (or the last 30 days if unset), (ended_at or now) - started_at, times the number of its
+   * destinations that did not fail. Approximate: a destination that joined or dropped mid-stream counts for the
+   * whole stream.
+   */
+  async getHeavyUsage(): Promise<HeavyUsageRow[]> {
+    const accounts = await this.accounts.find({ where: { streamHourUsageCurrentPeriod: MoreThan('0') } });
+    if (accounts.length === 0) return [];
+
+    const rows = await Promise.all(
+      accounts.map(async (a) => {
+        const limits = await this.plans.effectiveLimits(a);
+        const hoursUsed = Number(a.streamHourUsageCurrentPeriod);
+        const includedHours = limits.includedHours;
+        return { a, planName: limits.planName, hoursUsed, includedHours };
+      }),
+    );
+    const ranked = rows
+      .map((r) => ({ ...r, percent: r.includedHours && r.includedHours > 0 ? (r.hoursUsed / r.includedHours) * 100 : null }))
+      .sort((x, y) => {
+        if (x.percent !== null && y.percent !== null) return y.percent - x.percent || y.hoursUsed - x.hoursUsed;
+        if (x.percent !== null) return -1;
+        if (y.percent !== null) return 1;
+        return y.hoursUsed - x.hoursUsed;
+      })
+      .slice(0, HEAVY_USAGE_LIMIT);
+
+    const ids = ranked.map((r) => r.a.id);
+    const [destRows, ownerRows] = await Promise.all([
+      this.liveStreams.manager.query(
+        `SELECT s.account_id AS "accountId",
+                COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, now()) - s.started_at)) / 3600.0 * d.n), 0) AS "destinationHours"
+           FROM live_streams s
+           JOIN accounts a ON a.id = s.account_id
+           JOIN LATERAL (SELECT COUNT(*)::int AS n FROM live_stream_destinations x WHERE x.live_stream_id = s.id AND x.status <> 'failed') d ON true
+          WHERE s.account_id = ANY($1::uuid[])
+            AND s.started_at IS NOT NULL
+            AND s.started_at >= COALESCE(a.billing_period_start::timestamptz, now() - ($2::int * interval '1 day'))
+          GROUP BY s.account_id`,
+        [ids, HEAVY_USAGE_FALLBACK_DAYS],
+      ) as Promise<Array<{ accountId: string; destinationHours: string }>>,
+      this.users.find({ where: { accountId: In(ids) }, order: { createdAt: 'ASC' } }),
+    ]);
+    const destHoursById = new Map(destRows.map((r) => [r.accountId, Number(r.destinationHours)]));
+    const ownerById = new Map<string, string>();
+    for (const u of ownerRows) if (!ownerById.has(u.accountId)) ownerById.set(u.accountId, u.email);
+
+    const round = (n: number, dp: number) => Math.round(n * 10 ** dp) / 10 ** dp;
+    return ranked.map(({ a, planName, hoursUsed, includedHours, percent }) => {
+      const destinationHours = destHoursById.get(a.id) ?? 0;
+      return {
+        accountId: a.id,
+        accountName: a.name,
+        ownerEmail: ownerById.get(a.id) ?? null,
+        planKey: a.planKey,
+        planName,
+        hoursUsed: round(hoursUsed, 2),
+        includedHours,
+        percentUsed: percent === null ? null : round(percent, 1),
+        destinationHours: round(destinationHours, 2),
+        estimatedBandwidthCostInr: round(destinationHours * RS_PER_DESTINATION_HOUR, 2),
+      };
+    });
+  }
 
   /**
    * "Activity today/this week" is counted by createdAt (when the stream

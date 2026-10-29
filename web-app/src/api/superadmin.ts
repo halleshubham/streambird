@@ -7,6 +7,7 @@ import type {
   AccountSummary,
   AnalyticsOverview,
   AuditLogEntry,
+  HeavyUsageRow,
   LiveStreamRow,
   PendingApproval,
   RegistrationStatus,
@@ -48,6 +49,10 @@ export function getAnalyticsOverview(): Promise<AnalyticsOverview> {
 
 export function listUsageAlerts(): Promise<UsageAlert[]> {
   return api.get('/superadmin/analytics/usage-alerts');
+}
+
+export function listHeavyUsage(): Promise<HeavyUsageRow[]> {
+  return api.get('/superadmin/analytics/heavy-usage');
 }
 
 export function listLiveStreams(): Promise<LiveStreamRow[]> {

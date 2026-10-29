@@ -29,6 +29,11 @@ export class SuperadminAnalyticsController {
     return this.analytics.getUsageAlerts();
   }
 
+  @Get('heavy-usage')
+  heavyUsage() {
+    return this.analytics.getHeavyUsage();
+  }
+
   @Get('live-streams')
   liveStreams() {
     return this.analytics.listLiveStreams();
