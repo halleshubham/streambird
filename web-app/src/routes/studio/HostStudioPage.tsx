@@ -2,7 +2,7 @@ import { NameBadge } from '../../components/NameBadge';
 import { formatWhen } from '../../lib/schedule';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Camera,
   Copy,
@@ -101,6 +101,9 @@ export function HostStudioPage() {
     wallpaperDim,
     resolution,
     maxResolution,
+    brandKits,
+    activeKitId,
+    canBrandLibrary,
     canRecord,
     canChromaKey,
     canLowerThird,
@@ -623,6 +626,37 @@ export function HostStudioPage() {
 
           </div>
           <div role="tabpanel" id="studio-panel-look" aria-labelledby="studio-tab-look" hidden={sideTab !== 'look'}>
+                  {(brandKits.length > 0 || canBrandLibrary) && (
+                    <div className="panel studio-brandkit">
+                      <label className="studio-section-label" htmlFor="brandKitSelect">
+                        <Palette size={14} /> Brand kit
+                      </label>
+                      {brandKits.length > 0 ? (
+                        <>
+                          <select
+                            id="brandKitSelect"
+                            value={activeKitId ?? ''}
+                            onChange={(e) => void actions.applyBrandKit(brandKits.find((k) => k.id === e.target.value) ?? null)}
+                          >
+                            <option value="">Manual (no kit)</option>
+                            {brandKits.map((k) => (
+                              <option key={k.id} value={k.id}>
+                                {k.name}
+                                {k.isDefault ? ' (default)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="docs-hint">
+                            Applies your saved logo, wallpaper and lower-third look in one go. <Link to="/brand">Manage brand kits</Link>
+                          </p>
+                        </>
+                      ) : (
+                        <p className="docs-hint">
+                          Save your logo and wallpaper once as a brand kit and apply it here in one tap. <Link to="/brand">Create a brand kit</Link>
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="panel">
                     <label className="studio-section-label" htmlFor="wallpaperInput">
                       <ImagePlus size={14} /> Wallpaper

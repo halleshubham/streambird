@@ -3940,3 +3940,6 @@ video.chroma-preview {
   .studio-main { grid-template-columns: minmax(0, 1fr) 420px; grid-template-areas: 'video side' 'below side'; align-items: start; }
   .studio-side { position: sticky; top: var(--studio-top, 110px); max-height: calc(100vh - var(--studio-top, 110px) - 12px); overflow-y: auto; }
 }
+
+/* Host studio: brand kit picker (Look tab) */
+.studio-brandkit select { width: 100%; margin-top: 4px; }
