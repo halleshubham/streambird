@@ -161,6 +161,28 @@ test.describe('signed-in user', () => {
     await expect(page.getByText('https://www.googleapis.com/auth/youtube.force-ssl')).toBeVisible();
   });
 
+  test('dashboard: an upgrade nudge to the next plan appears from 80% of included hours, and not before', async ({ page, context }) => {
+    await signIn(context);
+    const usage = (hours: number) =>
+      page.route('**/api/accounts/me', async (route) => {
+        const res = await route.fetch();
+        const body = await res.json();
+        await route.fulfill({ response: res, json: { ...body, streamHourUsageCurrentPeriod: String(hours) } });
+      });
+    await usage(1);
+    await page.goto('/dashboard');
+    await expect(page.getByText('Stream hours this period')).toBeVisible();
+    await expect(page.getByTestId('upgrade-nudge')).toHaveCount(0);
+
+    await page.unroute('**/api/accounts/me');
+    await usage(4.5);
+    await page.goto('/dashboard');
+    const nudge = page.getByTestId('upgrade-nudge');
+    await expect(nudge).toContainText("You've used 4.5 of 5 hours this month");
+    await expect(nudge).toContainText(/Lite \(₹299\/mo\) gives you \d+ hours/);
+    await expect(nudge.getByRole('link', { name: 'Upgrade' })).toHaveAttribute('href', '/billing');
+  });
+
   test('billing page: explains payments are off, then offers autopay as the default once an admin turns them on', async ({ page, context, browser }) => {
     await signIn(context);
     await page.goto('/billing');
