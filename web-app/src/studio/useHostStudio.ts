@@ -13,11 +13,12 @@ import { recordingFileName, recordingSupported, startRecording as beginRecording
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getMyLimits } from '../api/plans';
+import { assetFileUrl, listBrandKits } from '../api/assets';
 import { getStream, getStreamStatus, startStream } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
-import type { PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
+import type { BrandKit, PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
 import {
   BRANDING_RANGES,
   DEFAULT_THEME_ID,
@@ -231,6 +232,8 @@ interface PersistedStudioState {
   lowerThirdPresets: LowerThirdPreset[];
   logoDataUrl: string | null;
   wentLive: boolean;
+  /** The brand kit applied to this stream: undefined = never chosen (the destination's or default kit is applied once), null = chosen manual. */
+  brandKitId: string | null;
   /** The host's own green-screen settings (guests' are per visit and not kept). */
   chroma: ChromaSettings;
 }
@@ -343,6 +346,11 @@ export function useHostStudio(streamId: string | undefined) {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
   const [resolution, setResolutionState] = useState<StreamResolution>('hd');
   // The best quality the host's plan allows (GET /plans/me); until it loads, nothing is restricted.
+  const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
+  const [brandKitsLoaded, setBrandKitsLoaded] = useState(false);
+  const [activeKitId, setActiveKitId] = useState<string | null>(null);
+  const [canBrandLibrary, setCanBrandLibrary] = useState(false);
+  const kitInitRef = useRef(false);
   const [maxResolution, setMaxResolution] = useState<StreamResolution>('fhd');
   /** Plan allows green screen (Pro and up). Client-side only: the keying happens in this browser. */
   const [canChromaKey, setCanChromaKey] = useState(false);
@@ -1504,10 +1512,45 @@ export function useHostStudio(streamId: string | undefined) {
         canLowerThirdRef.current = !!l.canLowerThird;
         showMarkRef.current = !!l.watermark;
         setCanLowerThird(!!l.canLowerThird);
+        setCanBrandLibrary((l.assetStorageMb ?? 0) > 0);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
       })
       .catch(() => {});
   }, []);
+
+  // Saved brand kits (paid plans keep their library in the account; Free has none).
+  useEffect(() => {
+    listBrandKits()
+      .then((k) => setBrandKits(k))
+      .catch(() => {})
+      .finally(() => setBrandKitsLoaded(true));
+  }, []);
+
+  // Once per stream: restore the kit this stream used, or on a stream's first open apply the kit of its
+  // destination channel/page (else the account default). Anything the host set by hand is never overwritten.
+  useEffect(() => {
+    if (!stream || !brandKitsLoaded || kitInitRef.current) return;
+    kitInitRef.current = true;
+    if (brandKits.length === 0) return;
+    const saved = loadPersisted(stream.id);
+    const byId = (id: string | null | undefined) => brandKits.find((k) => k.id === id) ?? null;
+    if (saved.brandKitId === null) return; // the host chose "manual"
+    if (typeof saved.brandKitId === 'string') {
+      const kit = byId(saved.brandKitId);
+      if (!kit) return;
+      setActiveKitId(kit.id);
+      // Big pictures are not kept in the browser: fetch them again so a reload keeps the look.
+      const missingLogo = !!kit.logoAssetId && !saved.logoDataUrl;
+      const missingWall = !!kit.wallpaperAssetId && !loadPersistedWallpaper(stream.id);
+      if (missingLogo || missingWall) void applyBrandKit(kit, { silent: true });
+      return;
+    }
+    const handled = Object.keys(saved).length > 0 && (saved.logoDataUrl || loadPersistedWallpaper(stream.id));
+    if (handled) return; // an older stream the host already styled by hand
+    const connectionIds = new Set((stream.destinations ?? []).map((d) => d.platformConnectionId));
+    const kit = brandKits.find((k) => k.connectionIds.some((c) => connectionIds.has(c))) ?? brandKits.find((k) => k.isDefault) ?? null;
+    if (kit) void applyBrandKit(kit);
+  }, [stream, brandKitsLoaded, brandKits]);
 
   // ---- 2. Actions exposed to the page ----------------------------------
 
@@ -1752,6 +1795,41 @@ export function useHostStudio(streamId: string | undefined) {
       const reader = new FileReader();
       reader.onload = () => savePersisted(stream.id, { logoDataUrl: String(reader.result) });
       reader.readAsDataURL(file);
+    }
+  }
+
+  function clearLogo() {
+    brandingRef.current.logoImg = null;
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { logoDataUrl: null });
+  }
+
+  async function fetchAssetFile(assetId: string, fallbackName: string): Promise<File> {
+    const res = await fetch(assetFileUrl(assetId), { credentials: 'include' });
+    if (!res.ok) throw new Error(`asset ${res.status}`);
+    const blob = await res.blob();
+    return new File([blob], fallbackName, { type: blob.type || 'image/png' });
+  }
+
+  /** Applies a saved brand kit (logo, wallpaper, logo position/size, lower-third look) to this stream; null = go back to manual. */
+  async function applyBrandKit(kit: BrandKit | null, opts: { silent?: boolean } = {}) {
+    setActiveKitId(kit ? kit.id : null);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { brandKitId: kit ? kit.id : null });
+    if (!kit) return;
+    try {
+      setLogoPosition(kit.logoPosition);
+      setLogoSize(kit.logoSize);
+      setLowerThird({ style: kit.lowerThirdStyle });
+      if (kit.logoAssetId) setLogoFile(await fetchAssetFile(kit.logoAssetId, `${kit.name} logo`));
+      else clearLogo();
+      if (kit.wallpaperAssetId) {
+        await setWallpaperFile(await fetchAssetFile(kit.wallpaperAssetId, `${kit.name} wallpaper`));
+        setWallpaperDim(kit.wallpaperDim);
+      } else if (wallpaperRef.current) {
+        clearWallpaper();
+      }
+      if (!opts.silent) setStatus({ text: `Applied brand kit "${kit.name}".`, isError: false });
+    } catch {
+      setStatus({ text: `Could not load the files of brand kit "${kit.name}". Check your connection and pick it again.`, isError: true });
     }
   }
 
@@ -2458,6 +2536,9 @@ export function useHostStudio(streamId: string | undefined) {
     wallpaperDim,
     resolution,
     maxResolution,
+    brandKits,
+    activeKitId,
+    canBrandLibrary,
     canRecord,
     canChromaKey,
     canLowerThird,
@@ -2501,6 +2582,7 @@ export function useHostStudio(streamId: string | undefined) {
       toggleOnStage,
       dropParticipant,
       setLogoFile,
+      applyBrandKit,
       setLogoSize,
       setLogoPosition,
       setNewsText,

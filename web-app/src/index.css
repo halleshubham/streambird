@@ -3958,3 +3958,6 @@ video.chroma-preview {
   color: var(--accent);
   white-space: nowrap;
 }
+
+/* Host studio: brand kit picker (Look tab) */
+.studio-brandkit select { width: 100%; margin-top: 4px; }

@@ -761,6 +761,66 @@ test.describe('brand library and kits', () => {
       await expect(page.getByText('No files yet')).toBeVisible();
     });
 
+    test('the studio applies the kit of the stream\'s channel (else the default), lets the host switch kits or go manual, and remembers it', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const conn = async (label: string) =>
+        (await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label, ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json()).id as string;
+      const upload = async (name: string, png: Buffer, kind = 'logo') =>
+        (await (await api.post(`${APP}/api/assets`, { multipart: { kind, name, file: { name: `${name}.png`, mimeType: 'image/png', buffer: png } }, headers: { Origin: APP } })).json()).id as string;
+      const kit = async (name: string, logoAssetId: string, logoPosition: 'left' | 'right', wallpaperAssetId: string | null = null) =>
+        (await (await api.post(`${APP}/api/brand-kits`, { data: { name, logoAssetId, logoPosition, logoSize: 90, wallpaperAssetId, wallpaperDim: 0, lowerThirdStyle: 'accent' }, headers: apiHeaders })).json()).id as string;
+      const hindiConn = await conn('Hindi channel');
+      const englishConn = await conn('English channel');
+      const redLogo = await upload('red-logo', solidPng(220, 30, 40));
+      const blueLogo = await upload('blue-logo', solidPng(30, 60, 220));
+      const hindiKit = await kit('Hindi', redLogo, 'right'); // the first kit is the account default
+      const wall = await upload('studio-wall', solidPng(20, 160, 60), 'wallpaper');
+      const englishKit = await kit('English', blueLogo, 'left', wall);
+      expect((await api.put(`${APP}/api/brand-kits/connections/${englishConn}`, { data: { brandKitId: englishKit }, headers: apiHeaders })).ok()).toBeTruthy();
+
+      const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+      const bluish = (p: [number, number, number]) => p[2] > 150 && p[0] < 90 && p[1] < 120;
+      const open = async (id: string) => {
+        await page.goto(`/streams/${id}/studio`);
+        await page.locator('canvas.studio-canvas').waitFor();
+        await studioTab(page, 'Look');
+        return page.evaluate(() => (document.querySelector('canvas.studio-canvas') as HTMLCanvasElement).width);
+      };
+      const mkStream = async (conns: string[], title: string) =>
+        (await (await api.post(`${APP}/api/streams`, { data: { title, destinationConnectionIds: conns }, headers: apiHeaders })).json()).id as string;
+
+      // A stream to the English channel opens with the English kit (blue logo, top left).
+      const english = await mkStream([englishConn], 'English show');
+      const width = await open(english);
+      const select = page.locator('#brandKitSelect');
+      await expect(select).toHaveValue(englishKit);
+      const left = () => canvasPixel(page, 16 + 45, 16 + 45);
+      const right = () => canvasPixel(page, width - 16 - 45, 16 + 45);
+      await expect.poll(async () => bluish(await left()), { timeout: 10_000 }).toBe(true);
+      await expect(page.getByTestId('wallpaper-fit')).toBeVisible(); // the kit's wallpaper came along too
+
+      // Switching to the Hindi kit moves the logo to the top right in red.
+      await select.selectOption(hindiKit);
+      await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+      await expect(page.locator('.studio-status-toast')).toContainText('Applied brand kit "Hindi"');
+
+      // "Manual" keeps the look as it is, and the choice survives a reload (the kit is not re-applied on top).
+      await select.selectOption('');
+      await expect(select).toHaveValue('');
+      await page.reload();
+      await page.locator('canvas.studio-canvas').waitFor();
+      await studioTab(page, 'Look');
+      await expect(page.locator('#brandKitSelect')).toHaveValue('');
+      await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+
+      // A stream whose channel has no kit gets the account default (Hindi).
+      const other = await conn('Other channel');
+      const plain = await mkStream([other], 'Plain show');
+      await open(plain);
+      await expect(page.locator('#brandKitSelect')).toHaveValue(hindiKit);
+      void hindiConn;
+    });
+
     test('an upload that is not an image, or is too big for the plan, is refused with a message', async ({ page, context }) => {
       await signIn(context);
       await page.goto('/brand');
