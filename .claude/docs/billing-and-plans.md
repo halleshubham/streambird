@@ -19,6 +19,8 @@ Result fields: `includedHours, graceMultiplier, maxDestinations, maxGuests, maxR
 | Session length | `SessionLimitService` (every 60 s) |
 | Max quality | **client-side only** (host quality menu); the server just exposes it via `GET plans/me|public` |
 
+**Upgrade nudges** (never hardcode plan names or prices): `PlansService.nextPlanUp(planKey, 'destinations'|'hours', current)` returns the nearest active, public, paid monthly plan above the account's plan (by `sort_order`) that raises the limit being hit; `upgradeHint` formats " Starter (₹999/mo) allows 2 destinations and 20 hours: see Billing." and `assertDestinationCount` / `assertCanStartStream` append it after their original text (e2e regexes match the leading text). Empty on the top plan or unlimited hours. Web: `components/UpgradeNudge.tsx` on the dashboard shows a banner (`data-testid="upgrade-nudge"`, links to `/billing`) at >= 80% of finite included hours, computed from `GET plans/me` + `GET plans/public`; hidden on the top plan or unlimited hours. Guest-capacity refusals are not nudged (the person refused is the guest, not the host).
+
 Usage: `recordStreamUsage(hours)` at end; no cron — `rolloverIfNeeded` resets lazily every 30 days.
 
 ## Razorpay (live keys in production env; admin switch `app_settings.payments_enabled`, off by default)

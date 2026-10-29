@@ -136,10 +136,11 @@ export class AccountsService {
 
     const used = Number(account.streamHourUsageCurrentPeriod);
     if (used >= limits.includedHours * limits.graceMultiplier) {
+      const hint = await this.plans.upgradeHint(limits.planKey, 'hours', limits.includedHours);
       throw new ForbiddenException(
         limits.graceMultiplier <= 1
-          ? `You've used all the stream hours included in your ${limits.planName} plan for this billing period. Upgrade your plan to keep streaming.`
-          : `You've used the stream hours included in your ${limits.planName} plan (plus grace) for this billing period. Contact us to arrange more hours or upgrade your plan.`,
+          ? `You've used all the stream hours included in your ${limits.planName} plan for this billing period. Upgrade your plan to keep streaming.${hint}`
+          : `You've used the stream hours included in your ${limits.planName} plan (plus grace) for this billing period. Contact us to arrange more hours or upgrade your plan.${hint}`,
       );
     }
   }
@@ -148,8 +149,9 @@ export class AccountsService {
   async assertDestinationCount(accountId: string, count: number): Promise<void> {
     const limits = await this.getLimits(accountId);
     if (count > limits.maxDestinations) {
+      const hint = await this.plans.upgradeHint(limits.planKey, 'destinations', limits.maxDestinations);
       throw new ForbiddenException(
-        `Your ${limits.planName} plan allows up to ${limits.maxDestinations} destination${limits.maxDestinations === 1 ? '' : 's'} per stream, but ${count} were selected. Remove some or upgrade your plan.`,
+        `Your ${limits.planName} plan allows up to ${limits.maxDestinations} destination${limits.maxDestinations === 1 ? '' : 's'} per stream, but ${count} were selected. Remove some or upgrade your plan.${hint}`,
       );
     }
   }

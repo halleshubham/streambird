@@ -161,6 +161,28 @@ test.describe('signed-in user', () => {
     await expect(page.getByText('https://www.googleapis.com/auth/youtube.force-ssl')).toBeVisible();
   });
 
+  test('dashboard: an upgrade nudge to the next plan appears from 80% of included hours, and not before', async ({ page, context }) => {
+    await signIn(context);
+    const usage = (hours: number) =>
+      page.route('**/api/accounts/me', async (route) => {
+        const res = await route.fetch();
+        const body = await res.json();
+        await route.fulfill({ response: res, json: { ...body, streamHourUsageCurrentPeriod: String(hours) } });
+      });
+    await usage(1);
+    await page.goto('/dashboard');
+    await expect(page.getByText('Stream hours this period')).toBeVisible();
+    await expect(page.getByTestId('upgrade-nudge')).toHaveCount(0);
+
+    await page.unroute('**/api/accounts/me');
+    await usage(4.5);
+    await page.goto('/dashboard');
+    const nudge = page.getByTestId('upgrade-nudge');
+    await expect(nudge).toContainText("You've used 4.5 of 5 hours this month");
+    await expect(nudge).toContainText(/Lite \(₹299\/mo\) gives you \d+ hours/);
+    await expect(nudge.getByRole('link', { name: 'Upgrade' })).toHaveAttribute('href', '/billing');
+  });
+
   test('billing page: explains payments are off, then offers autopay as the default once an admin turns them on', async ({ page, context, browser }) => {
     await signIn(context);
     await page.goto('/billing');
@@ -757,6 +779,66 @@ test.describe('brand library and kits', () => {
       await expect(page.getByText('No brand kits yet')).toBeVisible();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
       await expect(page.getByText('No files yet')).toBeVisible();
+    });
+
+    test('the studio applies the kit of the stream\'s channel (else the default), lets the host switch kits or go manual, and remembers it', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const conn = async (label: string) =>
+        (await (await api.post(`${APP}/api/platform-connections/twitch/manual`, { data: { label, ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' }, headers: apiHeaders })).json()).id as string;
+      const upload = async (name: string, png: Buffer, kind = 'logo') =>
+        (await (await api.post(`${APP}/api/assets`, { multipart: { kind, name, file: { name: `${name}.png`, mimeType: 'image/png', buffer: png } }, headers: { Origin: APP } })).json()).id as string;
+      const kit = async (name: string, logoAssetId: string, logoPosition: 'left' | 'right', wallpaperAssetId: string | null = null) =>
+        (await (await api.post(`${APP}/api/brand-kits`, { data: { name, logoAssetId, logoPosition, logoSize: 90, wallpaperAssetId, wallpaperDim: 0, lowerThirdStyle: 'accent' }, headers: apiHeaders })).json()).id as string;
+      const hindiConn = await conn('Hindi channel');
+      const englishConn = await conn('English channel');
+      const redLogo = await upload('red-logo', solidPng(220, 30, 40));
+      const blueLogo = await upload('blue-logo', solidPng(30, 60, 220));
+      const hindiKit = await kit('Hindi', redLogo, 'right'); // the first kit is the account default
+      const wall = await upload('studio-wall', solidPng(20, 160, 60), 'wallpaper');
+      const englishKit = await kit('English', blueLogo, 'left', wall);
+      expect((await api.put(`${APP}/api/brand-kits/connections/${englishConn}`, { data: { brandKitId: englishKit }, headers: apiHeaders })).ok()).toBeTruthy();
+
+      const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+      const bluish = (p: [number, number, number]) => p[2] > 150 && p[0] < 90 && p[1] < 120;
+      const open = async (id: string) => {
+        await page.goto(`/streams/${id}/studio`);
+        await page.locator('canvas.studio-canvas').waitFor();
+        await studioTab(page, 'Look');
+        return page.evaluate(() => (document.querySelector('canvas.studio-canvas') as HTMLCanvasElement).width);
+      };
+      const mkStream = async (conns: string[], title: string) =>
+        (await (await api.post(`${APP}/api/streams`, { data: { title, destinationConnectionIds: conns }, headers: apiHeaders })).json()).id as string;
+
+      // A stream to the English channel opens with the English kit (blue logo, top left).
+      const english = await mkStream([englishConn], 'English show');
+      const width = await open(english);
+      const select = page.locator('#brandKitSelect');
+      await expect(select).toHaveValue(englishKit);
+      const left = () => canvasPixel(page, 16 + 45, 16 + 45);
+      const right = () => canvasPixel(page, width - 16 - 45, 16 + 45);
+      await expect.poll(async () => bluish(await left()), { timeout: 10_000 }).toBe(true);
+      await expect(page.getByTestId('wallpaper-fit')).toBeVisible(); // the kit's wallpaper came along too
+
+      // Switching to the Hindi kit moves the logo to the top right in red.
+      await select.selectOption(hindiKit);
+      await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+      await expect(page.locator('.studio-status-toast')).toContainText('Applied brand kit "Hindi"');
+
+      // "Manual" keeps the look as it is, and the choice survives a reload (the kit is not re-applied on top).
+      await select.selectOption('');
+      await expect(select).toHaveValue('');
+      await page.reload();
+      await page.locator('canvas.studio-canvas').waitFor();
+      await studioTab(page, 'Look');
+      await expect(page.locator('#brandKitSelect')).toHaveValue('');
+      await expect.poll(async () => redish(await right()), { timeout: 10_000 }).toBe(true);
+
+      // A stream whose channel has no kit gets the account default (Hindi).
+      const other = await conn('Other channel');
+      const plain = await mkStream([other], 'Plain show');
+      await open(plain);
+      await expect(page.locator('#brandKitSelect')).toHaveValue(hindiKit);
+      void hindiConn;
     });
 
     test('an upload that is not an image, or is too big for the plan, is refused with a message', async ({ page, context }) => {

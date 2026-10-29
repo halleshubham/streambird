@@ -17,11 +17,14 @@ function plan(over: Partial<Plan>): Plan {
 }
 const SEED: Plan[] = [
   plan({}),
-  plan({ key: 'pro', name: 'Pro', includedHoursPerMonth: '30', graceMultiplier: '1.2', maxDestinations: 4, maxGuests: 6 }),
+  plan({ key: 'starter', name: 'Starter', includedHoursPerMonth: '20', maxDestinations: 2, priceInr: 999, sortOrder: 20 }),
+  plan({ key: 'pro', name: 'Pro', priceInr: 1999, sortOrder: 30, includedHoursPerMonth: '30', graceMultiplier: '1.2', maxDestinations: 4, maxGuests: 6 }),
   plan({ key: 'unlimited', name: 'Unlimited', includedHoursPerMonth: null, graceMultiplier: '1', maxDestinations: 6, maxGuests: 10 }),
   plan({ key: 'day_pass', name: 'Day Pass', kind: 'day_pass', includedHoursPerMonth: null, maxDestinations: 4, maxGuests: 10, maxResolution: 'hd', maxSessionHours: '12', validityHours: 24 }),
 ];
-const planRepo = { findOne: jest.fn(async ({ where }: any) => SEED.find((p) => p.key === where.key) ?? null) };
+const planRepo = {
+  find: jest.fn(async ({ where }: any) => SEED.filter((p) => (where.kind ? p.kind === where.kind : true) && p.isActive === where.isActive && p.isPublic === where.isPublic).sort((a, b) => a.sortOrder - b.sortOrder)),
+  findOne: jest.fn(async ({ where }: any) => SEED.find((p) => p.key === where.key) ?? null) };
 
 describe('AccountsService', () => {
   let service: AccountsService;
@@ -151,6 +154,21 @@ describe('AccountsService', () => {
       (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount());
       await expect(service.assertDestinationCount('acc_1', 1)).resolves.toBeUndefined();
       await expect(service.assertDestinationCount('acc_1', 2)).rejects.toThrow(/Free plan allows up to 1 destination/);
+    });
+
+    it('destination refusal points to the next plan up, computed from the plans table', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount());
+      await expect(service.assertDestinationCount('acc_1', 2)).rejects.toThrow(/Remove some or upgrade your plan\. Starter \(₹999\/mo\) allows 2 destinations and 20 hours: see Billing\./);
+      // On Starter (cap 2) the next plan that raises destinations is Pro; the top plan gets no pointer.
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ planKey: 'starter' }));
+      await expect(service.assertDestinationCount('acc_1', 3)).rejects.toThrow(/Pro \(₹1999\/mo\) allows 4 destinations and 30 hours/);
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ planKey: 'pro' }));
+      await expect(service.assertDestinationCount('acc_1', 5)).rejects.toThrow(/^((?!see Billing).)*$/);
+    });
+
+    it('out-of-hours refusal points to the next plan up', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValue(fakeAccount({ streamHourUsageCurrentPeriod: '5000' }));
+      await expect(service.assertCanStartStream('acc_1')).rejects.toThrow(/Free plan.*Starter \(₹999\/mo\) allows 2 destinations and 20 hours: see Billing\./);
     });
 
     it('a per-account destination override beats the plan, and an active day pass raises the cap', async () => {
