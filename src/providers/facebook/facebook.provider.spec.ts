@@ -29,9 +29,9 @@ describe('FacebookProvider', () => {
 
   it('createBroadcast creates the live video and splits secure_stream_url into ingestUrl/streamKey', async () => {
     const { provider } = buildProvider();
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ id: 'video_1', secure_stream_url: 'rtmps://rtmp-api.facebook.com:443/rtmp/abcd-1234' }),
-    );
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'video_1', secure_stream_url: 'rtmps://rtmp-api.facebook.com:443/rtmp/abcd-1234' }))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: 100, message: 'no permalink' } }, false, 400)); // lookup fails: falls back to the Page-scoped link
 
     const result = await provider.createBroadcast(conn, { title: 'Test stream' });
 
@@ -46,6 +46,31 @@ describe('FacebookProvider', () => {
     const sentParams = new URLSearchParams(fetchMock.mock.calls[0][1].body);
     expect(sentParams.get('status')).toBe('LIVE_NOW');
     expect(sentParams.get('access_token')).toBe('page-token');
+  });
+
+  it("createBroadcast uses the live video's own permalink (a Page on the new Pages experience has a different public id)", async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: '1838647857327625', secure_stream_url: 'rtmps://rtmp-api.facebook.com:443/rtmp/k' }))
+      .mockResolvedValueOnce(jsonResponse({ permalink_url: '/100069973906793/videos/1838647857327625/', id: '1838647857327625' }));
+
+    const result = await provider.createBroadcast(conn, { title: 'Test stream' });
+
+    expect(result.watchUrl).toBe('https://www.facebook.com/100069973906793/videos/1838647857327625/');
+    expect(fetchMock.mock.calls[1][0]).toContain('/1838647857327625?fields=permalink_url');
+  });
+
+  it('createBroadcast accepts an absolute permalink, and ignores one that is not a facebook.com link', async () => {
+    const { provider } = buildProvider();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'v1', secure_stream_url: 'rtmps://x/rtmp/k' }))
+      .mockResolvedValueOnce(jsonResponse({ permalink_url: 'https://www.facebook.com/p/videos/v1/' }));
+    expect((await provider.createBroadcast(conn, { title: 't' })).watchUrl).toBe('https://www.facebook.com/p/videos/v1/');
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 'v2', secure_stream_url: 'rtmps://x/rtmp/k' }))
+      .mockResolvedValueOnce(jsonResponse({ permalink_url: 'https://evil.example/v2' }));
+    expect((await provider.createBroadcast(conn, { title: 't' })).watchUrl).toBe('https://www.facebook.com/page_1/videos/v2');
   });
 
   it('createBroadcast splits a stream URL whose key segment carries a query string without corrupting it', async () => {

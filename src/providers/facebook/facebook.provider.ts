@@ -127,10 +127,28 @@ export class FacebookProvider implements StreamProvider {
       ingestUrl,
       streamKey,
       platformBroadcastId: result.id,
-      // The Page-scoped form. A bare facebook.com/<videoId> does not resolve
-      // to the video for Page live videos (it lands on a wrong/blank page).
-      watchUrl: `https://www.facebook.com/${creds.pageId}/videos/${result.id}`,
+      watchUrl: (await this.permalinkFor(creds, result.id)) ?? `https://www.facebook.com/${creds.pageId}/videos/${result.id}`,
     };
+  }
+
+  /**
+   * The link Facebook itself uses for this live video. Building it from the stored
+   * Page id is wrong for Pages on the new Pages experience, whose public links use
+   * the Page's profile id (not the id we hold), so ask the live video for its
+   * permalink. Best effort: null on any failure and the caller falls back to the
+   * Page-scoped form (a bare facebook.com/<videoId> does not resolve to a Page live video).
+   */
+  private async permalinkFor(creds: FacebookCredentials, liveVideoId: string): Promise<string | null> {
+    try {
+      const r = await this.callApi<{ permalink_url?: string }>(`/${liveVideoId}?fields=permalink_url`, creds.pageAccessToken);
+      const link = r?.permalink_url;
+      if (!link) return null;
+      if (/^https:\/\/(www\.)?facebook\.com\//i.test(link)) return link;
+      if (link.startsWith('/')) return `https://www.facebook.com${link}`;
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /**
