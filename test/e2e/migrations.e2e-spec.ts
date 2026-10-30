@@ -151,4 +151,54 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
     await expect(db.query(`SELECT count(*) FROM subscriptions`)).resolves.toBeDefined();
     await db.end();
   });
+
+  it('0026 gives every existing YouTube/Facebook connection a unique live-link slug, leaves Twitch without, and is re-runnable', async () => {
+    const live = `${dbName}_slug`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    const url = urlFor(live);
+    try {
+      await runMigrations(url, { upTo: '0025', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash) VALUES ('slug-acct', 'slug-hash') RETURNING id`)).rows[0].id;
+      const rows: [string, string, boolean][] = [];
+      for (let i = 0; i < 60; i++) rows.push([i % 3 === 0 ? 'youtube' : i % 3 === 1 ? 'facebook' : 'twitch', `ext-${i}`, i % 10 !== 0]);
+      for (const [platform, ext, active] of rows) {
+        await db.query(
+          `INSERT INTO platform_connections (account_id, platform, credentials_ciphertext, external_account_id, label, is_active)
+           VALUES ($1, $2::platform_enum, '\\x00', $3, $3, $4)`,
+          [acct, platform, ext, active],
+        );
+      }
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // no-op the second time
+
+      const all = await db.query(`SELECT platform, live_slug, is_active FROM platform_connections`);
+      const linked = all.rows.filter((r) => r.platform !== 'twitch');
+      expect(linked).toHaveLength(40);
+      for (const r of linked) expect(r.live_slug).toMatch(/^[0-9a-f]{10}$/); // deactivated ones too: a reconnect keeps its link
+      expect(new Set(linked.map((r) => r.live_slug)).size).toBe(40);
+      expect(all.rows.filter((r) => r.platform === 'twitch').every((r) => r.live_slug === null)).toBe(true);
+
+      // A re-run (or a forced re-apply) never changes an existing slug.
+      const before = new Map((await db.query(`SELECT id, live_slug FROM platform_connections`)).rows.map((r) => [r.id, r.live_slug]));
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0026%'`);
+      await runMigrations(url, { quiet: true });
+      const after = (await db.query(`SELECT id, live_slug FROM platform_connections`)).rows;
+      for (const r of after) expect(r.live_slug).toBe(before.get(r.id));
+
+      // Unique, and many NULLs are fine (the twitch rows have none).
+      await expect(db.query(`UPDATE platform_connections SET live_slug = $1 WHERE id = (SELECT id FROM platform_connections WHERE platform = 'twitch' LIMIT 1)`, [linked[0].live_slug])).rejects.toThrow();
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

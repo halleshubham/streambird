@@ -26,6 +26,8 @@ import { AccountGuard, AccountRequest } from '../common/guards/account.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
 import { GoogleOAuthService } from '../auth/google-oauth.service';
+import { PlatformConnection } from './entities/platform-connection.entity';
+import { buildLiveLinkUrl } from './live-link';
 
 const YOUTUBE_OAUTH_STATE_COOKIE_NAME = 'sb_yt_oauth_state';
 const YOUTUBE_OAUTH_BASE_PATH = '/api/platform-connections/youtube';
@@ -88,12 +90,18 @@ export class PlatformConnectionsController {
     private readonly config: ConfigService,
   ) {}
 
+  /** The API shape of a connection: never the credentials; the live link is an absolute URL from PUBLIC_BASE_URL. */
+  private toResponse(c: PlatformConnection): PlatformConnectionResponseDto {
+    const dto = plainToInstance(PlatformConnectionResponseDto, c, { excludeExtraneousValues: true });
+    dto.liveSlug = c.liveSlug ?? null;
+    dto.liveLinkUrl = c.liveSlug ? buildLiveLinkUrl(this.config.get<string>('publicBaseUrl') ?? '', c.liveSlug) : null;
+    return dto;
+  }
+
   @Get()
   async findAll(@CurrentAccount() account: Account) {
     const connections = await this.platformConnectionsService.findAllForAccount(account.id);
-    return connections.map((c) =>
-      plainToInstance(PlatformConnectionResponseDto, c, { excludeExtraneousValues: true }),
-    );
+    return connections.map((c) => this.toResponse(c));
   }
 
   /**
@@ -408,7 +416,7 @@ export class PlatformConnectionsController {
     );
     this.pendingFacebookPageSelections.delete(selectionId!);
     res.clearCookie(FACEBOOK_PENDING_PAGES_COOKIE_NAME, { path: FACEBOOK_OAUTH_BASE_PATH });
-    res.json(plainToInstance(PlatformConnectionResponseDto, connection, { excludeExtraneousValues: true }));
+    res.json(this.toResponse(connection));
   }
 
   @Post('twitch/manual')
@@ -420,9 +428,7 @@ export class PlatformConnectionsController {
       account.id,
       dto,
     );
-    return plainToInstance(PlatformConnectionResponseDto, connection, {
-      excludeExtraneousValues: true,
-    });
+    return this.toResponse(connection);
   }
 
   @Delete(':id')

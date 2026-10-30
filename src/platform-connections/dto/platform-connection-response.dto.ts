@@ -12,4 +12,8 @@ export class PlatformConnectionResponseDto {
   @Expose() externalAccountId!: string;
   @Expose() label!: string;
   @Expose() isActive!: boolean;
+  /** Permanent live-link slug (YouTube/Facebook only, else null). */
+  @Expose() liveSlug!: string | null;
+  /** Absolute shareable URL for liveSlug, filled in by the controller from PUBLIC_BASE_URL; null without a slug. */
+  @Expose() liveLinkUrl!: string | null;
 }

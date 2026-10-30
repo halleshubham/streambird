@@ -8,7 +8,7 @@ description: Add a database change to StreamBird (new column/table/index/constra
 Schema is owned by `migrations/*.sql` (TypeORM `synchronize` is **off**). `src/config/migrate.ts` applies unapplied files in filename order, each in a transaction, recorded in `schema_migrations`. The Docker CMD runs it on **every container start**, so a deploy applies your migration — and a bad one fails the deploy.
 
 ## Steps
-1. **Name**: next number after the highest in `migrations/` (currently 0016 → `0017_<what>.sql`), lowercase snake case. Never edit an applied migration; add a new one.
+1. **Name**: next number after the highest in `migrations/` (currently 0026 → `0027_<what>.sql`), lowercase snake case. Never edit an applied migration; add a new one.
 2. **Write SQL** with a header comment saying *why*. Rules:
    - **Backward compatible** with the previous release (rollbacks do not undo schema): add columns nullable or with a `DEFAULT`; add `NOT NULL` only with a default/backfill in the same file; drop/rename in a later release.
    - Backfill existing rows explicitly (see `0015_plan_ladder.sql`, `0012_configurable_plans.sql`).

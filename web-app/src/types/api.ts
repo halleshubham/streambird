@@ -100,6 +100,9 @@ export interface PlatformConnection {
   externalAccountId: string;
   label: string;
   isActive: boolean;
+  /** Permanent public live link (YouTube/Facebook only; null for Twitch). */
+  liveSlug: string | null;
+  liveLinkUrl: string | null;
 }
 
 export interface Destination {

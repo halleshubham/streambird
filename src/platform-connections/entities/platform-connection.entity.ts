@@ -38,6 +38,10 @@ export class PlatformConnection {
   @Column({ type: 'uuid', nullable: true })
   brandKitId!: string | null;
 
+  /** Permanent public live-link slug (/stream/<slug>); YouTube and Facebook connections only. Unique, never changes. */
+  @Column({ type: 'text', nullable: true, unique: true })
+  liveSlug!: string | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

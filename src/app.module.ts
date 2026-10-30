@@ -35,7 +35,7 @@ import { AssetsModule } from './assets/assets.module';
     // mean re-downloading on every load, just always re-validating.
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'dist-web'),
-      exclude: ['/api/(.*)', '/health'],
+      exclude: ['/api/(.*)', '/health', '/stream/(.*)'],
       serveStaticOptions: { maxAge: 0 },
     }),
     DatabaseModule,

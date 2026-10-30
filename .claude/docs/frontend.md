@@ -23,7 +23,7 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 - Public: `/` (`HomeRoute`: anonymous → `LandingPage`, signed in → `/dashboard`), `/login`, `/signup-company`, `/privacy`, `/terms`, `/join/:token` (guest, no account), `/admin/login`, `*` → `NotFoundPage`.
 - Signed in (`ProtectedRoute`; unapproved non-superadmin → `PendingApprovalPage`): `/dashboard`, `/connections`, `/billing`, `/streams/new`, `/streams/upcoming`, `/streams/:id`, `/team` inside `AppShell`; **`/streams/:id/studio` is deliberately outside `AppShell`** (no nav bar).
 - Superadmin (`SuperadminRoute` → `AdminShell`): `/admin`, `/analytics`, `/users`, `/accounts`, `/accounts/:id`, `/plans`, `/billing`, `/audit-log`. Add admin pages as siblings there.
-- Real API routes always live under `/api` (the SPA fallback serves `index.html` for every other GET). Dev: Vite proxies `/api` and `/socket.io` to `localhost:3000`.
+- Real API routes always live under `/api` (the SPA fallback serves `index.html` for every other GET). Exception: the public permanent live link `/stream/<slug>` is a backend redirect, so never add an SPA route under `/stream/`. The Connections page shows it per YouTube/Facebook connection (`LiveLink` in `ConnectionsPage.tsx`: `data-testid="live-link"`, button `aria-label="Copy live link for <name>"`, text becomes "Copied"). Dev: Vite proxies `/api` and `/socket.io` to `localhost:3000`.
 
 ## Conventions
 - **Data**: call `src/api/*`; errors are `ApiError` → show `e instanceof ApiError ? e.message : 'fallback'` in `<p className="error">`. A 204 resolves `undefined`.
