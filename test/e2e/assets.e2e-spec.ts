@@ -1,3 +1,4 @@
+import { solidGif } from '../gif';
 import { describeE2E, bootApp, Client, Harness } from './harness';
 
 /** A real-enough PNG header (the server reads the signature and the size), padded to `bytes`. */
@@ -14,12 +15,12 @@ function fakePng(width: number, height: number, bytes = 200): Buffer {
 /** The error filter nests Nest's own body under `message`. */
 const msg = (b: any): string => (typeof b.message === 'string' ? b.message : b.message?.message);
 
-async function upload(c: Client, file: Buffer, kind: string, name?: string) {
+async function upload(c: Client, file: Buffer, kind: string, name?: string, fileType = 'image/png') {
   const boundary = `----sb${Date.now()}${Math.random().toString(16).slice(2)}`;
   const part = (n: string, v: string) => `--${boundary}\r\nContent-Disposition: form-data; name="${n}"\r\n\r\n${v}\r\n`;
   const body = Buffer.concat([
     Buffer.from(part('kind', kind) + (name ? part('name', name) : '')),
-    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="logo.png"\r\nContent-Type: image/png\r\n\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="logo.png"\r\nContent-Type: ${fileType}\r\n\r\n`),
     file,
     Buffer.from(`\r\n--${boundary}--\r\n`),
   ]);
@@ -89,6 +90,29 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
 
     expect((await client.del(`/assets/${created.body.id}`)).status).toBe(204);
     expect((await client.getBytes(`/assets/${created.body.id}/file`)).status).toBe(404);
+  });
+
+  it('an animated GIF is accepted as a logo (served as image/gif) and refused for every other kind', async () => {
+    await admin.patch('/superadmin/plans/free', { assetStorageMb: 5 });
+    const { client } = await h.signIn();
+    const gif = solidGif([[255, 0, 0], [0, 0, 255]], { width: 48, height: 24 });
+    const logo = await upload(client, gif, 'logo', 'Spinner', 'image/gif');
+    expect(logo.status).toBe(201);
+    expect(logo.body).toMatchObject({ kind: 'logo', contentType: 'image/gif', width: 48, height: 24, sizeBytes: gif.length });
+    const file = await client.getBytes(`/assets/${logo.body.id}/file`);
+    expect(file.contentType).toBe('image/gif');
+    expect(file.data.equals(gif)).toBe(true);
+    for (const kind of ['wallpaper', 'background', 'other']) {
+      const refused = await upload(client, gif, kind, 'Spinner', 'image/gif');
+      expect(refused.status).toBe(400);
+      expect(msg(refused.body)).toMatch(/GIF images can only be used as a logo/);
+    }
+    // The bytes decide, not the declared type.
+    expect((await upload(client, gif, 'wallpaper', 'x', 'image/png')).status).toBe(400);
+    const junk = await upload(client, Buffer.from('definitely not a picture'), 'logo', 'x', 'image/gif');
+    expect(junk.status).toBe(400);
+    expect(msg(junk.body)).toMatch(/PNG, JPG or WebP/);
+    expect((await client.del(`/assets/${logo.body.id}`)).status).toBe(204);
   });
 
   it('brand kits: shared files, one default, connections may share a kit, a file in use cannot be deleted', async () => {

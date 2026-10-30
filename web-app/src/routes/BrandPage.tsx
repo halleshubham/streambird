@@ -323,11 +323,11 @@ function UploadForm({ onDone, onError, onSaid }: { onDone: () => Promise<void>; 
           ) : (
             <>
               <strong>Drop an image here</strong> or click to choose one
-              <span className="field-hint"> (PNG, JPG or WebP, up to 4 MB)</span>
+              <span className="field-hint"> (PNG, JPG, WebP or GIF (logos only), up to 4 MB)</span>
             </>
           )}
         </span>
-        <input id="assetFile" ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" required aria-label="Image (PNG, JPG or WebP, up to 4 MB)" onChange={(e) => pick(e.target.files?.[0])} />
+        <input id="assetFile" ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" required aria-label="Image (PNG, JPG, WebP or GIF (logos only), up to 4 MB)" onChange={(e) => pick(e.target.files?.[0])} />
       </label>
       <div className="studio-toolbar">
         <button type="submit" className="icon-btn" disabled={busy || !file}>

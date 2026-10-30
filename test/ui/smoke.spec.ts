@@ -1,5 +1,6 @@
 import { APIRequestContext, BrowserContext, expect, Page, test } from '@playwright/test';
 import * as crypto from 'crypto';
+import { solidGif } from '../gif';
 import { computeLayout } from '../../web-app/src/studio/compose';
 import type {} from '../../web-app/src/studio/personSegmenter'; // brings in the window.__SB_TEST_SEGMENTER__ type
 
@@ -701,7 +702,7 @@ test.describe('brand library and kits', () => {
     await page.getByRole('link', { name: 'Brand' }).click();
     await expect(page.getByTestId('brand-free-notice')).toContainText('stay saved in this browser');
     await expect(page.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
-    await expect(page.getByLabel('Image (PNG, JPG or WebP, up to 4 MB)')).toHaveCount(0);
+    await expect(page.getByLabel('Image (PNG, JPG, WebP or GIF (logos only), up to 4 MB)')).toHaveCount(0);
   });
 
   test.describe('on a plan with brand storage', () => {
@@ -1641,6 +1642,112 @@ test.describe('logo position', () => {
     await studioTab(page, 'Look');
     await expect.poll(async () => redish(await canvasPixel(page, 16 + 45, 16 + 45)), { timeout: 10_000 }).toBe(true);
     await expect(page.getByRole('group', { name: 'Logo position' }).getByRole('button', { name: 'Top left' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+test.describe('animated GIF logo', () => {
+  const GIF = solidGif([[255, 0, 0], [0, 0, 255]], { width: 16, height: 16, delayMs: 100 });
+  const redish = (p: [number, number, number]) => p[0] > 150 && p[1] < 90 && p[2] < 90;
+  const bluish = (p: [number, number, number]) => p[2] > 150 && p[0] < 90 && p[1] < 120;
+  const logoPx = (page: Page) => canvasPixel(page, 16 + 45, 16 + 45);
+  /** Polls the logo pixel until both colours of the GIF have been on the canvas. */
+  const seesBothFrames = async (page: Page) => {
+    const seen = new Set<string>();
+    await expect
+      .poll(
+        async () => {
+          const p = await logoPx(page);
+          if (redish(p)) seen.add('red');
+          if (bluish(p)) seen.add('blue');
+          return [...seen].sort().join('+');
+        },
+        { timeout: 15_000, intervals: [40] },
+      )
+      .toBe('blue+red');
+  };
+  const setStorage = async (browser: import('@playwright/test').Browser, mb: number) => {
+    const adminCtx = await browser.newContext();
+    const admin = await signIn(adminCtx, { superadmin: true });
+    await admin.api.patch(`${APP}/api/superadmin/plans/free`, { data: { assetStorageMb: mb }, headers: apiHeaders });
+    await adminCtx.close();
+  };
+
+  test('a GIF logo added by hand animates on the broadcast canvas, moves with the controls and survives a reload', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.locator('canvas.studio-canvas').waitFor();
+    await studioTab(page, 'Look');
+    await page.locator('#logoInput').setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
+    await seesBothFrames(page);
+    // Position controls still work on the animated logo.
+    const width = await page.evaluate(() => (document.querySelector('canvas.studio-canvas') as HTMLCanvasElement).width);
+    const position = page.getByRole('group', { name: 'Logo position' });
+    await position.getByRole('button', { name: 'Top right' }).click();
+    await expect.poll(async () => { const p = await canvasPixel(page, width - 16 - 45, 16 + 45); return redish(p) || bluish(p); }, { timeout: 10_000 }).toBe(true);
+    const leftNow = await logoPx(page);
+    expect(redish(leftNow) || bluish(leftNow)).toBe(false);
+    await position.getByRole('button', { name: 'Top left' }).click();
+    // The GIF is under 1 MB, so it comes back after a reload -- still animated.
+    await page.reload();
+    await page.locator('canvas.studio-canvas').waitFor();
+    await seesBothFrames(page);
+  });
+
+  test('without ImageDecoder the first frame is shown, with no errors', async ({ page, context }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.addInitScript(() => { delete (window as unknown as { ImageDecoder?: unknown }).ImageDecoder; });
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.locator('canvas.studio-canvas').waitFor();
+    expect(await page.evaluate(() => typeof (window as unknown as { ImageDecoder?: unknown }).ImageDecoder)).toBe('undefined');
+    await studioTab(page, 'Look');
+    await page.locator('#logoInput').setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
+    await expect.poll(async () => redish(await logoPx(page)), { timeout: 10_000 }).toBe(true); // frame 1
+    await page.waitForTimeout(700); // several frame delays later it is still the static first frame
+    expect(redish(await logoPx(page))).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test.describe('from the Brand library (paid plan)', () => {
+    test.beforeEach(async ({ browser }) => setStorage(browser, 5));
+    test.afterEach(async ({ browser }) => setStorage(browser, 0));
+
+    test('a brand kit with a GIF logo animates in the studio', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      const up = await api.post(`${APP}/api/assets`, { multipart: { kind: 'logo', name: 'spinner', file: { name: 'spinner.gif', mimeType: 'image/gif', buffer: GIF } }, headers: { Origin: APP } });
+      expect(up.ok()).toBeTruthy();
+      const asset = await up.json();
+      expect(asset.contentType).toBe('image/gif');
+      const kit = await api.post(`${APP}/api/brand-kits`, { data: { name: 'Spin', logoAssetId: asset.id, logoPosition: 'left', logoSize: 90, wallpaperAssetId: null, wallpaperDim: 0, lowerThirdStyle: 'accent' }, headers: apiHeaders });
+      expect(kit.ok()).toBeTruthy();
+      const id = await newStream(context, api);
+      await page.goto(`/streams/${id}/studio`);
+      await page.locator('canvas.studio-canvas').waitFor();
+      await studioTab(page, 'Look');
+      await expect(page.locator('#brandKitSelect')).toHaveValue((await kit.json()).id);
+      await seesBothFrames(page);
+    });
+
+    test('the Brand page takes a GIF as a logo (animated preview) and refuses it as a wallpaper', async ({ page, context }) => {
+      await signIn(context);
+      await page.goto('/brand');
+      await page.getByLabel('Type').selectOption('logo');
+      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
+      await expect(page.locator('.brand-drop-preview')).toBeVisible();
+      await page.getByRole('button', { name: 'Upload' }).click();
+      await expect(page.getByRole('status').filter({ hasText: 'Uploaded "spin"' })).toBeVisible();
+      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of spin') });
+      await expect(card).toContainText('Logo');
+      await expect.poll(() => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+
+      await page.getByLabel('Type').selectOption('wallpaper');
+      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'wall.gif', mimeType: 'image/gif', buffer: GIF });
+      await page.getByRole('button', { name: 'Upload' }).click();
+      await expect(page.getByRole('alert')).toContainText('GIF images can only be used as a logo');
+    });
   });
 });
 
