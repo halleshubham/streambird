@@ -100,6 +100,8 @@ export function HostStudioPage() {
     wallpaperFocus,
     wallpaperDim,
     resolution,
+    picturePriority,
+    sendQuality,
     maxResolution,
     brandKits,
     activeKitId,
@@ -283,6 +285,19 @@ export function HostStudioPage() {
           <button type="button" className="link-button link-button--inline" onClick={() => setTourOpen(true)}>
             Show me around
           </button>
+        </div>
+      )}
+
+      {isLive && sendQuality && (
+        <div
+          className={`studio-send-quality${sendQuality.state === 'limited' ? ' studio-send-quality--limited' : ''}`}
+          data-testid="send-quality"
+          data-state={sendQuality.state}
+          role={sendQuality.state === 'limited' ? 'status' : undefined}
+        >
+          <Gauge size={14} aria-hidden="true" />
+          <span>{sendQuality.summary}</span>
+          {sendQuality.message && <span className="studio-send-quality-msg">{sendQuality.message}</span>}
         </div>
       )}
 
@@ -626,6 +641,20 @@ export function HostStudioPage() {
 
           </div>
           <div role="tabpanel" id="studio-panel-look" aria-labelledby="studio-tab-look" hidden={sideTab !== 'look'}>
+                  <div className="panel studio-picture-priority">
+                    <label className="studio-section-label" id="picturePriorityLabel">
+                      <Gauge size={14} /> Picture priority
+                    </label>
+                    <div className="segmented" role="group" aria-labelledby="picturePriorityLabel">
+                      <button type="button" className={picturePriority === 'maintain-resolution' ? 'active' : ''} aria-pressed={picturePriority === 'maintain-resolution'} onClick={() => actions.setPicturePriority('maintain-resolution')}>
+                        Sharper picture
+                      </button>
+                      <button type="button" className={picturePriority === 'balanced' ? 'active' : ''} aria-pressed={picturePriority === 'balanced'} onClick={() => actions.setPicturePriority('balanced')}>
+                        Smoother motion
+                      </button>
+                    </div>
+                    <p className="studio-popover-note">When your connection or computer is short on capacity, keep the picture sharp or keep the motion smooth.</p>
+                  </div>
                   {(brandKits.length > 0 || canBrandLibrary) && (
                     <div className="panel studio-brandkit">
                       <label className="studio-section-label" htmlFor="brandKitSelect">

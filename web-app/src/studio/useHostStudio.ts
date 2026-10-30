@@ -8,6 +8,7 @@ import {
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy } from './poweredBy';
+import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -26,6 +27,7 @@ import {
   SCREEN_SHARE_ID,
   THEME_BY_ID,
   WALLPAPER_RANGES,
+  canvasSizeFor,
   computeLayout,
   getTheme,
   isFramedLayout,
@@ -216,6 +218,17 @@ function createTickWorker(): Worker | null {
   }
 }
 
+/** degradationPreference tells Chrome what to give up under pressure. Browsers that ignore it are left as they were. */
+async function applyPicturePriority(sender: RTCRtpSender, priority: PicturePriority): Promise<void> {
+  try {
+    const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
+    params.degradationPreference = priority;
+    await sender.setParameters(params as RTCRtpSendParameters);
+  } catch {
+    // Not supported here: the browser keeps its own default.
+  }
+}
+
 // Per-stream, per-browser studio state that survives a reload: layout,
 // branding (incl. the logo, as a data URL), scenes, resolution -- plus
 // whether this browser already took the stream live, which is what lets a
@@ -225,6 +238,8 @@ function createTickWorker(): Worker | null {
 interface PersistedStudioState {
   layoutMode: LayoutMode;
   resolution: StreamResolution;
+  /** Sharper picture ('maintain-resolution') vs smoother motion ('balanced', the default). */
+  picturePriority: PicturePriority;
   branding: Branding;
   themeId: string;
   scenes: Scene[];
@@ -399,6 +414,11 @@ export function useHostStudio(streamId: string | undefined) {
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  const [picturePriority, setPicturePriorityState] = useState<PicturePriority>('balanced');
+  const picturePriorityRef = useRef<PicturePriority>('balanced');
+  const videoSenderRef = useRef<RTCRtpSender | null>(null);
+  /** What the browser is really sending (null until the first reading, and whenever not live). */
+  const [sendQuality, setSendQuality] = useState<SendQuality | null>(null);
   /** Shown for a few seconds after the host presses Go live: the platforms need a moment to start showing the stream. */
   const [goLiveNotice, setGoLiveNotice] = useState(false);
   const goLiveNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1374,6 +1394,10 @@ export function useHostStudio(streamId: string | undefined) {
           setThemeIdState(saved.themeId);
         }
         if (saved.resolution && saved.resolution in RESOLUTIONS) setResolutionState(saved.resolution);
+        if (saved.picturePriority === 'maintain-resolution') {
+          picturePriorityRef.current = 'maintain-resolution';
+          setPicturePriorityState('maintain-resolution');
+        }
         if (saved.branding) {
           // Merged over the defaults so a state saved before a field existed (newsFontSize) still loads.
           const merged: Branding = { ...DEFAULT_BRANDING, ...saved.branding };
@@ -1496,8 +1520,8 @@ export function useHostStudio(streamId: string | undefined) {
 
   useEffect(() => {
     if (!stream) return;
-    savePersisted(stream.id, { layoutMode, resolution, branding, themeId, scenes });
-  }, [stream, layoutMode, resolution, branding, themeId, scenes]);
+    savePersisted(stream.id, { layoutMode, resolution, picturePriority, branding, themeId, scenes });
+  }, [stream, layoutMode, resolution, picturePriority, branding, themeId, scenes]);
 
   useEffect(() => () => clearLowerThirdTimer(), []);
 
@@ -2349,6 +2373,8 @@ export function useHostStudio(streamId: string | undefined) {
         bitrateParams.encodings[0].maxBitrate = RESOLUTIONS[resolution].maxBitrate;
         await sender.setParameters(bitrateParams).catch(() => {});
       }
+      videoSenderRef.current = sender;
+      await applyPicturePriority(sender, picturePriorityRef.current);
 
       const forceKeyFrame = () => {
         const s = sender as RTCRtpSender & { generateKeyFrame?: () => Promise<void> };
@@ -2383,6 +2409,46 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: `Failed to go live: ${(err as Error).message}`, isError: true });
     }
   }, [stream, resolution, hideGoLiveNotice]);
+
+  const setPicturePriority = useCallback((p: PicturePriority) => {
+    picturePriorityRef.current = p;
+    setPicturePriorityState(p);
+    if (videoSenderRef.current) void applyPicturePriority(videoSenderRef.current, p);
+  }, []);
+
+  // While live: read what the encoder is really sending every ~2s (Chrome silently scales the picture
+  // down when bandwidth/CPU is short and the host would otherwise never know).
+  useEffect(() => {
+    if (!isLive) {
+      setSendQuality(null);
+      return;
+    }
+    let stopped = false;
+    let prev: { bytesSent: number; timestamp: number } | null = null;
+    let polls = 0;
+    const poll = async () => {
+      try {
+        const sender = videoSenderRef.current;
+        if (!sender || typeof sender.getStats !== 'function') return;
+        const cur = readOutboundVideo(await sender.getStats());
+        if (stopped || !cur) return;
+        const bitrateBps = bitrateBetween(prev, cur);
+        prev = cur;
+        polls += 1;
+        const dims = canvasSizeFor(RESOLUTIONS[resolution], orientationRef.current);
+        // The first few readings are the encoder ramping up from a small picture: not a problem yet.
+        setSendQuality(classifySendQuality({ ...cur.sample, bitrateBps }, dims, { warmingUp: polls <= 3 }));
+      } catch {
+        // getStats unsupported or failing: simply show nothing.
+      }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 2000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [isLive, resolution]);
 
   const endStream = useCallback(async () => {
     await stopRecording();
@@ -2535,6 +2601,8 @@ export function useHostStudio(streamId: string | undefined) {
     wallpaperFocus,
     wallpaperDim,
     resolution,
+    picturePriority,
+    sendQuality,
     maxResolution,
     brandKits,
     activeKitId,
@@ -2571,6 +2639,7 @@ export function useHostStudio(streamId: string | undefined) {
       toggleLayout,
       setLayout,
       setResolution,
+      setPicturePriority,
       goLive,
       dismissGoLiveNotice: hideGoLiveNotice,
       startRecording,

@@ -1004,6 +1004,84 @@ test.describe('after Go live: platforms need a few seconds', () => {
   });
 });
 
+test.describe('send quality readout + picture priority (live)', () => {
+  type Win = Window & { __sq?: Record<string, unknown>; __dp?: unknown[] };
+  const openLive = async (page: Page, context: BrowserContext, stubStats: boolean) => {
+    await page.addInitScript((stub) => {
+      const w = window as Win;
+      w.__dp = [];
+      RTCPeerConnection.prototype.setRemoteDescription = async () => undefined;
+      const origSet = RTCRtpSender.prototype.setParameters;
+      RTCRtpSender.prototype.setParameters = function (p: RTCRtpSendParameters) {
+        w.__dp!.push((p as { degradationPreference?: string }).degradationPreference ?? null);
+        return origSet.call(this, p).catch(() => undefined);
+      };
+      if (stub) {
+        let bytes = 0;
+        let ts = 1000;
+        RTCRtpSender.prototype.getStats = async function () {
+          bytes += 750_000;
+          ts += 2000;
+          return new Map<string, unknown>([['v', { type: 'outbound-rtp', kind: 'video', bytesSent: bytes, timestamp: ts, framesPerSecond: 15, frameWidth: 426, frameHeight: 240, ...w.__sq }]]) as unknown as RTCStatsReport;
+        };
+      }
+    }, stubStats);
+    await page.route('**/*whip*', (route) => route.fulfill({ status: 201, contentType: 'application/sdp', headers: { Location: '/whip/resource' }, body: 'v=0\r\n' }));
+    const { api } = await signIn(context);
+    const id = await newStream(context, api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.getByRole('button', { name: /Start my camera/ }).click();
+    await expect(page.getByRole('button', { name: /Camera on/ })).toBeVisible();
+    return id;
+  };
+
+  test('hidden until live; amber with advice when the connection limits quality; calm again when healthy', async ({ page, context }) => {
+    await page.addInitScript(() => { (window as Win).__sq = { qualityLimitationReason: 'bandwidth' }; });
+    await openLive(page, context, true);
+    await expect(page.getByTestId('send-quality')).toHaveCount(0);
+    await page.getByRole('button', { name: /Go live/ }).click();
+    const chip = page.getByTestId('send-quality');
+    await expect(chip).toBeVisible({ timeout: 10_000 });
+    await expect(chip).toHaveAttribute('role', 'status');
+    await expect(chip).toHaveAttribute('data-state', 'limited');
+    await expect(chip).toContainText('Sending 426x240 - 15 fps');
+    await expect(chip).toContainText('Your connection is limiting quality. Try 720p or a wired network.');
+
+    await page.evaluate(() => { (window as Win).__sq = { frameWidth: 1280, frameHeight: 720, framesPerSecond: 30 }; });
+    await expect(chip).toHaveAttribute('data-state', 'ok', { timeout: 10_000 });
+    await expect(chip).toContainText('Sending 1280x720 - 30 fps');
+    await expect(chip).not.toContainText('limiting');
+    await expect(chip).not.toHaveAttribute('role', 'status');
+  });
+
+  test('a browser without getStats shows nothing and does not break going live', async ({ page, context }) => {
+    await openLive(page, context, false);
+    await page.evaluate(() => { (RTCRtpSender.prototype as unknown as { getStats?: unknown }).getStats = undefined; });
+    await page.getByRole('button', { name: /Go live/ }).click();
+    await expect(page.getByRole('button', { name: 'Live' })).toBeVisible();
+    await page.waitForTimeout(2500);
+    await expect(page.getByTestId('send-quality')).toHaveCount(0);
+  });
+
+  test('picture priority defaults to smoother motion, is applied live, and is remembered for the stream', async ({ page, context }) => {
+    const id = await openLive(page, context, false);
+    await page.getByRole('tab', { name: 'Look' }).click();
+    const group = page.getByRole('group', { name: 'Picture priority' });
+    await expect(group.getByRole('button', { name: 'Smoother motion' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: /Go live/ }).click();
+    await expect(page.getByRole('button', { name: 'Live' })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as Win).__dp)).toContain('balanced');
+    await group.getByRole('button', { name: 'Sharper picture' }).click();
+    await expect(group.getByRole('button', { name: 'Sharper picture' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => page.evaluate(() => (window as Win).__dp)).toContain('maintain-resolution');
+
+    await page.reload();
+    await page.getByRole('tab', { name: 'Look' }).click();
+    await expect(page.getByRole('group', { name: 'Picture priority' }).getByRole('button', { name: 'Sharper picture' })).toHaveAttribute('aria-pressed', 'true');
+    expect(id).toBeTruthy();
+  });
+});
+
 test.describe('lower third banner (Pro)', () => {
   const purple = (p: [number, number, number]) => Math.abs(p[0] - 124) < 25 && Math.abs(p[1] - 58) < 25 && Math.abs(p[2] - 237) < 25;
   const setPlan = async (browser: import('@playwright/test').Browser, can: boolean) => {
