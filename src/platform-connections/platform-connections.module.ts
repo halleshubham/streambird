@@ -4,6 +4,7 @@ import { PlatformConnection } from './entities/platform-connection.entity';
 import { LiveStreamDestination } from '../streams/entities/live-stream-destination.entity';
 import { PlatformConnectionsService } from './platform-connections.service';
 import { PlatformConnectionsController } from './platform-connections.controller';
+import { LiveLinkController } from './live-link.controller';
 import { CommonModule } from '../common/common.module';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { AuthModule } from '../auth/auth.module';
@@ -20,7 +21,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   providers: [PlatformConnectionsService],
-  controllers: [PlatformConnectionsController],
+  controllers: [PlatformConnectionsController, LiveLinkController],
   exports: [PlatformConnectionsService],
 })
 export class PlatformConnectionsModule {}

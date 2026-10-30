@@ -20,7 +20,8 @@ export function configureApp(app: INestApplication): void {
   // '/' itself needs no exclude: it's served by ServeStaticModule's
   // dist-web/ middleware now, which sits outside Nest's controller
   // routing/prefix entirely (see app.module.ts).
-  app.setGlobalPrefix('api', { exclude: ['health'] });
+  // '/stream/:slug' is the public permanent live link (LiveLinkController), also at the site root.
+  app.setGlobalPrefix('api', { exclude: ['health', 'stream/:slug'] });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

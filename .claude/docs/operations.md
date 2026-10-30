@@ -1,7 +1,7 @@
 # Operations: environments, CI/CD, deploy, secrets
 
 ## Topology
-- **App**: one container (Nest API + SPA + Socket.IO) from `ghcr.io/halleshubham/streambird:latest`, deployed by **Coolify** at `https://admin.shackyapps.in` (app uuid `gb8rghmifpq7hb5y6gkkcf6e`) behind Traefik at **https://streambird.app**. Health: `GET /health`.
+- **App**: one container (Nest API + SPA + Socket.IO) from `ghcr.io/halleshubham/streambird:latest`, deployed by **Coolify** at `https://admin.shackyapps.in` (app uuid `gb8rghmifpq7hb5y6gkkcf6e`) behind Traefik at **https://streambird.app**. Health: `GET /health`. Traefik forwards the whole domain to the app (no per-path routing), so the public permanent live link `https://streambird.app/stream/<slug>` is handled by the Nest app itself (see backend.md), not by infra; a different proxy that only forwards `/api` would need `/stream/*` forwarded too.
 - **Media**: MediaMTX (compose in `deploy/mediamtx/`, UDP 8189 for WebRTC, API 9997, WHIP 8889) on the same VPS; config file with the API password lives on the host (not in git).
 - **Database**: PostgreSQL 16, reached through `DATABASE_URL` (migrations run at container start).
 - **Landing/docs**: separate repo `halleshubham/shackyapps-landing` (shackyapps.in, Coolify app uuid `qywy4fxyjk1yowjsfnoowbb9`) — marketing page and the user docs under `/docs/streambird/`. Update its pricing/feature text when plans or features change, and update the StreamBird guides there for **every** new or changed feature (CLAUDE.md rule 11); deploy it with `deploy.sh landing`.

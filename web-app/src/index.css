@@ -778,6 +778,39 @@ a.stream-list-item:hover {
 
 .connection-label {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Permanent live link: a full-width row under the connection name. */
+.live-link {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.live-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.live-link-url {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  user-select: all;
+}
+.live-link-copy {
+  flex: none;
+  width: auto;
+}
+.live-link-hint {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
 }
 
 .connect-form,

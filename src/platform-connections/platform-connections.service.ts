@@ -8,6 +8,7 @@ import { Platform } from '../common/enums/platform.enum';
 import { EncryptionService } from '../encryption/encryption.service';
 import { GoogleOAuthService } from '../auth/google-oauth.service';
 import { CreateManualTwitchConnectionDto } from './dto/create-manual-twitch-connection.dto';
+import { generateLiveSlug } from './live-link';
 import type { YouTubeCredentials } from '../providers/youtube/youtube.provider';
 import type { FacebookCredentials } from '../providers/facebook/facebook.provider';
 
@@ -61,6 +62,26 @@ export class PlatformConnectionsService {
   }
 
   /**
+   * Saves a YouTube/Facebook connection with its permanent live-link slug (kept if it already has one). A slug
+   * is random, so a collision is astronomically unlikely, but the UNIQUE index decides: on a unique violation
+   * (Postgres 23505) draw a new slug and try again.
+   */
+  private async saveWithLiveSlug(connection: PlatformConnection): Promise<PlatformConnection> {
+    for (let attempt = 0; ; attempt++) {
+      connection.liveSlug = connection.liveSlug ?? generateLiveSlug();
+      try {
+        return await this.connections.save(connection);
+      } catch (err) {
+        const e = err as { code?: string; constraint?: string; driverError?: { code?: string; constraint?: string } };
+        const code = e.code ?? e.driverError?.code;
+        const constraint = e.constraint ?? e.driverError?.constraint ?? '';
+        if (code !== '23505' || !constraint.includes('live_slug') || attempt >= 4) throw err;
+        connection.liveSlug = null; // taken: draw another
+      }
+    }
+  }
+
+  /**
    * Called by PlatformConnectionsController's YouTube OAuth callback.
    * Upserts on (accountId, platform, channelId) rather than always
    * inserting -- reconnecting the same YouTube channel (e.g. after
@@ -88,6 +109,7 @@ export class PlatformConnectionsService {
       existing.credentialsCiphertext = this.encryption.encrypt(credentials);
       existing.label = channel.channelTitle;
       existing.isActive = true;
+      if (!existing.liveSlug) return this.saveWithLiveSlug(existing);
       return this.connections.save(existing);
     }
 
@@ -98,7 +120,7 @@ export class PlatformConnectionsService {
       externalAccountId: channel.channelId,
       label: channel.channelTitle,
     });
-    return this.connections.save(connection);
+    return this.saveWithLiveSlug(connection);
   }
 
   /**
@@ -123,6 +145,7 @@ export class PlatformConnectionsService {
       existing.credentialsCiphertext = this.encryption.encrypt(credentials);
       existing.label = page.pageName;
       existing.isActive = true;
+      if (!existing.liveSlug) return this.saveWithLiveSlug(existing);
       return this.connections.save(existing);
     }
 
@@ -133,7 +156,7 @@ export class PlatformConnectionsService {
       externalAccountId: page.pageId,
       label: page.pageName,
     });
-    return this.connections.save(connection);
+    return this.saveWithLiveSlug(connection);
   }
 
   /**

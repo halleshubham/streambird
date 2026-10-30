@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Trash2 } from 'lucide-react';
+import { Check, Copy, Trash2 } from 'lucide-react';
 import {
   listConnections,
   connectTwitchManual,
@@ -24,6 +24,40 @@ const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   facebook_oauth_failed: 'Connecting Facebook failed. Please try again.',
   facebook_no_pages: "That Facebook account doesn't manage any Pages to connect.",
 };
+
+/** The one permanent link a host shares: opens their live stream while live, their channel/page otherwise. */
+function LiveLink({ connection }: { connection: PlatformConnection }) {
+  const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const url = connection.liveLinkUrl;
+  if (!url) return null;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url!);
+      setFailed(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setFailed(true); // clipboard blocked: the link is selectable text right above, so nothing is lost
+    }
+  }
+
+  return (
+    <div className="live-link" data-testid="live-link">
+      <div className="live-link-row">
+        <code className="live-link-url">{url}</code>
+        <button type="button" className="icon-btn live-link-copy" aria-label={`Copy live link for ${connection.label}`} onClick={() => void copy()}>
+          {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="live-link-hint">
+        Share this one link. It opens your live stream when you are live, and your channel otherwise.
+        {failed && ' Copy did not work here; select the link above and copy it.'}
+      </p>
+    </div>
+  );
+}
 
 export function ConnectionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -166,6 +200,7 @@ export function ConnectionsPage() {
                 >
                   {removingId === c.id ? <BirdBusy /> : <Trash2 size={14} />} Remove
                 </button>
+                <LiveLink connection={c} />
               </li>
             ))}
           </ul>

@@ -311,4 +311,36 @@ describe('PlatformConnectionsService', () => {
       expect(googleOAuth.revokeToken).not.toHaveBeenCalled();
     });
   });
+
+  describe('permanent live link slug', () => {
+    it('gives a new YouTube connection a slug, and retries when the slug is taken', async () => {
+      repo.findOne.mockResolvedValue(null);
+      const taken = Object.assign(new Error('duplicate'), { code: '23505', constraint: 'ux_platform_conn_live_slug' });
+      repo.save.mockRejectedValueOnce(taken);
+      const conn = await service.upsertYouTubeConnection('acc_1', { channelId: 'UC1', channelTitle: 'Chan' }, { accessToken: 'a', refreshToken: 'r', expiresAt: 1 });
+      expect(repo.save).toHaveBeenCalledTimes(2);
+      expect(conn.liveSlug).toMatch(/^[a-z2-7]{10}$/);
+    });
+
+    it('does not retry other unique violations', async () => {
+      repo.findOne.mockResolvedValue(null);
+      repo.save.mockRejectedValue(Object.assign(new Error('dup'), { code: '23505', constraint: 'ux_platform_conn_account_platform_external' }));
+      await expect(service.upsertFacebookConnection('acc_1', { pageId: 'p1', pageName: 'P' }, 'tok')).rejects.toThrow('dup');
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the existing slug on a reconnect and backfills a missing one', async () => {
+      repo.findOne.mockResolvedValueOnce({ id: 'c1', liveSlug: 'keepme2345', platform: Platform.FACEBOOK });
+      const kept = await service.upsertFacebookConnection('acc_1', { pageId: 'p1', pageName: 'P' }, 'tok');
+      expect(kept.liveSlug).toBe('keepme2345');
+      repo.findOne.mockResolvedValueOnce({ id: 'c2', liveSlug: null, platform: Platform.FACEBOOK });
+      const filled = await service.upsertFacebookConnection('acc_1', { pageId: 'p2', pageName: 'P' }, 'tok');
+      expect(filled.liveSlug).toMatch(/^[a-z2-7]{10}$/);
+    });
+
+    it('gives Twitch connections no slug', async () => {
+      const conn = await service.createManualTwitchConnection('acc_1', { label: 't', ingestServerUrl: 'rtmp://x', streamKey: 'k' } as never);
+      expect(conn.liveSlug).toBeUndefined();
+    });
+  });
 });
