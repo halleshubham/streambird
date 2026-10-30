@@ -5,6 +5,7 @@ import { getStream, getStreamStatus, retryDestination } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
+import { LiveThumbnailPanel } from '../components/LiveThumbnailPanel';
 import { ScheduledStreamPanel } from '../components/ScheduledStreamPanel';
 import { ApiError } from '../api/client';
 import type { PlatformConnection, Stream, StreamStatusResponse } from '../types/api';
@@ -133,6 +134,8 @@ export function StreamDetailPage() {
           <Clapperboard size={16} /> Open studio
         </Link>
       )}
+
+      {stream.status === 'live' && <LiveThumbnailPanel streamId={stream.id} />}
 
       <h2>Destinations</h2>
       <div className="connection-list">

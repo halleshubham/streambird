@@ -116,6 +116,29 @@ export function removeScheduleThumbnail(id: string): Promise<ScheduleDetail> {
   return api.delete(`/streams/${id}/schedule/thumbnail`);
 }
 
+export interface ThumbnailState {
+  hasThumbnail: boolean;
+  thumbnailUpdatedAt: string | null;
+  platformWarnings?: string[];
+}
+
+/** Thumbnail upload for any not-yet-ended stream (also a 'go live now' one). */
+export async function uploadStreamThumbnail(id: string, file: File): Promise<ThumbnailState> {
+  const form = new FormData();
+  form.set('file', file);
+  const res = await fetch(`/api/streams/${id}/thumbnail`, { method: 'PUT', credentials: 'include', body: form });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const raw = body?.message;
+    throw new ApiError(Array.isArray(raw) ? raw.join(', ') : (raw ?? `Upload failed (${res.status})`), res.status);
+  }
+  return body as ThumbnailState;
+}
+
+export function streamThumbnailUrl(id: string, version: string | number): string {
+  return `/api/streams/${id}/thumbnail?v=${encodeURIComponent(String(version))}`;
+}
+
 /** URL of the stored thumbnail for an <img> (cookie-authenticated, same origin). */
 export function scheduleThumbnailUrl(id: string, version: string | null): string {
   return `/api/streams/${id}/schedule/thumbnail${version ? `?v=${encodeURIComponent(version)}` : ''}`;

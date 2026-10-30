@@ -465,6 +465,29 @@ describe('StreamSchedulingService', () => {
       expect(providers.youtube.setBroadcastThumbnail).toHaveBeenCalledTimes(1);
     });
 
+    it('go-live-now: a live (non-scheduled) stream takes a thumbnail, sent to its existing broadcasts; ended ones do not', async () => {
+      const { service, streams, dests, providers, thumbs } = build();
+      streams.set('live_1', { id: 'live_1', accountId: 'acc_1', status: StreamStatus.LIVE, isScheduledEvent: false });
+      dests.set('d1', { id: 'd1', liveStreamId: 'live_1', platformConnectionId: CONN_YT, platformBroadcastId: 'yt-live', status: DestinationStatus.LIVE });
+      dests.set('d2', { id: 'd2', liveStreamId: 'live_1', platformConnectionId: CONN_TW, platformBroadcastId: null, status: DestinationStatus.LIVE });
+
+      const state = await service.setStreamThumbnail('acc_1', 'live_1', pngBuffer());
+
+      expect(state.hasThumbnail).toBe(true);
+      expect(thumbs.get('live_1')).toMatchObject({ contentType: 'image/png' });
+      expect(providers.youtube.setBroadcastThumbnail).toHaveBeenCalledTimes(1);
+      expect((providers.youtube.setBroadcastThumbnail.mock.calls[0] as any[])[1]).toBe('yt-live');
+
+      providers.youtube.setBroadcastThumbnail.mockRejectedValueOnce(new Error('403 verified channel'));
+      const warned = await service.setStreamThumbnail('acc_1', 'live_1', pngBuffer());
+      expect(warned.platformWarnings![0]).toContain('verified channel');
+
+      await expect(service.setStreamThumbnail('someone_else', 'live_1', pngBuffer())).rejects.toBeInstanceOf(NotFoundException);
+      streams.get('live_1').status = StreamStatus.ENDED;
+      await expect(service.setStreamThumbnail('acc_1', 'live_1', pngBuffer())).rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect((await service.getStreamThumbnail('acc_1', 'live_1')).contentType).toBe('image/png');
+    });
+
     it('serves the stored image to its owner only, and 404s when there is none', async () => {
       const { service } = build();
       const detail = await service.schedule(ACCOUNT, baseDto());

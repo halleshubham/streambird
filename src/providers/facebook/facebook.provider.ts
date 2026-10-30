@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Platform } from '../../common/enums/platform.enum';
 import { EncryptionService } from '../../encryption/encryption.service';
 import { PlatformConnection } from '../../platform-connections/entities/platform-connection.entity';
+import type { ThumbnailImage } from '../../streams/thumbnail.util';
 import { BroadcastMeta, BroadcastResult, StreamProvider } from '../stream-provider.interface';
 
 export interface FacebookCredentials {
@@ -31,16 +32,20 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v23.0';
 @Injectable()
 export class FacebookProvider implements StreamProvider {
   readonly identifier = Platform.FACEBOOK;
+  /** The thumbnail edge also works on a live video, so it is worth sending to a broadcast created at start. */
+  readonly thumbnailAppliesWhenLive = true;
 
   constructor(private readonly encryption: EncryptionService) {}
 
   private async callApi<T>(
     path: string,
     accessToken: string,
-    init?: { method?: string; body?: Record<string, string> },
+    init?: { method?: string; body?: Record<string, string>; multipart?: FormData },
   ): Promise<T> {
     const method = init?.method ?? 'GET';
     const params = new URLSearchParams({ ...(init?.body ?? {}), access_token: accessToken });
+
+    if (init?.multipart) init.multipart.append('access_token', accessToken);
 
     const url =
       method === 'GET'
@@ -49,7 +54,9 @@ export class FacebookProvider implements StreamProvider {
 
     const res = await fetch(url, {
       method,
-      ...(method !== 'GET'
+      ...(init?.multipart
+        ? { body: init.multipart } // fetch sets the multipart boundary header itself
+        : method !== 'GET'
         ? { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() }
         : {}),
     });
@@ -164,6 +171,23 @@ export class FacebookProvider implements StreamProvider {
       creds.pageAccessToken,
     );
     return result.status ?? null;
+  }
+
+  /**
+   * Sets the live video's thumbnail via the Graph API video thumbnails edge:
+   * POST /{video-id}/thumbnails with `source` (the image file) and
+   * `is_preferred=true` (needs a Page token with pages_manage_engagement /
+   * pages_read_user_content). The live video id returned by createBroadcast
+   * is the video id for Page live videos. The docs do not mention live
+   * videos on this edge, so it is best effort: callers log a failure and
+   * carry on (the stream is never failed over a thumbnail).
+   */
+  async setBroadcastThumbnail(conn: PlatformConnection, platformBroadcastId: string, image: ThumbnailImage): Promise<void> {
+    const creds = this.encryption.decrypt<FacebookCredentials>(conn.credentialsCiphertext);
+    const form = new FormData();
+    form.append('is_preferred', 'true');
+    form.append('source', new Blob([new Uint8Array(image.data)], { type: image.contentType }), image.contentType === 'image/png' ? 'thumbnail.png' : 'thumbnail.jpg');
+    await this.callApi(`/${platformBroadcastId}/thumbnails`, creds.pageAccessToken, { method: 'POST', multipart: form });
   }
 
   async endBroadcast(conn: PlatformConnection, platformBroadcastId: string): Promise<void> {
