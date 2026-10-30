@@ -4,7 +4,7 @@ export const MAX_ASSET_BYTES = 4 * 1024 * 1024;
 export const MAX_ASSET_SIDE = 8192;
 
 export interface ParsedImage {
-  contentType: 'image/png' | 'image/jpeg' | 'image/webp';
+  contentType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
   width: number;
   height: number;
 }
@@ -49,8 +49,22 @@ function webpSize(buf: Buffer) {
   return null;
 }
 
-/** Validates an upload by its actual bytes (the declared type and filename are user-controlled). */
-export function parseImage(data: Buffer | undefined): ParsedImage {
+/** GIF87a / GIF89a: the logical screen descriptor (bytes 6-9, little-endian) holds the canvas size. */
+function gifSize(buf: Buffer) {
+  if (buf.length < 13) return null;
+  return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+}
+
+function isGif(data: Buffer) {
+  const head = data.toString('ascii', 0, 6);
+  return head === 'GIF87a' || head === 'GIF89a';
+}
+
+/**
+ * Validates an upload by its actual bytes (the declared type and filename are user-controlled).
+ * `opts.allowGif` is true only for logos: an animated GIF is drawn by the studio for the logo, nowhere else.
+ */
+export function parseImage(data: Buffer | undefined, opts: { allowGif?: boolean } = {}): ParsedImage {
   if (!data || data.length === 0) throw new BadRequestException('Choose an image file to upload.');
   if (data.length > MAX_ASSET_BYTES) {
     throw new BadRequestException(`The image is too large -- the limit is ${MAX_ASSET_BYTES / 1024 / 1024} MB per file.`);
@@ -66,8 +80,12 @@ export function parseImage(data: Buffer | undefined): ParsedImage {
   } else if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
     contentType = 'image/webp';
     size = webpSize(data);
+  } else if (isGif(data)) {
+    if (!opts.allowGif) throw new BadRequestException('GIF images can only be used as a logo. Use a PNG, JPG or WebP for this type of file.');
+    contentType = 'image/gif';
+    size = gifSize(data);
   } else {
-    throw new BadRequestException('The file must be a PNG, JPG or WebP image.');
+    throw new BadRequestException('The file must be a PNG, JPG or WebP image (a GIF also works for logos).');
   }
   if (!size || size.width <= 0 || size.height <= 0) {
     throw new BadRequestException("That image file looks damaged -- couldn't read its size.");

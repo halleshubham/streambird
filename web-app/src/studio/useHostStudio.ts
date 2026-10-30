@@ -8,6 +8,7 @@ import {
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy } from './poweredBy';
+import { decodeAnimatedLogo, type AnimatedLogo } from './animatedLogo';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -468,6 +469,10 @@ export function useHostStudio(streamId: string | undefined) {
   // which has no prior content worth fading from.
   const lastEntriesKeyRef = useRef<string>('');
   const logoAppearedAtRef = useRef<number | null>(null);
+  // An animated GIF logo: decoded frames + when it started. brandingRef.logoImg stays the static first frame
+  // (natural size, and the fallback when ImageDecoder is missing or the GIF is over the caps).
+  const logoAnimRef = useRef<{ anim: AnimatedLogo; startedAt: number } | null>(null);
+  const logoAnimTokenRef = useRef(0);
   // Shown on the branded StreamBird slide that fills the canvas while nobody
   // is on camera -- see drawBrandSlide. The image is StreamBird's own logo,
   // not the host's custom overlay logo (brandingRef.logoImg).
@@ -638,7 +643,8 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.globalAlpha = alpha;
     const logoW = b.logoImg.naturalWidth * scale;
     const logoX = b.logoPosition === 'right' ? ctx.canvas.width - 16 - logoW : 16;
-    ctx.drawImage(b.logoImg, logoX, 16 + yOffset, logoW, b.logoSize);
+    const animated = logoAnimRef.current;
+    ctx.drawImage(animated ? animated.anim.frameAt(now - animated.startedAt) : b.logoImg, logoX, 16 + yOffset, logoW, b.logoSize);
     ctx.globalAlpha = 1;
   }
 
@@ -1411,6 +1417,9 @@ export function useHostStudio(streamId: string | undefined) {
             logoAppearedAtRef.current = performance.now();
           };
           img.src = saved.logoDataUrl;
+          if (saved.logoDataUrl.startsWith('data:image/gif')) {
+            void fetch(saved.logoDataUrl).then((r) => r.blob()).then(startLogoAnimation).catch(() => undefined);
+          }
         }
 
         const savedWp = loadPersistedWallpaper(streamRow.id);
@@ -1780,8 +1789,18 @@ export function useHostStudio(streamId: string | undefined) {
     removeParticipantAudio(id);
   }, []);
 
+  /** Decodes a GIF logo's frames in the background; until then (or if that is impossible) the static first frame shows. */
+  function startLogoAnimation(blob: Blob) {
+    const token = ++logoAnimTokenRef.current;
+    logoAnimRef.current = null;
+    void decodeAnimatedLogo(blob, Math.max(256, brandingRef.current.logoSize * 2)).then((anim) => {
+      if (anim && token === logoAnimTokenRef.current) logoAnimRef.current = { anim, startedAt: performance.now() };
+    });
+  }
+
   function setLogoFile(file: File | null) {
     if (!file) return;
+    startLogoAnimation(file);
     const img = new Image();
     img.onload = () => {
       brandingRef.current.logoImg = img;
@@ -1799,6 +1818,8 @@ export function useHostStudio(streamId: string | undefined) {
   }
 
   function clearLogo() {
+    logoAnimTokenRef.current += 1;
+    logoAnimRef.current = null;
     brandingRef.current.logoImg = null;
     if (streamIdRef.current) savePersisted(streamIdRef.current, { logoDataUrl: null });
   }

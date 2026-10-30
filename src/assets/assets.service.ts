@@ -83,7 +83,7 @@ export class AssetsService {
 
   async upload(accountId: string, file: Buffer | undefined, kind: AssetKind, name: string | undefined, originalName?: string): Promise<Asset> {
     const quota = await this.assertCanStore(accountId);
-    const image = parseImage(file);
+    const image = parseImage(file, { allowGif: kind === 'logo' });
     const used = await this.usedBytes(accountId);
     if (used + file!.length > quota) {
       throw new ForbiddenException(
