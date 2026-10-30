@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarClock, Plug, Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
-import { createStream, scheduleStream, uploadScheduleThumbnail } from '../api/streams';
+import { createStream, scheduleStream, uploadScheduleThumbnail, uploadStreamThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
@@ -119,6 +119,10 @@ export function CreateStreamPage() {
         orientation,
         destinationConnectionIds: [...selected],
       });
+      // Upload in the background: the broadcast already exists, and going live must
+      // not wait on (or fail because of) a thumbnail. A failure can be retried from
+      // the stream's page.
+      if (thumbnail) void uploadStreamThumbnail(stream.id, thumbnail).catch(() => undefined);
       navigate(`/streams/${stream.id}/studio`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create stream.');
@@ -199,6 +203,10 @@ export function CreateStreamPage() {
             : 'Every destination gets the same 16:9 picture.'}
         </p>
 
+        <label>Thumbnail (optional)</label>
+        <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
+        <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
+
         {mode === 'schedule' && (
           <>
             <label htmlFor="when">Date and time</label>
@@ -211,10 +219,6 @@ export function CreateStreamPage() {
               required
             />
             <p className="field-hint">Your time zone: {timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.</p>
-
-            <label>Thumbnail (optional)</label>
-            <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
-            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Used for YouTube (needs a verified channel); Facebook and Twitch don't take a thumbnail from here.</p>
 
             <label htmlFor="duration">Expected duration</label>
             <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>

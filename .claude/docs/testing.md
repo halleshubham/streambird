@@ -53,6 +53,7 @@ Gotchas that have each cost time:
 
 Rules of thumb:
 - **Throttled endpoints**: `ThrottlerGuard` limits are per IP and the whole file shares one IP. Put a test that exhausts a limit **last** in its file and keep earlier calls under the limit.
+- Thumbnails: `thumbnail.e2e-spec.ts` stubs `createBroadcast`/`setBroadcastThumbnail` on the Twitch provider instance (`app.get(STREAM_PROVIDERS)`) to observe thumbnail pushes; multipart PUT built by hand.
 - A new **migration** needs an "existing data" case in `migrations.e2e-spec.ts` (insert old-shape rows, run, assert).
 - A payment/plan rule belongs in `payments|autopay|plans.e2e-spec.ts` using the mock.
 - `live-link.e2e-spec.ts` covers the permanent live link (`/stream/<slug>`: 302 Location asserted with `redirect: 'manual'`, live rows inserted with SQL, throttle 429, no-store). The UI fixture server has `POST /add-connection?email=&platform=youtube|facebook&label=` on the control port to give a user a fake connection (`test/ui/livelink.spec.ts`).

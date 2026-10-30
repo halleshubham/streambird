@@ -108,6 +108,38 @@ export class StreamsController {
     return this.scheduling.removeThumbnail(account, id);
   }
 
+  /**
+   * Thumbnail for any not-yet-ended stream, including a 'go live now' one
+   * (the /schedule/thumbnail routes above stay for scheduled streams).
+   */
+  @Put(':id/thumbnail')
+  @UseGuards(StreamCreateThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 4 * 1024 * 1024, files: 1 } }))
+  uploadStreamThumbnail(
+    @CurrentAccount() account: Account,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: { buffer: Buffer } | undefined,
+  ) {
+    return this.scheduling.setStreamThumbnail(account.id, id, file?.buffer);
+  }
+
+  @Get(':id/thumbnail')
+  async getStreamThumbnail(
+    @CurrentAccount() account: Account,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const thumbnail = await this.scheduling.getStreamThumbnail(account.id, id);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(thumbnail.data, { type: thumbnail.contentType });
+  }
+
+  @Delete(':id/thumbnail')
+  removeStreamThumbnail(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
+    return this.scheduling.removeStreamThumbnail(account.id, id);
+  }
+
   @Post(':id/schedule/guests')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } }) // each call can send up to 20 emails

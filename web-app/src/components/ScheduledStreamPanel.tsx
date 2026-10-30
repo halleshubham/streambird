@@ -310,7 +310,7 @@ export function ScheduledStreamPanel({
             }}
           />
           <p className="field-hint">
-            JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. It is used for YouTube (which needs a verified channel for custom thumbnails), also on a broadcast created later, e.g. at start. Facebook and Twitch don't take a thumbnail from here.
+            JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. It is sent to YouTube (which needs a verified channel for custom thumbnails) and, best effort, to Facebook, also on a broadcast created later, e.g. at start. Twitch doesn't take a thumbnail from here.
           </p>
         </div>
       </section>

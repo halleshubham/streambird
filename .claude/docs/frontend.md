@@ -10,7 +10,7 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 | `src/main.tsx` | mounts `BrowserRouter` → `AuthProvider` → `<App/>` + `<BusyOverlay/>` |
 | `src/App.tsx` | **all routes** (below) |
 | `src/routes/` | one file per page; `routes/admin/*` superadmin pages; `routes/studio/{HostStudioPage,GuestJoinPage}.tsx` |
-| `src/components/` | shells/guards (`AppShell`, `AdminShell`, `ProtectedRoute`, `SuperadminRoute`, `HomeRoute`), loaders (`BirdLoader`, `BirdBusy`, `BusyOverlay`), `SlideControls`, `ScheduledStreamPanel`, `UsageMeter`, platform badges/logos, `ThumbnailPicker`, `GuestEmailsField`, `DocsLink` |
+| `src/components/` | shells/guards (`AppShell`, `AdminShell`, `ProtectedRoute`, `SuperadminRoute`, `HomeRoute`), loaders (`BirdLoader`, `BirdBusy`, `BusyOverlay`), `SlideControls`, `ScheduledStreamPanel`, `UsageMeter`, platform badges/logos, `ThumbnailPicker` (create form, both modes), `LiveThumbnailPanel` (stream page while live), `GuestEmailsField`, `DocsLink` |
 | `src/api/` | `client.ts` (`api.get/post/patch/delete`, `ApiError(message,status)`), one module per domain (`auth`, `streams`, `studio`, `connections`, `billing`, `plans`, `team`, `accounts`, `superadmin`) |
 | `src/context/` | `AuthContext/AuthProvider`: `useAuth()` → `{status: loading|authenticated|anonymous, user, accountId, login, refresh}` |
 | `src/studio/` | host/guest studio logic (see `studio.md`) |

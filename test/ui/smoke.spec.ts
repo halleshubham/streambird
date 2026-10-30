@@ -577,6 +577,32 @@ test.describe('host studio', () => {
     expect((await sent).postDataJSON().visibility).toBe('public');
   });
 
+  test('a thumbnail chosen on "Go live now" is uploaded for the new stream, and the hint says where it goes', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Thumb Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    await page.goto('/streams/new');
+    await expect(page.getByText(/Sent to YouTube \(needs a verified channel\) and, best effort, to Facebook\. Twitch doesn't take a thumbnail/)).toBeVisible();
+
+    // A header-only 1280x720 PNG: the server reads just the signature and size.
+    const png = Buffer.alloc(200, 7);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write('IHDR', 12, 'ascii');
+    png.writeUInt32BE(1280, 16);
+    png.writeUInt32BE(720, 20);
+    await page.locator('.thumbnail-picker input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
+    await expect(page.getByAltText('Thumbnail preview')).toBeVisible();
+
+    const upload = page.waitForRequest((r) => /\/api\/streams\/[^/]+\/thumbnail$/.test(r.url()) && r.method() === 'PUT');
+    await page.getByLabel(/Thumb Twitch/).check();
+    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await upload;
+    await expect(page).toHaveURL(/\/studio$/);
+  });
+
   test.describe('with a camera (the config provides a fake one)', () => {
     test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
       const { api } = await signIn(context);

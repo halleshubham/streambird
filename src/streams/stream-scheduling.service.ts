@@ -48,6 +48,12 @@ export interface ScheduleGuest {
   emailedAt: Date | null;
 }
 
+export interface ThumbnailState {
+  hasThumbnail: boolean;
+  thumbnailUpdatedAt: Date | null;
+  platformWarnings?: string[];
+}
+
 export interface ScheduleDetail {
   id: string;
   title: string;
@@ -366,6 +372,60 @@ export class StreamSchedulingService {
       .filter((r) => r.platformBroadcastId && r.platformConnection && this.streamsService.resolveProvider(r.platformConnection).setBroadcastThumbnail)
       .map((r) => `${this.describe(r)}: the image already sent can't be removed through the API -- replace it in the platform's own studio if needed.`);
     return this.buildDetail(account, stream.id, { platformWarnings: warnings.length ? warnings : undefined });
+  }
+
+  // ---- thumbnail for any not-yet-ended stream ---------------------------
+
+  /**
+   * Same as setThumbnail but for any stream the account owns that has not
+   * ended -- including a 'go live now' stream (already LIVE after create).
+   * The image is stored and pushed straight to every broadcast that exists;
+   * a platform refusing it is a warning, never an error.
+   */
+  async setStreamThumbnail(accountId: string, streamId: string, file: Buffer | undefined): Promise<ThumbnailState> {
+    const stream = await this.loadOpenStreamOrThrow(accountId, streamId);
+    const image = parseThumbnail(file);
+    await this.thumbnails.save(
+      this.thumbnails.create({ liveStreamId: stream.id, contentType: image.contentType, data: image.data, width: image.width, height: image.height }),
+    );
+    const warnings = await this.applyThumbnail(await this.loadDestinations(stream.id), image);
+    return this.thumbnailState(stream.id, warnings);
+  }
+
+  async getStreamThumbnail(accountId: string, streamId: string): Promise<{ contentType: string; data: Buffer; updatedAt: Date }> {
+    const stream = await this.liveStreams.findOne({ where: { id: streamId, accountId } });
+    if (!stream) throw new NotFoundException(`Stream ${streamId} not found`);
+    const row = await this.thumbnails.findOne({ where: { liveStreamId: stream.id } });
+    if (!row) throw new NotFoundException('This stream has no thumbnail');
+    return { contentType: row.contentType, data: row.data, updatedAt: row.updatedAt };
+  }
+
+  async removeStreamThumbnail(accountId: string, streamId: string): Promise<ThumbnailState> {
+    const stream = await this.loadOpenStreamOrThrow(accountId, streamId);
+    await this.thumbnails.delete({ liveStreamId: stream.id });
+    const rows = await this.loadDestinations(stream.id);
+    const warnings = rows
+      .filter((r) => r.platformBroadcastId && r.platformConnection && this.streamsService.resolveProvider(r.platformConnection).setBroadcastThumbnail)
+      .map((r) => `${this.describe(r)}: the image already sent can't be removed through the API -- replace it in the platform's own studio if needed.`);
+    return this.thumbnailState(stream.id, warnings);
+  }
+
+  private async loadOpenStreamOrThrow(accountId: string, streamId: string): Promise<LiveStream> {
+    const stream = await this.liveStreams.findOne({ where: { id: streamId, accountId } });
+    if (!stream) throw new NotFoundException(`Stream ${streamId} not found`);
+    if (stream.status !== StreamStatus.SCHEDULED && stream.status !== StreamStatus.LIVE) {
+      throw new UnprocessableEntityException('This stream has already ended, so its thumbnail can no longer be changed.');
+    }
+    return stream;
+  }
+
+  private async thumbnailState(streamId: string, warnings: string[]): Promise<ThumbnailState> {
+    const meta = await this.thumbnails.findOne({ where: { liveStreamId: streamId }, select: ['liveStreamId', 'updatedAt'] });
+    return {
+      hasThumbnail: !!meta,
+      thumbnailUpdatedAt: meta?.updatedAt ?? null,
+      ...(warnings.length ? { platformWarnings: warnings } : {}),
+    };
   }
 
   // ---- helpers --------------------------------------------------------

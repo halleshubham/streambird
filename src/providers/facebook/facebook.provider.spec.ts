@@ -192,4 +192,37 @@ describe('FacebookProvider', () => {
     const count = await provider.getViewerCount(conn, 'video_1');
     expect(count).toBe(0);
   });
+
+  describe('setBroadcastThumbnail', () => {
+    const image = { contentType: 'image/png' as const, data: Buffer.from('png-bytes'), width: 1280, height: 720 };
+
+    it('posts the image as multipart to the video thumbnails edge, preferred, with the Page token', async () => {
+      const { provider } = buildProvider();
+      fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+      await provider.setBroadcastThumbnail(conn, 'video_1', image);
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('https://graph.facebook.com/v23.0/video_1/thumbnails');
+      expect(init.method).toBe('POST');
+      const form = init.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+      expect(form.get('is_preferred')).toBe('true');
+      expect(form.get('access_token')).toBe('page-token');
+      const source = form.get('source') as File;
+      expect(source.type).toBe('image/png');
+      expect(Buffer.from(await source.arrayBuffer()).toString()).toBe('png-bytes');
+      expect(init.headers).toBeUndefined(); // fetch sets the multipart boundary itself
+    });
+
+    it('is applied to a live broadcast', () => {
+      expect(buildProvider().provider.thumbnailAppliesWhenLive).toBe(true);
+    });
+
+    it('surfaces a Graph permission error so callers can log it without failing the stream', async () => {
+      const { provider } = buildProvider();
+      fetchMock.mockResolvedValueOnce(jsonResponse({ error: { code: 200, type: 'OAuthException', message: 'Permissions error' } }, false, 403));
+      await expect(provider.setBroadcastThumbnail(conn, 'video_1', image)).rejects.toThrow(/thumbnails failed \(403\).*Permissions error/);
+    });
+  });
 });
