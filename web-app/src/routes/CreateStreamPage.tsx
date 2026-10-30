@@ -5,6 +5,7 @@ import { CalendarClock, Plug, Radio } from 'lucide-react';
 import { listConnections } from '../api/connections';
 import { createStream, scheduleStream, uploadScheduleThumbnail, uploadStreamThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
+import { rememberThumbnailNotice } from '../lib/thumbnailNotice';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
 import { PlatformBadge } from '../components/PlatformBadge';
@@ -122,7 +123,13 @@ export function CreateStreamPage() {
       // Upload in the background: the broadcast already exists, and going live must
       // not wait on (or fail because of) a thumbnail. A failure can be retried from
       // the stream's page.
-      if (thumbnail) void uploadStreamThumbnail(stream.id, thumbnail).catch(() => undefined);
+      if (thumbnail) {
+        void uploadStreamThumbnail(stream.id, thumbnail)
+          .then((state) => {
+            if (state.platformWarnings?.length) rememberThumbnailNotice(stream.id, state.platformWarnings);
+          })
+          .catch((err) => rememberThumbnailNotice(stream.id, [err instanceof ApiError ? err.message : 'The thumbnail could not be uploaded.']));
+      }
       navigate(`/streams/${stream.id}/studio`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create stream.');

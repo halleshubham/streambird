@@ -446,7 +446,9 @@ export class StreamSchedulingService {
         if (!provider.setBroadcastThumbnail) return;
         try {
           await provider.setBroadcastThumbnail(conn, row.platformBroadcastId, image);
+          this.logger.log(`Thumbnail set on ${conn.platform} broadcast ${row.platformBroadcastId} (stream ${row.liveStreamId}, ${image.contentType} ${image.width}x${image.height}, ${image.data.length} bytes)`);
         } catch (err) {
+          this.logger.warn(`Could not set the thumbnail on ${conn.platform} broadcast ${row.platformBroadcastId} (stream ${row.liveStreamId}): ${(err as Error).message}`);
           warnings.push(`${this.describe(row)}: couldn't set the thumbnail (${(err as Error).message}).`);
         }
       }),
