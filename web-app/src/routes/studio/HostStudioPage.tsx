@@ -3,6 +3,7 @@ import { formatWhen } from '../../lib/schedule';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { THUMBNAIL_NOTICE_EVENT, clearThumbnailNotice, readThumbnailNotice } from '../../lib/thumbnailNotice';
 import {
   Camera,
   Copy,
@@ -73,6 +74,17 @@ const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
+  const [thumbnailNotice, setThumbnailNotice] = useState<string[]>([]);
+  useEffect(() => {
+    if (!streamId) return;
+    const load = () => setThumbnailNotice(readThumbnailNotice(streamId));
+    load();
+    const onEvent = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === streamId) load();
+    };
+    window.addEventListener(THUMBNAIL_NOTICE_EVENT, onEvent);
+    return () => window.removeEventListener(THUMBNAIL_NOTICE_EVENT, onEvent);
+  }, [streamId]);
   const [requireInvitePassword, setRequireInvitePassword] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
   // The password that new invite links actually use. Typing in the box changes nothing until Save.
@@ -284,6 +296,24 @@ export function HostStudioPage() {
           </span>
           <button type="button" className="link-button link-button--inline" onClick={() => setTourOpen(true)}>
             Show me around
+          </button>
+        </div>
+      )}
+
+      {thumbnailNotice.length > 0 && (
+        <div className="panel studio-preview-banner" role="status" data-testid="thumbnail-notice">
+          <span>
+            <strong>Thumbnail not applied.</strong> {thumbnailNotice.join(' ')}
+          </span>
+          <button
+            type="button"
+            className="link-button link-button--inline"
+            onClick={() => {
+              if (streamId) clearThumbnailNotice(streamId);
+              setThumbnailNotice([]);
+            }}
+          >
+            Dismiss
           </button>
         </div>
       )}

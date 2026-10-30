@@ -603,6 +603,35 @@ test.describe('host studio', () => {
     await expect(page).toHaveURL(/\/studio$/);
   });
 
+  test('when the platform refuses a "Go live now" thumbnail, the studio says why instead of staying silent', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Refuse Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
+    const reason = "YouTube: couldn't set the thumbnail (YouTube thumbnails.set failed (403) -- YouTube only allows custom thumbnails on a verified channel (verify at youtube.com/verify)).";
+    await page.route(/\/api\/streams\/[^/]+\/thumbnail$/, (route) =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ hasThumbnail: true, thumbnailUpdatedAt: new Date().toISOString(), platformWarnings: [reason] }) })
+        : route.continue(),
+    );
+    await page.goto('/streams/new');
+    const png = Buffer.alloc(200, 7);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write('IHDR', 12, 'ascii');
+    png.writeUInt32BE(1280, 16);
+    png.writeUInt32BE(720, 20);
+    await page.locator('.thumbnail-picker input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
+    await page.getByLabel(/Refuse Twitch/).check();
+    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    const notice = page.getByTestId('thumbnail-notice');
+    await expect(notice).toContainText('Thumbnail not applied');
+    await expect(notice).toContainText('verified channel');
+    await notice.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(notice).toHaveCount(0);
+  });
+
   test.describe('with a camera (the config provides a fake one)', () => {
     test('a vertical stream asks the camera for a tall picture; a landscape stream asks for the usual', async ({ page, context }) => {
       const { api } = await signIn(context);
