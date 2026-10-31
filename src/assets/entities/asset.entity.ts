@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-export const ASSET_KINDS = ['logo', 'wallpaper', 'background', 'other'] as const;
+export const ASSET_KINDS = ['logo', 'wallpaper', 'background', 'other', 'ad'] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 /** One uploaded file in an account's asset library. The bytes live in object storage (R2) under `storageKey`. */

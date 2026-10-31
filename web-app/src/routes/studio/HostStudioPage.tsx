@@ -38,11 +38,13 @@ import {
   Square,
   TextCursorInput,
   Users,
+  Megaphone,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
 import { ChromaPanel } from '../../components/ChromaPanel';
 import { LowerThirdPanel } from '../../components/LowerThirdPanel';
+import { AdsPanel } from '../../components/AdsPanel';
 import { StudioTour, markStudioTourSeen, studioTourSeen } from '../../components/StudioTour';
 import type { StreamResolution, LayoutMode } from '../../studio/useHostStudio';
 import { BRANDING_RANGES, LAYOUTS, LAYOUT_BY_ID, THEMES, WALLPAPER_RANGES, aspectLabel, canvasSizeFor, describeWallpaperFit, getTheme } from '../../studio/compose';
@@ -63,13 +65,14 @@ function goLiveNames(destinations: StreamStatusDestination[], byId: Map<string, 
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-type SideTabId = 'people' | 'look' | 'titles' | 'scenes';
+type SideTabId = 'people' | 'look' | 'titles' | 'scenes' | 'ads';
 const SIDE_TAB_KEY = 'streambird:studio:sidetab:v1';
 const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
   { id: 'people', label: 'People', icon: Users },
   { id: 'look', label: 'Look', icon: Palette },
   { id: 'titles', label: 'Titles', icon: TextCursorInput },
   { id: 'scenes', label: 'Scenes', icon: Clapperboard },
+  { id: 'ads', label: 'Ads', icon: Megaphone },
 ];
 
 export function HostStudioPage() {
@@ -118,6 +121,8 @@ export function HostStudioPage() {
     brandKits,
     activeKitId,
     canBrandLibrary,
+    adsPlan,
+    ads,
     canRecord,
     canChromaKey,
     canLowerThird,
@@ -154,7 +159,7 @@ export function HostStudioPage() {
     const t = setTimeout(() => setTourOpen(true), 700);
     return () => clearTimeout(t);
   }, [loading, stream?.whipUrl]);
-  // The panels beside the picture (People, Look, Titles, Scenes): one open at a time, so nothing needs scrolling to reach.
+  // The panels beside the picture (People, Look, Titles, Scenes, Ads): one open at a time, so nothing needs scrolling to reach.
   const [sideTab, setSideTab] = useState<SideTabId>(() => {
     try {
       const saved = localStorage.getItem(SIDE_TAB_KEY);
@@ -861,6 +866,9 @@ export function HostStudioPage() {
                       ))}
                     </div>
                   </div>
+          </div>
+          <div role="tabpanel" id="studio-panel-ads" aria-labelledby="studio-tab-ads" hidden={sideTab !== 'ads'}>
+            <AdsPanel plan={adsPlan} ads={ads} kit={brandKits.find((k) => k.id === activeKitId) ?? null} actions={actions} />
           </div>
         </aside>
 

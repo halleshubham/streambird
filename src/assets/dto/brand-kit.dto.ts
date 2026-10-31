@@ -1,4 +1,32 @@
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { AD_PLACEMENTS } from '../entities/brand-kit-ad.entity';
+import type { AdMode, AdPlacement } from '../entities/brand-kit-ad.entity';
+
+/**
+ * One advertisement of a kit. Cross-field rules (interval needs showSec and everySec, one ad per placement, the
+ * file is an owned asset of kind 'ad') are checked in BrandKitsService. Continuous ads store no schedule numbers.
+ */
+export class BrandKitAdDto {
+  @IsIn(AD_PLACEMENTS as unknown as string[])
+  placement!: AdPlacement;
+
+  @IsUUID()
+  assetId!: string;
+
+  @IsOptional() @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional() @IsIn(['continuous', 'interval'])
+  mode?: AdMode;
+
+  @IsOptional() @IsInt() @Min(1) @Max(3600)
+  showSec?: number;
+
+  @IsOptional() @IsInt() @Min(1) @Max(86400)
+  everySec?: number;
+}
+
 
 export class CreateBrandKitDto {
   @IsString() @MinLength(1) @MaxLength(80)
@@ -24,6 +52,10 @@ export class CreateBrandKitDto {
 
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
+
+  /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
+  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  ads?: BrandKitAdDto[] | null;
 }
 
 export class UpdateBrandKitDto {
@@ -50,6 +82,10 @@ export class UpdateBrandKitDto {
 
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
+
+  /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
+  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  ads?: BrandKitAdDto[] | null;
 }
 
 export class AssignBrandKitDto {

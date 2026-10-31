@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Asset } from './entities/asset.entity';
 import { BrandKit } from './entities/brand-kit.entity';
+import { BrandKitAd } from './entities/brand-kit-ad.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AssetsService } from './assets.service';
 import { BrandKitsService } from './brand-kits.service';
@@ -12,7 +13,7 @@ import { AccountsModule } from '../accounts/accounts.module';
 import { CommonModule } from '../common/common.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Asset, BrandKit, PlatformConnection]), forwardRef(() => AccountsModule), forwardRef(() => CommonModule)],
+  imports: [TypeOrmModule.forFeature([Asset, BrandKit, BrandKitAd, PlatformConnection]), forwardRef(() => AccountsModule), forwardRef(() => CommonModule)],
   controllers: [AssetsController],
   providers: [
     AssetsService,

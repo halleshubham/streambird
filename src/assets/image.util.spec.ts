@@ -42,7 +42,7 @@ describe('parseImage', () => {
     expect(() => parseImage(Buffer.concat([png(10, 10), Buffer.alloc(4 * 1024 * 1024)]))).toThrow(/too large/);
     expect(() => parseImage(png(9000, 10))).toThrow(/too big/);
   });
-  describe('GIF (logos only)', () => {
+  describe('GIF (logos and ads only)', () => {
     const gif = (sig: string, w: number, h: number) => {
       const b = Buffer.alloc(20);
       b.write(sig, 0, 'ascii');
@@ -54,8 +54,8 @@ describe('parseImage', () => {
       expect(parseImage(gif('GIF89a', 320, 180), { allowGif: true })).toEqual({ contentType: 'image/gif', width: 320, height: 180 });
       expect(parseImage(gif('GIF87a', 5, 7), { allowGif: true })).toMatchObject({ contentType: 'image/gif', width: 5, height: 7 });
     });
-    it('refuses a GIF for anything but a logo, with a clear message', () => {
-      expect(() => parseImage(gif('GIF89a', 10, 10))).toThrow(/GIF images can only be used as a logo/);
+    it('refuses a GIF for anything but a logo or an ad, with a clear message', () => {
+      expect(() => parseImage(gif('GIF89a', 10, 10))).toThrow(/GIF images can only be used as a logo or an ad/);
     });
     it('applies the same size limits and rejects damaged GIFs', () => {
       expect(() => parseImage(gif('GIF89a', 9000, 10), { allowGif: true })).toThrow(/too big/);
