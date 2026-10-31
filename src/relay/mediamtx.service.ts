@@ -277,17 +277,34 @@ export class MediaMtxService {
    * on a monitoring blip.
    */
   async listPaths(): Promise<Map<string, boolean> | null> {
+    const stats = await this.listPathStats();
+    if (!stats) return null;
+    return new Map([...stats].map(([name, st]) => [name, st.ready]));
+  }
+
+  /**
+   * Like listPaths() but also returns how many bytes the path's publisher has sent so far (MediaMTX's
+   * `inboundBytes`, called `bytesReceived` before v1.13; null when this version reports neither), so a monitor
+   * can tell a publisher whose picture is really moving from one that is connected but silent. null overall
+   * when MediaMTX can't be reached (never act on a monitoring blip).
+   */
+  async listPathStats(): Promise<Map<string, { ready: boolean; inboundBytes: number | null }> | null> {
     const apiUrl = this.apiUrl;
     if (!apiUrl) return null;
 
     try {
       const res = await firstValueFrom(
-        this.http.get<{ items?: Array<{ name: string; ready?: boolean }> }>(
+        this.http.get<{ items?: Array<{ name: string; ready?: boolean; inboundBytes?: number; bytesReceived?: number }> }>(
           `${apiUrl}/v3/paths/list?itemsPerPage=1000`,
           this.authConfig,
         ),
       );
-      return new Map((res.data?.items ?? []).map((item) => [item.name, item.ready === true]));
+      return new Map(
+        (res.data?.items ?? []).map((item) => {
+          const bytes = typeof item.inboundBytes === 'number' ? item.inboundBytes : typeof item.bytesReceived === 'number' ? item.bytesReceived : null;
+          return [item.name, { ready: item.ready === true, inboundBytes: bytes }] as const;
+        }),
+      );
     } catch (err) {
       this.logger.warn(`Failed to list MediaMTX paths: ${(err as Error).message}`);
       return null;

@@ -428,6 +428,51 @@ describe('StreamsService', () => {
     expect(hours).toBeCloseTo(2, 1);
   });
 
+  describe('end() with an automatic-end reason', () => {
+    async function liveWithHours(hours: number) {
+      const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+      const ctx = await build([youtube]);
+      ctx.connectionRepo.rows.set('c1', makeConnection('c1', Platform.YOUTUBE));
+      const stream = await ctx.service.create('acc_1', { title: 'Auto', destinationConnectionIds: ['c1'] });
+      (ctx.liveStreamRepo.rows.get(stream.id) as any).startedAt = new Date(Date.now() - hours * 3_600_000);
+      return { ...ctx, stream };
+    }
+
+    it('bills only up to usageUntil (a stream that never sent a picture bills nothing)', async () => {
+      const { service, stream, accountsService, liveStreamRepo } = await liveWithHours(2);
+      const startedAt = (liveStreamRepo.rows.get(stream.id) as any).startedAt as Date;
+      await service.end(stream.id, 'acc_1', { reason: 'Ended automatically: no video arrived.', usageUntil: startedAt });
+      expect(accountsService.recordStreamUsage).not.toHaveBeenCalled();
+    });
+
+    it('bills up to usageUntil when it is later than the start', async () => {
+      const { service, stream, accountsService, liveStreamRepo } = await liveWithHours(2);
+      const startedAt = (liveStreamRepo.rows.get(stream.id) as any).startedAt as Date;
+      await service.end(stream.id, 'acc_1', { usageUntil: new Date(startedAt.getTime() + 30 * 60_000) });
+      const [, hours] = (accountsService.recordStreamUsage as jest.Mock).mock.calls[0];
+      expect(hours).toBeCloseTo(0.5, 2);
+    });
+
+    it('a usageUntil after the real end never bills more than the elapsed time', async () => {
+      const { service, stream, accountsService } = await liveWithHours(1);
+      await service.end(stream.id, 'acc_1', { usageUntil: new Date(Date.now() + 10 * 3_600_000) });
+      const [, hours] = (accountsService.recordStreamUsage as jest.Mock).mock.calls[0];
+      expect(hours).toBeCloseTo(1, 1);
+    });
+
+    it('puts the reason on the ended destinations so the host can see why', async () => {
+      const { service, stream } = await liveWithHours(1);
+      const ended = await service.end(stream.id, 'acc_1', { reason: 'Ended automatically: no video arrived within 30 minutes of going live.' });
+      expect(ended.destinations.every((d) => d.errorMessage === 'Ended automatically: no video arrived within 30 minutes of going live.')).toBe(true);
+    });
+
+    it('a normal end() with no options behaves as before', async () => {
+      const { service, stream } = await liveWithHours(1);
+      const ended = await service.end(stream.id, 'acc_1');
+      expect(ended.destinations.every((d) => !d.errorMessage)).toBe(true);
+    });
+  });
+
   describe('start() (scheduled streams)', () => {
     async function scheduled(providers: StreamProvider[]) {
       const ctx = await build(providers);

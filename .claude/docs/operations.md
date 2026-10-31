@@ -35,6 +35,7 @@ Required: `DATABASE_URL`, `ENCRYPTION_KEY_BASE64` (base64 of 32 bytes: `openssl 
 | Google/YouTube | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (= `PUBLIC_BASE_URL/api/auth/google/callback`), `GOOGLE_YOUTUBE_REDIRECT_URI` (= `…/api/platform-connections/youtube/callback`), `GOOGLE_YOUTUBE_SCOPE` (default `youtube.force-ssl`) |
 | Facebook | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_REDIRECT_URI` (page connect callback), `FACEBOOK_LOGIN_REDIRECT_URI`, `FACEBOOK_LOGIN_CONFIG_ID`, `FACEBOOK_CONNECT_CONFIG_ID` |
 | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` (status/viewer read; ingest key is pasted manually) |
+| Stale streams | `STALE_STREAM_AUTO_END` (default true), `STALE_STREAM_NO_PUBLISHER_MINUTES` (30; 0 = off), `STALE_STREAM_FROZEN_MINUTES` (5; 0 = off), `STALE_STREAM_CHECK_SECONDS` (30, min 5) |
 | MediaMTX | `MEDIAMTX_API_URL`, `MEDIAMTX_API_USER`, `MEDIAMTX_API_PASSWORD`, `MEDIAMTX_WHIP_BASE_URL`, `GLITCH_SLATE_URL`, `GLITCH_SLATE_PORTRAIT_URL` (default `PUBLIC_BASE_URL/glitch-slate[-portrait].mp4`) |
 | Optional relay | `RELAY_PROVIDER` (`cloudflare`\|`mux`), `CLOUDFLARE_ACCOUNT_ID/API_TOKEN/CUSTOMER_CODE`, `MUX_TOKEN_ID/SECRET` |
 | TURN | `CLOUDFLARE_TURN_TOKEN_ID`, `CLOUDFLARE_TURN_API_TOKEN` (empty → STUN only) |

@@ -170,6 +170,8 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
     RAZORPAY_GRACE_DAYS: '3',
     // The digest's own timers stay off in tests (a test calls ApprovalDigestService.run itself).
     APPROVAL_DIGEST_INTERVAL_HOURS: '0',
+    // The stale-stream reaper's own timer stays off in tests (a test calls StaleStreamReaperService.tick itself).
+    STALE_STREAM_AUTO_END: 'false',
     MEDIAMTX_API_URL: mtxUrl,
     MEDIAMTX_WHIP_BASE_URL: mtxUrl,
   });
