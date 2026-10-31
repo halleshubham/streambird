@@ -7,6 +7,7 @@ import { StreamThumbnail } from './entities/stream-thumbnail.entity';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { StreamsService } from './streams.service';
 import { GlitchRecoveryService } from './glitch-recovery.service';
+import { StaleStreamReaperService } from './stale-stream-reaper.service';
 import { StreamSchedulingService } from './stream-scheduling.service';
 import { EmailModule } from '../email/email.module';
 import { StreamsController } from './streams.controller';
@@ -27,7 +28,7 @@ import { StudioModule } from '../studio/studio.module';
     // StudioSignalingGateway's doc comment on that).
     forwardRef(() => StudioModule),
   ],
-  providers: [StreamsService, GlitchRecoveryService, StreamSchedulingService, SessionLimitService],
+  providers: [StreamsService, GlitchRecoveryService, StaleStreamReaperService, StreamSchedulingService, SessionLimitService],
   controllers: [StreamsController],
   exports: [StreamsService, GlitchRecoveryService],
 })

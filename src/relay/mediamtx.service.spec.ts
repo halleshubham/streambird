@@ -222,4 +222,27 @@ describe('MediaMtxService', () => {
     expect([...(await service.listPaths())!]).toEqual([['a', true], ['b', false]]);
     expect(await service.listPaths()).toBeNull();
   });
+
+  it('reports each path\'s inbound byte counter (inboundBytes, or bytesReceived on older MediaMTX), null when neither is present', async () => {
+    const get = jest.fn().mockReturnValueOnce(
+      of({
+        data: {
+          items: [
+            { name: 'new', ready: true, inboundBytes: 1234 },
+            { name: 'old', ready: true, bytesReceived: 99 },
+            { name: 'none', ready: true },
+            { name: 'idle', ready: false, inboundBytes: 0 },
+          ],
+        },
+      }),
+    );
+    const service = buildService({ get });
+
+    expect([...(await service.listPathStats())!]).toEqual([
+      ['new', { ready: true, inboundBytes: 1234 }],
+      ['old', { ready: true, inboundBytes: 99 }],
+      ['none', { ready: true, inboundBytes: null }],
+      ['idle', { ready: false, inboundBytes: 0 }],
+    ]);
+  });
 });

@@ -53,6 +53,16 @@ export interface AppConfig {
    * login available yet). */
   superadminEmail: string;
   superadminPassword: string;
+  /** Automatic end of streams that are marked live but whose picture never arrives or has stopped moving (STALE_STREAM_*). */
+  staleStreams: {
+    enabled: boolean;
+    /** Minutes a stream may stay live without a publisher ever being seen before it is ended (0 = never). */
+    noPublisherMinutes: number;
+    /** Minutes a connected publisher may send no data before the stream is ended (0 = never). */
+    frozenMinutes: number;
+    /** Seconds between checks. */
+    checkSeconds: number;
+  };
   /** Hours between "accounts waiting for approval" emails to the superadmin (APPROVAL_DIGEST_INTERVAL_HOURS, default 12; 0 turns them off). */
   approvalDigestIntervalHours: number;
   google: {
@@ -159,6 +169,12 @@ export default (): AppConfig => ({
   superadminEmail: process.env.SUPERADMIN_EMAIL ?? '',
   superadminPassword: process.env.SUPERADMIN_PASSWORD ?? '',
   approvalDigestIntervalHours: parseHours(process.env.APPROVAL_DIGEST_INTERVAL_HOURS, 12),
+  staleStreams: {
+    enabled: (process.env.STALE_STREAM_AUTO_END ?? 'true').toLowerCase() !== 'false',
+    noPublisherMinutes: parseHours(process.env.STALE_STREAM_NO_PUBLISHER_MINUTES, 30),
+    frozenMinutes: parseHours(process.env.STALE_STREAM_FROZEN_MINUTES, 5),
+    checkSeconds: Math.max(5, parseHours(process.env.STALE_STREAM_CHECK_SECONDS, 30)),
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
