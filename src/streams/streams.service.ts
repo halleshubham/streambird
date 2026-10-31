@@ -560,6 +560,10 @@ export class StreamsService {
   async end(id: string, accountId: string, opts: { reason?: string; usageUntil?: Date } = {}): Promise<LiveStream> {
     const stream = await this.findByIdOrThrow(id, accountId);
 
+    // Ending is idempotent: a repeat call (the Android app's stale-stream card plus its own End, a retry after a
+    // timeout, two tabs) must not record the usage hours a second time or move endedAt.
+    if (stream.status === StreamStatus.ENDED) return stream;
+
     // Ending must always finish. Each outside call (the platform, the relay, MediaMTX) has no timeout of its own, so
     // one that hangs used to hang the whole end -- worst for a superadmin's "Force end" of a stuck stream. Every step
     // is now bounded and best-effort: whatever cannot be reached is logged and the stream still ends here.
