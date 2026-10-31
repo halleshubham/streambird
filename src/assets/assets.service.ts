@@ -11,6 +11,7 @@ import { In, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Asset, AssetKind } from './entities/asset.entity';
 import { BrandKit } from './entities/brand-kit.entity';
+import { BrandKitAd } from './entities/brand-kit-ad.entity';
 import { OBJECT_STORAGE, ObjectStorage } from './object-storage';
 import { parseImage } from './image.util';
 import { AccountsService } from '../accounts/accounts.service';
@@ -31,6 +32,7 @@ export class AssetsService {
   constructor(
     @InjectRepository(Asset) private readonly assets: Repository<Asset>,
     @InjectRepository(BrandKit) private readonly kits: Repository<BrandKit>,
+    @InjectRepository(BrandKitAd) private readonly kitAds: Repository<BrandKitAd>,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     private readonly accounts: AccountsService,
   ) {}
@@ -63,6 +65,8 @@ export class AssetsService {
       this.usedBytes(accountId),
       this.kits.find({ where: { accountId } }),
     ]);
+    const ads = kits.length > 0 ? await this.kitAds.find({ where: { brandKitId: In(kits.map((k) => k.id)) } }) : [];
+    const kitUsing = (assetId: string) => kits.filter((k) => k.logoAssetId === assetId || k.wallpaperAssetId === assetId || ads.some((ad) => ad.brandKitId === k.id && ad.assetId === assetId));
     return {
       enabled: this.storage.enabled,
       quotaBytes,
@@ -76,14 +80,14 @@ export class AssetsService {
         width: a.width,
         height: a.height,
         createdAt: a.createdAt,
-        usedBy: kits.filter((k) => k.logoAssetId === a.id || k.wallpaperAssetId === a.id).map((k) => k.name),
+        usedBy: kitUsing(a.id).map((k) => k.name),
       })),
     };
   }
 
   async upload(accountId: string, file: Buffer | undefined, kind: AssetKind, name: string | undefined, originalName?: string): Promise<Asset> {
     const quota = await this.assertCanStore(accountId);
-    const image = parseImage(file, { allowGif: kind === 'logo' });
+    const image = parseImage(file, { allowGif: kind === 'logo' || kind === 'ad' });
     const used = await this.usedBytes(accountId);
     if (used + file!.length > quota) {
       throw new ForbiddenException(
@@ -125,12 +129,22 @@ export class AssetsService {
 
   async remove(accountId: string, id: string): Promise<void> {
     const asset = await this.findOwned(accountId, id);
-    const using = await this.kits.find({ where: [{ accountId, logoAssetId: id }, { accountId, wallpaperAssetId: id }] });
+    const adKits = (await this.kitAds.find({ where: { assetId: id }, select: ['brandKitId'] })).map((a) => a.brandKitId);
+    const using = await this.kits.find({
+      where: [{ accountId, logoAssetId: id }, { accountId, wallpaperAssetId: id }, ...(adKits.length > 0 ? [{ accountId, id: In(adKits) }] : [])],
+    });
     if (using.length > 0) {
       throw new ConflictException(`This file is used by the brand kit${using.length > 1 ? 's' : ''} ${using.map((k) => `"${k.name}"`).join(', ')}. Change or delete ${using.length > 1 ? 'them' : 'it'} first.`);
     }
     await this.assets.delete({ id, accountId });
     await this.storage.delete(asset.storageKey).catch(() => undefined); // the row is gone; a stray object is harmless
+  }
+
+  /** The ids (of `ids`) that belong to the account and have this kind. */
+  async findOwnedOfKind(accountId: string, ids: string[], kind: AssetKind): Promise<Set<string>> {
+    if (ids.length === 0) return new Set();
+    const rows = await this.assets.find({ where: { accountId, kind, id: In(ids) }, select: ['id'] });
+    return new Set(rows.map((r) => r.id));
   }
 
   async ownedIds(accountId: string, ids: string[]): Promise<Set<string>> {

@@ -201,4 +201,57 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0027 keeps existing library files and kits, allows the new asset kind "ad", and ads are one per placement and protect their file', async () => {
+    const live = `e2e_migrate_ads_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0026', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0027: an account with a logo, a wallpaper and a kit using both.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('ads-acct', 'hads', 'pro', 30) RETURNING id`)).rows[0].id;
+      const logo = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'logo', 'l', 'image/png', 10, 1, 1, 'k1') RETURNING id`, [acct])).rows[0].id;
+      const wall = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'wallpaper', 'w', 'image/png', 10, 1, 1, 'k2') RETURNING id`, [acct])).rows[0].id;
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, logo_asset_id, wallpaper_asset_id, is_default) VALUES ($1, 'Main', $2, $3, true) RETURNING id`, [acct, logo, wall])).rows[0].id;
+      await expect(db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'ad', 'a', 'image/png', 10, 1, 1, 'k3')`, [acct])).rejects.toThrow(); // not allowed yet
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0027%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: still fine
+
+      // Existing rows are untouched and the kit has no ads.
+      expect((await db.query(`SELECT kind FROM assets WHERE account_id = $1 ORDER BY kind`, [acct])).rows.map((r) => r.kind)).toEqual(['logo', 'wallpaper']);
+      expect((await db.query(`SELECT logo_asset_id, wallpaper_asset_id FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ logo_asset_id: logo, wallpaper_asset_id: wall });
+      expect((await db.query(`SELECT count(*)::int AS n FROM brand_kit_ads`)).rows[0].n).toBe(0);
+      await expect(db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'video', 'v', 'x', 1, 1, 1, 'k4')`, [acct])).rejects.toThrow(); // other kinds still refused
+
+      const ad = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'ad', 'a', 'image/gif', 10, 1, 1, 'k5') RETURNING id`, [acct])).rows[0].id;
+      const insertAd = (placement: string, mode = 'continuous', show: number | null = null, every: number | null = null) =>
+        db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, mode, show_sec, every_sec) VALUES ($1, $2, $3, $4, $5, $6)`, [kit, placement, ad, mode, show, every]);
+      await insertAd('lower_third', 'interval', 15, 180);
+      await expect(insertAd('lower_third')).rejects.toThrow(); // one ad per placement
+      await expect(insertAd('top_banner')).rejects.toThrow(); // unknown placement
+      await expect(insertAd('side_third', 'sometimes')).rejects.toThrow(); // unknown mode
+      await expect(insertAd('side_third', 'interval', 15, null)).rejects.toThrow(); // interval needs both numbers
+      await expect(insertAd('side_third', 'interval', 0, 10)).rejects.toThrow(); // range
+      await expect(insertAd('side_third', 'interval', 10, 86401)).rejects.toThrow();
+      await insertAd('side_third');
+      await expect(db.query(`DELETE FROM assets WHERE id = $1`, [ad])).rejects.toThrow(); // RESTRICT: a file in use stays
+      await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]); // the kit's ads go with it
+      expect((await db.query(`SELECT count(*)::int AS n FROM brand_kit_ads`)).rows[0].n).toBe(0);
+      await db.query(`DELETE FROM assets WHERE id = $1`, [ad]);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

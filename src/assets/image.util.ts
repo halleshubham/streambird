@@ -62,7 +62,7 @@ function isGif(data: Buffer) {
 
 /**
  * Validates an upload by its actual bytes (the declared type and filename are user-controlled).
- * `opts.allowGif` is true only for logos: an animated GIF is drawn by the studio for the logo, nowhere else.
+ * `opts.allowGif` is true only for logos and ads: an animated GIF is drawn by the studio for those, nowhere else.
  */
 export function parseImage(data: Buffer | undefined, opts: { allowGif?: boolean } = {}): ParsedImage {
   if (!data || data.length === 0) throw new BadRequestException('Choose an image file to upload.');
@@ -81,11 +81,11 @@ export function parseImage(data: Buffer | undefined, opts: { allowGif?: boolean 
     contentType = 'image/webp';
     size = webpSize(data);
   } else if (isGif(data)) {
-    if (!opts.allowGif) throw new BadRequestException('GIF images can only be used as a logo. Use a PNG, JPG or WebP for this type of file.');
+    if (!opts.allowGif) throw new BadRequestException('GIF images can only be used as a logo or an ad. Use a PNG, JPG or WebP for this type of file.');
     contentType = 'image/gif';
     size = gifSize(data);
   } else {
-    throw new BadRequestException('The file must be a PNG, JPG or WebP image (a GIF also works for logos).');
+    throw new BadRequestException('The file must be a PNG, JPG or WebP image (a GIF also works for logos and ads).');
   }
   if (!size || size.width <= 0 || size.height <= 0) {
     throw new BadRequestException("That image file looks damaged -- couldn't read its size.");

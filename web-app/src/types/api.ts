@@ -491,7 +491,7 @@ export interface AdminBilling {
   payments: AdminPayment[];
 }
 
-export type AssetKind = 'logo' | 'wallpaper' | 'background' | 'other';
+export type AssetKind = 'logo' | 'wallpaper' | 'background' | 'other' | 'ad';
 
 export interface LibraryAsset {
   id: string;
@@ -517,6 +517,18 @@ export interface AssetLibrary {
 
 export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
 
+export type AdPlacementId = 'lower_third' | 'side_third' | 'full_screen';
+
+/** One advertisement of a brand kit (one per placement). Continuous ads carry null schedule numbers; times are in seconds. */
+export interface BrandKitAd {
+  placement: AdPlacementId;
+  assetId: string;
+  enabled: boolean;
+  mode: 'continuous' | 'interval';
+  showSec: number | null;
+  everySec: number | null;
+}
+
 export interface BrandKit {
   id: string;
   name: string;
@@ -529,9 +541,11 @@ export interface BrandKit {
   isDefault: boolean;
   /** The channels/pages (platform connections) using this kit. */
   connectionIds: string[];
+  /** At most one ad per placement. */
+  ads: BrandKitAd[];
 }
 
-export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & { isDefault?: boolean };
+export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & { isDefault?: boolean; ads?: BrandKitAd[] };
 
 /** The superadmin's registration switch and the signup history it is decided by. */
 export interface RegistrationStatus {

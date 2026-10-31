@@ -92,7 +92,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
     expect((await client.getBytes(`/assets/${created.body.id}/file`)).status).toBe(404);
   });
 
-  it('an animated GIF is accepted as a logo (served as image/gif) and refused for every other kind', async () => {
+  it('an animated GIF is accepted as a logo or an ad (served as image/gif) and refused for every other kind', async () => {
     await admin.patch('/superadmin/plans/free', { assetStorageMb: 5 });
     const { client } = await h.signIn();
     const gif = solidGif([[255, 0, 0], [0, 0, 255]], { width: 48, height: 24 });
@@ -102,10 +102,14 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
     const file = await client.getBytes(`/assets/${logo.body.id}/file`);
     expect(file.contentType).toBe('image/gif');
     expect(file.data.equals(gif)).toBe(true);
+    const adGif = await upload(client, gif, 'ad', 'Spinning ad', 'image/gif');
+    expect(adGif.status).toBe(201);
+    expect(adGif.body).toMatchObject({ kind: 'ad', contentType: 'image/gif', width: 48, height: 24 });
+    expect((await client.del(`/assets/${adGif.body.id}`)).status).toBe(204);
     for (const kind of ['wallpaper', 'background', 'other']) {
       const refused = await upload(client, gif, kind, 'Spinner', 'image/gif');
       expect(refused.status).toBe(400);
-      expect(msg(refused.body)).toMatch(/GIF images can only be used as a logo/);
+      expect(msg(refused.body)).toMatch(/GIF images can only be used as a logo or an ad/);
     }
     // The bytes decide, not the declared type.
     expect((await upload(client, gif, 'wallpaper', 'x', 'image/png')).status).toBe(400);
@@ -167,5 +171,110 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
     expect(after[0].connectionIds).toEqual([c3]);
     expect((await client.del(`/brand-kits/${main.body.id}`)).status).toBe(204);
     expect((await client.del(`/assets/${logo.id}`)).status).toBe(204);
+  });
+
+  describe('brand kit ads', () => {
+    const PLACEMENTS = ['lower_third', 'side_third', 'full_screen'];
+
+    afterEach(async () => {
+      await admin.patch('/superadmin/plans/free', { watermark: true, assetStorageMb: 5 });
+    });
+
+    it('the Free plan (with the mark) cannot save ads in a kit; clearing and kits without ads still work', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: true });
+      const { client } = await h.signIn();
+      const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
+      expect(ad.kind).toBe('ad');
+      const refused = await client.post('/brand-kits', { name: 'With ads', ads: [{ placement: 'lower_third', assetId: ad.id }] });
+      expect(refused.status).toBe(403);
+      expect(msg(refused.body)).toMatch(/paid plans/);
+      const kit = await client.post('/brand-kits', { name: 'Plain' });
+      expect(kit.status).toBe(201);
+      expect(kit.body.ads).toEqual([]);
+      expect((await client.patch(`/brand-kits/${kit.body.id}`, { ads: [{ placement: 'lower_third', assetId: ad.id }] })).status).toBe(403);
+      expect((await client.patch(`/brand-kits/${kit.body.id}`, { ads: [] })).status).toBe(200); // removing is always fine
+    });
+
+    it('create, read, replace-all, omit-keeps, clear: up to 3 ads, one per placement, with their schedules', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const [a1, a2, a3] = [await upload(client, fakePng(1280, 240), 'ad', 'Lower'), await upload(client, fakePng(427, 720), 'ad', 'Side'), await upload(client, fakePng(1280, 720), 'ad', 'Full')].map((r) => r.body);
+
+      const created = await client.post('/brand-kits', {
+        name: 'Sponsors',
+        ads: [
+          { placement: 'full_screen', assetId: a3.id, enabled: false },
+          { placement: 'lower_third', assetId: a1.id, mode: 'interval', showSec: 30, everySec: 600 },
+          { placement: 'side_third', assetId: a2.id, mode: 'continuous', showSec: 5 }, // schedule numbers are dropped for continuous
+        ],
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.ads).toEqual([
+        { placement: 'lower_third', assetId: a1.id, enabled: true, mode: 'interval', showSec: 30, everySec: 600 },
+        { placement: 'side_third', assetId: a2.id, enabled: true, mode: 'continuous', showSec: null, everySec: null },
+        { placement: 'full_screen', assetId: a3.id, enabled: false, mode: 'continuous', showSec: null, everySec: null },
+      ]);
+      const id = created.body.id;
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === id).ads.map((a: any) => a.placement)).toEqual(PLACEMENTS);
+
+      // The library shows which kit uses each file; a file used by an ad cannot be deleted (409 names the kit).
+      const lib = await client.get('/assets');
+      expect(lib.body.items.find((a: any) => a.id === a1.id).usedBy).toEqual(['Sponsors']);
+      const del = await client.del(`/assets/${a1.id}`);
+      expect(del.status).toBe(409);
+      expect(msg(del.body)).toMatch(/Sponsors/);
+
+      // Omitting `ads` leaves them; a list replaces them all.
+      const renamed = await client.patch(`/brand-kits/${id}`, { name: 'Sponsors 2' });
+      expect(renamed.body.ads).toHaveLength(3);
+      const replaced = await client.patch(`/brand-kits/${id}`, { ads: [{ placement: 'side_third', assetId: a2.id, enabled: true, mode: 'interval', showSec: 1, everySec: 86400 }] });
+      expect(replaced.status).toBe(200);
+      expect(replaced.body.ads).toEqual([{ placement: 'side_third', assetId: a2.id, enabled: true, mode: 'interval', showSec: 1, everySec: 86400 }]);
+      expect((await client.del(`/assets/${a1.id}`)).status).toBe(204); // no longer in use
+      expect((await client.patch(`/brand-kits/${id}`, { ads: [] })).body.ads).toEqual([]);
+      expect((await client.del(`/assets/${a2.id}`)).status).toBe(204);
+
+      // Deleting the kit deletes its ads and frees the file.
+      const again = await client.post('/brand-kits', { name: 'Again', ads: [{ placement: 'full_screen', assetId: a3.id }] });
+      expect(again.status).toBe(201);
+      expect((await client.del(`/assets/${a3.id}`)).status).toBe(409);
+      expect((await client.del(`/brand-kits/${again.body.id}`)).status).toBe(204);
+      expect((await client.del(`/assets/${a3.id}`)).status).toBe(204);
+    });
+
+    it('validation: placement, schedule ranges, interval needs both numbers, one per placement, max 3, owned files of kind ad', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
+      const logo = (await upload(client, fakePng(100, 100), 'logo', 'Logo')).body;
+      const kit = (await client.post('/brand-kits', { name: 'Checks' })).body;
+      const bad = async (ads: unknown, status = 400) => expect((await client.patch(`/brand-kits/${kit.id}`, { ads })).status).toBe(status);
+
+      await bad([{ placement: 'top_banner', assetId: ad.id }]);
+      await bad([{ placement: 'lower_third' }]); // no file
+      await bad([{ placement: 'lower_third', assetId: 'not-a-uuid' }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'sometimes' }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 10 }]); // interval needs both
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', everySec: 10 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 0, everySec: 10 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 3601, everySec: 10 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 10, everySec: 0 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 10, everySec: 86401 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 1.5, everySec: 10 }]);
+      await bad([{ placement: 'lower_third', assetId: ad.id }, { placement: 'lower_third', assetId: ad.id }]); // one per placement
+      await bad([...PLACEMENTS.map((placement) => ({ placement, assetId: ad.id })), { placement: 'lower_third', assetId: ad.id }]); // max 3
+      await bad([{ placement: 'lower_third', assetId: logo.id }]); // a logo is not an ad
+      await bad([{ placement: 'lower_third', assetId: ad.id, surprise: true }]); // unknown field
+      await bad('lower_third');
+      const stranger = await h.signIn();
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const foreign = (await upload(stranger.client, fakePng(100, 100), 'ad')).body;
+      await bad([{ placement: 'lower_third', assetId: foreign.id }]); // another account's file
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === kit.id).ads).toEqual([]); // nothing half-saved
+
+      // The boundaries themselves are fine.
+      const edges = await client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 3600, everySec: 1 }] });
+      expect(edges.status).toBe(200);
+    });
   });
 });

@@ -757,7 +757,7 @@ test.describe('brand library and kits', () => {
     await page.getByRole('link', { name: 'Brand' }).click();
     await expect(page.getByTestId('brand-free-notice')).toContainText('stay saved in this browser');
     await expect(page.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
-    await expect(page.getByLabel('Image (PNG, JPG, WebP or GIF (logos only), up to 4 MB)')).toHaveCount(0);
+    await expect(page.getByLabel('Image (PNG, JPG, WebP or GIF (logos and ads only), up to 4 MB)')).toHaveCount(0);
   });
 
   test.describe('on a plan with brand storage', () => {

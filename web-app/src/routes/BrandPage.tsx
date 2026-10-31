@@ -8,10 +8,13 @@ import { ApiError } from '../api/client';
 import { BirdLoader } from '../components/BirdLoader';
 import { BirdBusy } from '../components/BirdBusy';
 import { PlatformBadge } from '../components/PlatformBadge';
-import type { AssetKind, AssetLibrary, BrandKit, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
+import { AdIntervalFields } from '../components/AdsPanel';
+import { getMyLimits } from '../api/plans';
+import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, type AdPlacement } from '../studio/ads';
+import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
 
 const MB = 1024 * 1024;
-const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', other: 'Other' };
+const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', ad: 'Ad', other: 'Other' };
 const STYLE_LABEL: Record<LowerThirdStyleId, string> = { bar: 'Solid', accent: 'Accent', glass: 'Glass' };
 
 /** A single file's size: KB under 1 MB so a small logo does not read "0.0 MB". */
@@ -19,7 +22,7 @@ const fmtSize = (bytes: number) => (bytes < MB ? `${Math.max(1, Math.round(bytes
 
 const fmtMb = (bytes: number) => `${(bytes / MB).toFixed(bytes >= 10 * MB ? 0 : 1)} MB`;
 
-const EMPTY_KIT: BrandKitInput = { name: '', logoAssetId: null, logoPosition: 'left', logoSize: 90, wallpaperAssetId: null, wallpaperDim: 0, lowerThirdStyle: 'accent' };
+const EMPTY_KIT: BrandKitInput = { name: '', logoAssetId: null, logoPosition: 'left', logoSize: 90, wallpaperAssetId: null, wallpaperDim: 0, lowerThirdStyle: 'accent', ads: [] };
 
 /**
  * The account's brand library (files kept in Cloudflare R2) and brand kits (reusable looks). A brand is a
@@ -34,6 +37,8 @@ export function BrandPage() {
   /** Which kit form is open: a kit id, 'new', or none. One at a time keeps the page short. */
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Custom ads need a plan without the "Powered by StreamBird" mark; the server enforces it too. */
+  const [adsAllowed, setAdsAllowed] = useState(true);
 
   /** A short confirmation after an action (saved, uploaded...), so the person is never left wondering. */
   function say(message: string) {
@@ -47,6 +52,7 @@ export function BrandPage() {
       setLib(l);
       setConnections(conns);
       setKits(l.quotaBytes > 0 ? await assetsApi.listBrandKits() : []);
+      getMyLimits().then((lim) => setAdsAllowed(!lim.watermark)).catch(() => undefined);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load your brand library.');
     }
@@ -159,6 +165,7 @@ export function BrandPage() {
                   kit={k}
                   assets={lib.items}
                   connections={connections}
+                  adsAllowed={adsAllowed}
                   onClose={() => setEditing(null)}
                   onChanged={reload}
                   onError={setError}
@@ -178,6 +185,7 @@ export function BrandPage() {
                 kit={null}
                 assets={lib.items}
                 connections={connections}
+                adsAllowed={adsAllowed}
                 onClose={() => setEditing(null)}
                 onChanged={reload}
                 onError={setError}
@@ -210,6 +218,14 @@ function KitPreview({ kit, assets }: { kit: BrandKitInput; assets: LibraryAsset[
           style={{ height: `${Math.max(6, (kit.logoSize / 720) * 100)}%` }}
         />
       )}
+      {AD_PLACEMENTS.map((p) => {
+        const ad = (kit.ads ?? []).find((a) => a.placement === p);
+        return ad ? (
+          <div key={p} className={`kit-preview-ad kit-preview-ad--${p}`} style={p === 'full_screen' ? { opacity: 0.75 } : undefined} data-testid={`kit-preview-ad-${p}`}>
+            <img src={assetsApi.assetFileUrl(ad.assetId)} alt="" />
+          </div>
+        ) : null;
+      })}
       <div className={`kit-preview-lt kit-preview-lt--${kit.lowerThirdStyle}`}>
         <b>Your name</b>
         <span>Title or topic</span>
@@ -323,11 +339,11 @@ function UploadForm({ onDone, onError, onSaid }: { onDone: () => Promise<void>; 
           ) : (
             <>
               <strong>Drop an image here</strong> or click to choose one
-              <span className="field-hint"> (PNG, JPG, WebP or GIF (logos only), up to 4 MB)</span>
+              <span className="field-hint"> (PNG, JPG, WebP or GIF (logos and ads only), up to 4 MB)</span>
             </>
           )}
         </span>
-        <input id="assetFile" ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" required aria-label="Image (PNG, JPG, WebP or GIF (logos only), up to 4 MB)" onChange={(e) => pick(e.target.files?.[0])} />
+        <input id="assetFile" ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" required aria-label="Image (PNG, JPG, WebP or GIF (logos and ads only), up to 4 MB)" onChange={(e) => pick(e.target.files?.[0])} />
       </label>
       <div className="studio-toolbar">
         <button type="submit" className="icon-btn" disabled={busy || !file}>
@@ -383,6 +399,7 @@ interface KitEditorProps {
   kit: BrandKit | null;
   assets: LibraryAsset[];
   connections: PlatformConnection[];
+  adsAllowed: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onError: (m: string | null) => void;
@@ -390,9 +407,11 @@ interface KitEditorProps {
 }
 
 const sameSet = (a: Set<string>, b: string[]) => a.size === b.length && b.every((x) => a.has(x));
+const sameAds = (a: BrandKitAd[], b: BrandKitAd[]) => JSON.stringify([...a].sort(byPlacement)) === JSON.stringify([...b].sort(byPlacement));
+const byPlacement = (x: BrandKitAd, y: BrandKitAd) => x.placement.localeCompare(y.placement);
 
 /** One kit's form (also the "new kit" form when `kit` is null), with a live preview of the look being built. */
-function KitEditor({ kit, assets, connections, onClose, onChanged, onError, onSaid }: KitEditorProps) {
+function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, onError, onSaid }: KitEditorProps) {
   const initial: BrandKitInput = kit ? { ...kit } : EMPTY_KIT;
   const [form, setForm] = useState<BrandKitInput>(initial);
   const [isDefault, setIsDefault] = useState(kit?.isDefault ?? false);
@@ -403,7 +422,7 @@ function KitEditor({ kit, assets, connections, onClose, onChanged, onError, onSa
 
   const dirty =
     !kit ||
-    (Object.keys(EMPTY_KIT) as Array<keyof BrandKitInput>).some((k) => form[k] !== initial[k]) ||
+    (Object.keys(EMPTY_KIT) as Array<keyof BrandKitInput>).some((k) => (k === 'ads' ? !sameAds(form.ads ?? [], initial.ads ?? []) : form[k] !== initial[k])) ||
     isDefault !== kit.isDefault ||
     !sameSet(chosen, kit.connectionIds);
 
@@ -412,7 +431,17 @@ function KitEditor({ kit, assets, connections, onClose, onChanged, onError, onSa
     setBusy(true);
     onError(null);
     try {
-      const body: BrandKitInput = { ...form, name: form.name.trim() };
+      const body: BrandKitInput = {
+        name: form.name.trim(),
+        logoAssetId: form.logoAssetId,
+        logoPosition: form.logoPosition,
+        logoSize: form.logoSize,
+        wallpaperAssetId: form.wallpaperAssetId,
+        wallpaperDim: form.wallpaperDim,
+        lowerThirdStyle: form.lowerThirdStyle,
+        // Only send ads when the plan allows them or there is something to clear: Free never has any.
+        ...(adsAllowed || (form.ads ?? []).length === 0 ? { ads: form.ads ?? [] } : {}),
+      };
       const saved = kit
         ? await assetsApi.updateBrandKit(kit.id, { ...body, ...(isDefault && !kit.isDefault ? { isDefault: true } : {}) })
         : await assetsApi.createBrandKit({ ...body, ...(isDefault ? { isDefault: true } : {}) });
@@ -496,6 +525,30 @@ function KitEditor({ kit, assets, connections, onClose, onChanged, onError, onSa
         {(Object.keys(STYLE_LABEL) as LowerThirdStyleId[]).map((st) => <option key={st} value={st}>{STYLE_LABEL[st]}</option>)}
       </select>
 
+      <fieldset className="kit-ads" data-testid="kit-ads">
+        <legend>Ads</legend>
+        <p className="field-hint">
+          Up to three ads on the broadcast picture, one in each place. Pictures or GIFs of type <strong>Ad</strong> from your library. Studio hosts can still switch them off or
+          replace them per stream.
+        </p>
+        {!adsAllowed ? (
+          <p className="notice" data-testid="kit-ads-free-notice">
+            <Lock size={14} /> Your own ads are on the plans without the “Powered by StreamBird” mark. Free streams carry a StreamBird ad instead.{' '}
+            <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
+          </p>
+        ) : (
+          AD_PLACEMENTS.map((p) => (
+            <AdSlotEditor
+              key={p}
+              placement={p}
+              ad={(form.ads ?? []).find((a) => a.placement === p) ?? null}
+              options={assets.filter((a) => a.kind === 'ad')}
+              onChange={(ad) => set('ads', [...(form.ads ?? []).filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
+            />
+          ))
+        )}
+      </fieldset>
+
       <fieldset className="brand-channels">
         <legend>Channels and pages using this kit</legend>
         {connections.length === 0 ? (
@@ -525,5 +578,50 @@ function KitEditor({ kit, assets, connections, onClose, onChanged, onError, onSa
         )}
       </div>
     </form>
+  );
+}
+
+/** One of a kit's three ad slots: the library file, on/off and the schedule (stored in seconds). */
+function AdSlotEditor({ placement, ad, options, onChange }: { placement: AdPlacement; ad: BrandKitAd | null; options: LibraryAsset[]; onChange: (ad: BrandKitAd | null) => void }) {
+  const label = AD_PLACEMENT_LABEL[placement];
+  const timed = ad?.mode === 'interval';
+  const patch = (next: Partial<BrandKitAd>) => ad && onChange({ ...ad, ...next });
+  return (
+    <div className="kit-ad-slot" role="group" aria-label={`${label} ad`} data-testid={`kit-ad-${placement}`}>
+      <h4>{label}</h4>
+      <select
+        value={ad?.assetId ?? ''}
+        aria-label={`${label} ad file`}
+        onChange={(e) =>
+          onChange(e.target.value ? { placement, assetId: e.target.value, enabled: ad?.enabled ?? true, mode: ad?.mode ?? 'continuous', showSec: ad?.showSec ?? null, everySec: ad?.everySec ?? null } : null)
+        }
+      >
+        <option value="">No ad</option>
+        {options.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
+      {options.length === 0 && <p className="field-hint">Upload a file of type “Ad” in the library above to pick it here.</p>}
+      {ad && (
+        <>
+          <label className="checkbox-row">
+            <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => patch({ enabled: e.target.checked })} /> On
+          </label>
+          <div className="segmented" role="group" aria-label={`${label} ad: when`}>
+            <button type="button" className={!timed ? 'active' : ''} aria-pressed={!timed} onClick={() => patch({ mode: 'continuous', showSec: null, everySec: null })}>
+              Always on
+            </button>
+            <button type="button" className={timed ? 'active' : ''} aria-pressed={timed} onClick={() => patch({ mode: 'interval', showSec: ad.showSec ?? 15, everySec: ad.everySec ?? 180 })}>
+              Now and then
+            </button>
+          </div>
+          {ad.mode === 'interval' && ad.showSec && ad.everySec && (
+            <AdIntervalFields label={label} schedule={{ mode: 'interval', showSec: ad.showSec, everySec: ad.everySec }} onChange={(sch) => sch.mode === 'interval' && patch({ showSec: sch.showSec, everySec: sch.everySec })} />
+          )}
+        </>
+      )}
+    </div>
   );
 }

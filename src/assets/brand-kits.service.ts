@@ -1,13 +1,28 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { BrandKit } from './entities/brand-kit.entity';
+import { BrandKitAd } from './entities/brand-kit-ad.entity';
+import type { AdMode, AdPlacement } from './entities/brand-kit-ad.entity';
 import { AssetsService } from './assets.service';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AccountsService } from '../accounts/accounts.service';
-import { CreateBrandKitDto, UpdateBrandKitDto } from './dto/brand-kit.dto';
+import { BrandKitAdDto, CreateBrandKitDto, UpdateBrandKitDto } from './dto/brand-kit.dto';
 
-export type BrandKitView = BrandKit & { connectionIds: string[] };
+/** One ad as the API returns it. Continuous ads carry null schedule numbers. */
+export interface BrandKitAdView {
+  placement: AdPlacement;
+  assetId: string;
+  enabled: boolean;
+  mode: AdMode;
+  showSec: number | null;
+  everySec: number | null;
+}
+
+export type BrandKitView = BrandKit & { connectionIds: string[]; ads: BrandKitAdView[] };
+
+const PLACEMENT_ORDER: AdPlacement[] = ['lower_third', 'side_third', 'full_screen'];
+const toAdView = (a: BrandKitAd): BrandKitAdView => ({ placement: a.placement, assetId: a.assetId, enabled: a.enabled, mode: a.mode, showSec: a.showSec, everySec: a.everySec });
 
 /**
  * Brand kits: reusable looks made of library assets. Assets belong to the account, so kits (and therefore
@@ -17,6 +32,7 @@ export type BrandKitView = BrandKit & { connectionIds: string[] };
 export class BrandKitsService {
   constructor(
     @InjectRepository(BrandKit) private readonly kits: Repository<BrandKit>,
+    @InjectRepository(BrandKitAd) private readonly kitAds: Repository<BrandKitAd>,
     @InjectRepository(PlatformConnection) private readonly connections: Repository<PlatformConnection>,
     private readonly assets: AssetsService,
     private readonly accounts: AccountsService,
@@ -36,7 +52,51 @@ export class BrandKitsService {
       this.kits.find({ where: { accountId }, order: { createdAt: 'ASC' } }),
       this.connections.find({ where: { accountId }, select: ['id', 'brandKitId'] }),
     ]);
-    return kits.map((k) => ({ ...k, connectionIds: conns.filter((c) => c.brandKitId === k.id).map((c) => c.id) }));
+    const ads = kits.length > 0 ? await this.kitAds.find({ where: { brandKitId: In(kits.map((k) => k.id)) } }) : [];
+    return kits.map((k) => ({
+      ...k,
+      connectionIds: conns.filter((c) => c.brandKitId === k.id).map((c) => c.id),
+      ads: this.sortedAds(ads.filter((a) => a.brandKitId === k.id)),
+    }));
+  }
+
+  private sortedAds(rows: BrandKitAd[]): BrandKitAdView[] {
+    return [...rows].sort((a, b) => PLACEMENT_ORDER.indexOf(a.placement) - PLACEMENT_ORDER.indexOf(b.placement)).map(toAdView);
+  }
+
+  /**
+   * Custom ads need a plan without the "Powered by StreamBird" mark (any paid plan, or a day pass): the Free plan
+   * shows a StreamBird ad of its own instead. Clearing ads is always allowed. Returns the cleaned list to store.
+   */
+  private async checkAds(accountId: string, ads: BrandKitAdDto[]): Promise<BrandKitAdView[]> {
+    if (ads.length === 0) return [];
+    const limits = await this.accounts.getLimits(accountId);
+    if (limits.watermark) {
+      throw new ForbiddenException('Your own ads are on the paid plans. Free streams carry a StreamBird ad instead -- upgrade to run yours.');
+    }
+    if (new Set(ads.map((a) => a.placement)).size !== ads.length) {
+      throw new BadRequestException('Each kit can have one ad per place (lower third, left third, full screen).');
+    }
+    const out: BrandKitAdView[] = [];
+    for (const ad of ads) {
+      const mode = ad.mode ?? 'continuous';
+      if (mode === 'interval' && (ad.showSec === undefined || ad.everySec === undefined)) {
+        throw new BadRequestException('A timed ad needs both how long it is shown and how long it stays hidden between showings.');
+      }
+      out.push({
+        placement: ad.placement,
+        assetId: ad.assetId,
+        enabled: ad.enabled ?? true,
+        mode,
+        showSec: mode === 'interval' ? ad.showSec! : null,
+        everySec: mode === 'interval' ? ad.everySec! : null,
+      });
+    }
+    const owned = await this.assets.findOwnedOfKind(accountId, out.map((a) => a.assetId), 'ad');
+    if (out.some((a) => !owned.has(a.assetId))) {
+      throw new BadRequestException('Each ad must be a file of type "Ad" from your library.');
+    }
+    return out;
   }
 
   private async checkAssets(accountId: string, dto: { logoAssetId?: string | null; wallpaperAssetId?: string | null }): Promise<void> {
@@ -48,11 +108,12 @@ export class BrandKitsService {
   async create(accountId: string, dto: CreateBrandKitDto): Promise<BrandKitView> {
     await this.assertAllowed(accountId);
     await this.checkAssets(accountId, dto);
+    const ads = await this.checkAds(accountId, dto.ads ?? []);
     const saved = await this.dataSource.transaction(async (m) => {
       const repo = m.getRepository(BrandKit);
       const makeDefault = dto.isDefault === true || (await repo.count({ where: { accountId } })) === 0; // the first kit is the default
       if (makeDefault) await repo.update({ accountId, isDefault: true }, { isDefault: false });
-      return repo.save(
+      const kit = await repo.save(
         repo.create({
           accountId,
           name: dto.name.trim(),
@@ -65,8 +126,20 @@ export class BrandKitsService {
           isDefault: makeDefault,
         }),
       );
+      await this.replaceAds(m, kit.id, ads);
+      return kit;
     });
-    return { ...saved, connectionIds: [] };
+    return { ...saved, connectionIds: [], ads: await this.adsOf(saved.id) };
+  }
+
+  private async replaceAds(m: EntityManager, kitId: string, ads: BrandKitAdView[]): Promise<void> {
+    const repo = m.getRepository(BrandKitAd);
+    await repo.delete({ brandKitId: kitId });
+    if (ads.length > 0) await repo.insert(ads.map((a) => ({ brandKitId: kitId, ...a })));
+  }
+
+  private async adsOf(kitId: string): Promise<BrandKitAdView[]> {
+    return this.sortedAds(await this.kitAds.find({ where: { brandKitId: kitId } }));
   }
 
   private async findOwned(accountId: string, id: string): Promise<BrandKit> {
@@ -79,6 +152,7 @@ export class BrandKitsService {
     await this.assertAllowed(accountId);
     const kit = await this.findOwned(accountId, id);
     await this.checkAssets(accountId, dto);
+    const ads = dto.ads === undefined ? undefined : await this.checkAds(accountId, dto.ads);
     if (dto.name !== undefined) kit.name = dto.name.trim();
     if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
     if (dto.logoPosition !== undefined) kit.logoPosition = dto.logoPosition;
@@ -93,10 +167,12 @@ export class BrandKitsService {
         kit.isDefault = true;
       }
       // Turning the default off is done by making another kit the default, so an account never ends up with none by accident.
-      return repo.save(kit);
+      const out = await repo.save(kit);
+      if (ads !== undefined) await this.replaceAds(m, id, ads);
+      return out;
     });
     const connectionIds = (await this.connections.find({ where: { accountId, brandKitId: id }, select: ['id'] })).map((c) => c.id);
-    return { ...saved, connectionIds };
+    return { ...saved, connectionIds, ads: await this.adsOf(id) };
   }
 
   /** Deleting a kit frees its files for deletion and sends its connections back to the account default. */
