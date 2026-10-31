@@ -307,6 +307,40 @@ test.describe('ads on the canvas (a plan without the Powered-by mark)', () => {
     await page.keyboard.press('Space');
     await expect(card(page, 'lower_third').getByLabel('Lower third ad on')).not.toBeChecked();
   });
+
+  test('a computer picture with huge pixel dimensions is refused (same 8192 px limit as the library)', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(api);
+    await openStudio(page, id);
+    await studioTab(page, 'Ads');
+    await page.locator('#adFile-lower_third').setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: solidPng(255, 0, 0, 9000, 1) });
+    await expect(page.locator('.studio-status-toast')).toContainText('too big');
+    await expect(card(page, 'lower_third').locator('.ad-file-name')).toHaveText('No picture chosen');
+  });
+
+  test('ads left in this browser with a missing or broken schedule fall back to always on and never break the canvas', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const id = await newStream(api);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const red = `data:image/png;base64,${solidPng(255, 0, 0, 128, 24).toString('base64')}`;
+    await page.addInitScript(
+      ([sid, dataUrl]) => {
+        localStorage.setItem(
+          `streambird:studio:${sid}:v1`,
+          JSON.stringify({ ads: { lower_third: { source: 'computer', name: 'a.png', enabled: true }, side_third: { source: 'computer', name: 'b.png', enabled: true, schedule: { mode: 'interval', showSec: 'x' } }, full_screen: 'garbage' } }),
+        );
+        localStorage.setItem(`streambird:studio:${sid}:adfiles:v1`, JSON.stringify({ lower_third: dataUrl, side_third: dataUrl }));
+      },
+      [id, red],
+    );
+    await openStudio(page, id);
+    const { width: W, height: H } = await canvasSize(page);
+    await expect.poll(async () => isRed(await canvasPixel(page, ...centre('lower_third', W, H)))).toBe(true); // always on
+    await page.waitForTimeout(500);
+    expect(errors).toEqual([]);
+  });
+
 });
 
 test.describe('Free plan', () => {
@@ -324,6 +358,7 @@ test.describe('Free plan', () => {
       },
       [id, `data:image/png;base64,${solidPng(255, 0, 0, 128, 24).toString('base64')}`],
     );
+    await page.clock.install(); // a real (fake-able) clock: the test hook must not be able to retime the Free banner
     await openStudio(page, id);
     const { width: W, height: H } = await canvasSize(page);
     expect(W).toBe(FREE_W);
@@ -331,14 +366,14 @@ test.describe('Free plan', () => {
     const banner = (): Promise<Rgb> => canvasPixel(page, W * 0.45, H - 30);
     const bannerUp = (p: Rgb) => p[2] > 150 && p[0] > 70;
 
-    await pinAdClock(page, 5);
+    await pinAdClock(page, 187); // armed hook, but ignored on Free
     await page.waitForTimeout(1500);
-    expect(bannerUp(await banner())).toBe(false); // hidden first
+    expect(bannerUp(await banner())).toBe(false); // hidden first (about 2 s in)
     expect(isRed(await canvasPixel(page, W * 0.45, H - 60))).toBe(false); // the custom red ad never appears
-    await pinAdClock(page, 179);
+    await page.clock.fastForward(176_000); // about 178 s in
     await page.waitForTimeout(500);
     expect(bannerUp(await banner())).toBe(false);
-    await pinAdClock(page, 187);
+    await page.clock.fastForward(11_000); // about 189 s in: 180 s passed, the banner is up for 15 s
     await expect.poll(async () => bannerUp(await banner())).toBe(true); // 180 s in: up for 15 s
     expect(isRed(await canvasPixel(page, W * 0.45, H - 60))).toBe(false);
 
@@ -353,9 +388,9 @@ test.describe('Free plan', () => {
     }, [Math.round(W - 20 * u - 190 * u), Math.round(H - 20 * u - 34 * u), Math.round(170 * u), Math.round(28 * u)]);
     expect(markWhite).toBeGreaterThan(30);
 
-    await pinAdClock(page, 195 + 100); // the next cycle: hidden again
+    await page.clock.fastForward(20_000); // about 210 s: hidden again
     await expect.poll(async () => bannerUp(await banner())).toBe(false);
-    await pinAdClock(page, 195 + 185); // and up again
+    await page.clock.fastForward(170_000); // about 380 s: the second showing (375-390)
     await expect.poll(async () => bannerUp(await banner())).toBe(true);
 
     // The Ads tab explains it and points at the plans.
@@ -470,5 +505,77 @@ test.describe('brand kit ads', () => {
     await expect(lower.getByLabel('Lower third ad on')).not.toBeChecked();
     await page.waitForTimeout(800);
     expect(isRed(await canvasPixel(page, W * 0.75, centre('lower_third', W, H)[1]))).toBe(false);
+  });
+  test('a kit whose logo file is missing still applies its ads, and a missing ad file is reported by place; Manual takes kit ads off the canvas but keeps computer ones', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const up = async (name: string, kind: string, buffer: Buffer) =>
+      (await (await api.post(`${APP}/api/assets`, { multipart: { kind, name, file: { name: `${name}.png`, mimeType: 'image/png', buffer } }, headers: { Origin: APP } })).json()).id as string;
+    const logo = await up('logo', 'logo', solidPng(0, 0, 255, 32));
+    const lower = await up('lower', 'ad', png('lower_third'));
+    const side = await up('side', 'ad', png('side_third'));
+    const full = await up('full', 'ad', png('full_screen'));
+    const kit = await (
+      await api.post(`${APP}/api/brand-kits`, {
+        data: { name: 'Mixed', logoAssetId: logo, ads: [{ placement: 'lower_third', assetId: lower }, { placement: 'side_third', assetId: side }, { placement: 'full_screen', assetId: full, enabled: false }] },
+        headers: apiHeaders,
+      })
+    ).json();
+    expect(kit.ads).toHaveLength(3);
+    const id = await newStream(api);
+
+    // The logo file 404s and the side-third file 404s: everything else still arrives, and the failures are named.
+    await page.route(`**/api/assets/${logo}/file`, (r) => r.fulfill({ status: 404, body: 'gone' }));
+    await page.route(`**/api/assets/${side}/file`, (r) => r.fulfill({ status: 404, body: 'gone' }));
+    await openStudio(page, id);
+    const { width: W, height: H } = await canvasSize(page);
+    await studioTab(page, 'Ads');
+    await expect(page.locator('.studio-status-toast')).toContainText('Could not load the logo, Left third ad of brand kit "Mixed"');
+    await expect(card(page, 'lower_third').locator('.ad-file-name')).toBeVisible();
+    await expect(card(page, 'lower_third').locator('.ad-file-name')).toContainText('Mixed lower_third');
+    await expect(card(page, 'full_screen').locator('.ad-file-name')).toContainText('Mixed full_screen');
+    await expect(card(page, 'side_third').locator('.ad-file-name')).toHaveText('No picture chosen');
+    await expect.poll(async () => isRed(await canvasPixel(page, ...centre('lower_third', W, H)))).toBe(true);
+
+    // A picture from this computer for the left third, then "Manual (no kit)": the kit's lower third leaves, the computer one stays.
+    await page.unroute(`**/api/assets/${side}/file`);
+    await addAd(page, 'side_third');
+    await expect.poll(async () => isGreen(await canvasPixel(page, ...centre('side_third', W, H)))).toBe(true);
+    await studioTab(page, 'Look');
+    await page.locator('#brandKitSelect').selectOption('');
+    await studioTab(page, 'Ads');
+    await expect(card(page, 'lower_third').locator('.ad-file-name')).toHaveText('No picture chosen');
+    await expect.poll(async () => isRed(await canvasPixel(page, W * 0.75, centre('lower_third', W, H)[1]))).toBe(false);
+    expect(isGreen(await canvasPixel(page, ...centre('side_third', W, H)))).toBe(true);
+
+    // A reload keeps the host's per-stream choice (the override wins over later kit edits); picking the kit again applies its current ads.
+    await api.patch(`${APP}/api/brand-kits/${kit.id}`, { data: { ads: [] }, headers: apiHeaders });
+    await page.unroute(`**/api/assets/${logo}/file`);
+    await page.reload();
+    await page.locator('canvas.studio-canvas').waitFor();
+    await expect.poll(async () => isGreen(await canvasPixel(page, ...centre('side_third', W, H)))).toBe(true);
+    await studioTab(page, 'Look');
+    await page.locator('#brandKitSelect').selectOption(kit.id);
+    await expect(page.locator('.studio-status-toast')).toContainText('Applied brand kit "Mixed"');
+    await studioTab(page, 'Ads');
+    await expect(card(page, 'lower_third').locator('.ad-file-name')).toHaveText('No picture chosen'); // the kit has none now
+  });
+
+  test('after a downgrade the kit editor still shows the saved ads and lets the user remove them (which frees the file)', async ({ page, context, browser }) => {
+    const { api } = await signIn(context);
+    const assetId = (await (await api.post(`${APP}/api/assets`, { multipart: { kind: 'ad', name: 'old-ad', file: { name: 'o.png', mimeType: 'image/png', buffer: solidPng(255, 0, 0, 128, 24) } }, headers: { Origin: APP } })).json()).id as string;
+    const kit = await (await api.post(`${APP}/api/brand-kits`, { data: { name: 'Old', ads: [{ placement: 'lower_third', assetId }] }, headers: apiHeaders })).json();
+    await patchFreePlan(browser, { watermark: true }); // the plan now carries the mark
+    await page.goto('/brand');
+    await page.getByRole('button', { name: 'Edit Old' }).click();
+    const form = page.getByRole('form', { name: 'Brand kit Old' });
+    await expect(form.getByTestId('kit-ads-free-notice')).toBeVisible();
+    await expect(form.getByTestId('kit-ads-readonly')).toContainText('Lower third: old-ad');
+    await expect(form.getByRole('group', { name: 'Lower third ad' })).toHaveCount(0); // no editable slots
+    await form.getByRole('button', { name: 'Remove ads' }).click();
+    await form.getByRole('button', { name: 'Save kit' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved "Old"' })).toBeVisible();
+    expect((await (await api.get(`${APP}/api/brand-kits`)).json())[0].ads).toEqual([]);
+    expect((await api.delete(`${APP}/api/assets/${assetId}`, { headers: { Origin: APP } })).status()).toBe(204);
+    void kit;
   });
 });

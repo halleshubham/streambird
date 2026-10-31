@@ -136,14 +136,22 @@ export class AssetsService {
     if (using.length > 0) {
       throw new ConflictException(`This file is used by the brand kit${using.length > 1 ? 's' : ''} ${using.map((k) => `"${k.name}"`).join(', ')}. Change or delete ${using.length > 1 ? 'them' : 'it'} first.`);
     }
-    await this.assets.delete({ id, accountId });
+    try {
+      await this.assets.delete({ id, accountId });
+    } catch (err) {
+      // A kit started using the file between the check above and the delete: the RESTRICT foreign key says no.
+      if ((err as { code?: string }).code === '23503' || (err as { driverError?: { code?: string } }).driverError?.code === '23503') {
+        throw new ConflictException('This file was just added to a brand kit. Change the kit first.');
+      }
+      throw err;
+    }
     await this.storage.delete(asset.storageKey).catch(() => undefined); // the row is gone; a stray object is harmless
   }
 
   /** The ids (of `ids`) that belong to the account and have this kind. */
-  async findOwnedOfKind(accountId: string, ids: string[], kind: AssetKind): Promise<Set<string>> {
+  async findOwnedOfKind(accountId: string, ids: string[], kind: AssetKind | AssetKind[]): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
-    const rows = await this.assets.find({ where: { accountId, kind, id: In(ids) }, select: ['id'] });
+    const rows = await this.assets.find({ where: { accountId, kind: Array.isArray(kind) ? In(kind) : kind, id: In(ids) }, select: ['id'] });
     return new Set(rows.map((r) => r.id));
   }
 

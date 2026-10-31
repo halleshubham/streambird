@@ -16,6 +16,7 @@ import {
   type AdSchedule,
   type AdSlot,
 } from '../../web-app/src/studio/ads';
+import { AdLayer } from '../../web-app/src/studio/adLayer';
 import { BRANDING_RANGES, newsBarHeight } from '../../web-app/src/studio/compose';
 
 // Pure checks of the ad geometry and schedule (no browser). The same numbers are in the studio.md spec for the Android port.
@@ -217,5 +218,43 @@ test.describe('ad schedule helpers', () => {
     expect(scheduleError({ mode: 'interval', showSec: 10, everySec: 0 })).toMatch(/between showings/);
     expect(scheduleError({ mode: 'interval', showSec: 10, everySec: 86401 })).toMatch(/between showings/);
     expect(scheduleError({ mode: 'interval', showSec: 1.5, everySec: 10 })).toMatch(/Show time/);
+  });
+});
+
+test.describe('AdLayer clock', () => {
+  const g = globalThis as unknown as { window?: unknown; localStorage?: unknown };
+  const withWindow = (hook: number | undefined, armed: boolean, fn: () => void) => {
+    const store = new Map<string, string>(armed ? [['streambird:test:adclock', 'on']] : []);
+    g.window = { __SB_TEST_AD_ELAPSED__: hook };
+    g.localStorage = { getItem: (k: string) => store.get(k) ?? null };
+    try {
+      fn();
+    } finally {
+      delete g.window;
+      delete g.localStorage;
+    }
+  };
+
+  test('counts seconds from the start, and a Go live restarts it at 0', () => {
+    const layer = new AdLayer();
+    layer.restartClock(1000);
+    expect(layer.elapsedSec(4500)).toBe(3.5);
+    layer.restartClock(10_000); // go live
+    expect(layer.elapsedSec(10_000)).toBe(0);
+    expect(layer.elapsedSec(12_000)).toBe(2);
+  });
+
+  test('the test hook is ignored unless armed, and never applies on the Free plan', () => {
+    const layer = new AdLayer();
+    layer.restartClock(0);
+    withWindow(99, false, () => expect(layer.elapsedSec(2000)).toBe(2)); // not armed: ignored
+    withWindow(99, true, () => expect(layer.elapsedSec(2000)).toBe(99)); // armed (a test)
+    layer.setFreePlan(true);
+    withWindow(99, true, () => expect(layer.elapsedSec(2000)).toBe(2)); // Free: the banner cannot be retimed
+  });
+
+  test('a broken saved schedule never throws', () => {
+    expect(adVisibility(5, undefined as unknown as AdSchedule)).toEqual({ visible: true, alpha: 1 });
+    expect(adVisibility(5, { mode: 'interval', showSec: 'x', everySec: 3 } as unknown as AdSchedule).visible).toBe(false);
   });
 });

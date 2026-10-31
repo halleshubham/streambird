@@ -94,7 +94,7 @@ const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 /** The schedule's opacity at `elapsedSec` without allocating (the draw loop calls this every frame). -1 = outside the shown window. */
 function scheduleAlpha(elapsedSec: number, schedule: AdSchedule): number {
-  if (schedule.mode === 'continuous') return 1;
+  if (!schedule || schedule.mode !== 'interval') return 1; // continuous (or a broken saved value: never throw in the draw loop)
   const { showSec, everySec } = schedule;
   if (!(showSec > 0) || !(everySec > 0)) return -1;
   const cycle = everySec + showSec;

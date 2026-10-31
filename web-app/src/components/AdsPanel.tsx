@@ -124,6 +124,8 @@ function AdCard({ placement, info, kitAd, actions }: { placement: AdPlacement; i
         </div>
       </div>
 
+      {info.still && <p className="field-hint" data-testid={`ad-still-${placement}`}>This GIF could not be played as an animation here, so its first frame is shown as a still picture.</p>}
+
       <div className="segmented" role="group" aria-label={`${label} ad: file source`}>
         <button
           type="button"

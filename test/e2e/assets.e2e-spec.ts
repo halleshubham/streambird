@@ -276,5 +276,86 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       const edges = await client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 3600, everySec: 1 }] });
       expect(edges.status).toBe(200);
     });
+
+    it('ads: null is "unchanged" (never a 500), another account\'s kit is 404, a foreign or non-ad file is 400, logo/wallpaper cannot be an ad file', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
+      const kit = (await client.post('/brand-kits', { name: 'Nulls', ads: [{ placement: 'lower_third', assetId: ad.id }] })).body;
+      expect((await client.post('/brand-kits', { name: 'Null ads', ads: null })).status).toBe(201);
+      const same = await client.patch(`/brand-kits/${kit.id}`, { ads: null });
+      expect(same.status).toBe(200);
+      expect(same.body.ads).toHaveLength(1); // null = unchanged
+      // The kit editor sends every field; nothing else may change.
+      const logo = (await upload(client, fakePng(100, 100), 'logo', 'L')).body;
+      const wall = (await upload(client, fakePng(1920, 1080), 'wallpaper', 'W')).body;
+      const full = await client.patch(`/brand-kits/${kit.id}`, { name: 'Nulls', logoAssetId: logo.id, logoPosition: 'right', logoSize: 120, wallpaperAssetId: wall.id, wallpaperDim: 30, lowerThirdStyle: 'glass', ads: kit.ads });
+      expect(full.status).toBe(200);
+      expect(full.body).toMatchObject({ logoAssetId: logo.id, wallpaperAssetId: wall.id, wallpaperDim: 30, lowerThirdStyle: 'glass', logoPosition: 'right', logoSize: 120, connectionIds: [] });
+      expect(full.body.ads).toHaveLength(1);
+      // An ad file is not a logo or a wallpaper.
+      expect((await client.patch(`/brand-kits/${kit.id}`, { logoAssetId: ad.id })).status).toBe(400);
+      expect((await client.post('/brand-kits', { name: 'Bad', wallpaperAssetId: ad.id })).status).toBe(400);
+
+      const other = await h.signIn();
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      expect((await other.client.patch(`/brand-kits/${kit.id}`, { ads: [] })).status).toBe(404);
+      expect((await other.client.patch(`/brand-kits/${kit.id}`, { name: 'Mine now' })).status).toBe(404);
+      const foreignAd = (await upload(other.client, fakePng(100, 100), 'ad')).body;
+      expect((await client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'side_third', assetId: foreignAd.id }] })).status).toBe(400);
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === kit.id).ads).toHaveLength(1);
+    });
+
+    it('a plan downgrade: saved kit ads stay readable, can be cleared (then the file is deletable), but not replaced by new ones', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
+      const kit = (await client.post('/brand-kits', { name: 'Paid look', ads: [{ placement: 'lower_third', assetId: ad.id }] })).body;
+      await admin.patch('/superadmin/plans/free', { watermark: true }); // the account is now on a plan with the mark
+      const list = await client.get('/brand-kits');
+      expect(list.body.find((k: any) => k.id === kit.id).ads).toHaveLength(1); // still readable
+      expect((await client.patch(`/brand-kits/${kit.id}`, { name: 'Renamed' })).status).toBe(200); // other edits are fine
+      expect((await client.patch(`/brand-kits/${kit.id}`, { name: 'Renamed' })).body.ads).toHaveLength(1);
+      expect((await client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'full_screen', assetId: ad.id }] })).status).toBe(403);
+      expect((await client.del(`/assets/${ad.id}`)).status).toBe(409); // locked while the kit uses it
+      expect((await client.patch(`/brand-kits/${kit.id}`, { ads: [] })).status).toBe(200); // clearing always works
+      expect((await client.del(`/assets/${ad.id}`)).status).toBe(204);
+    });
+
+    it('a day pass on a Free account allows kit ads, and they are refused again once it has expired', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: true });
+      const { client, accountId } = await h.signIn();
+      const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
+      const body = { name: 'Pass look', ads: [{ placement: 'lower_third', assetId: ad.id }] };
+      expect((await client.post('/brand-kits', body)).status).toBe(403);
+      await h.db.query(`UPDATE accounts SET day_pass_plan_key = 'day_pass', day_pass_expires_at = now() + interval '1 day' WHERE id = $1`, [accountId]);
+      const made = await client.post('/brand-kits', body);
+      expect(made.status).toBe(201);
+      await h.db.query(`UPDATE accounts SET day_pass_expires_at = now() - interval '1 minute' WHERE id = $1`, [accountId]);
+      expect((await client.patch(`/brand-kits/${made.body.id}`, { ads: [{ placement: 'side_third', assetId: ad.id }] })).status).toBe(403);
+    });
+
+    it('races: two saves of the same kit and an asset deleted at the same time never give a 500', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const [a1, a2] = [(await upload(client, fakePng(1280, 240), 'ad', 'One')).body, (await upload(client, fakePng(1280, 240), 'ad', 'Two')).body];
+      const kit = (await client.post('/brand-kits', { name: 'Race' })).body;
+      const both = await Promise.all([
+        client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'lower_third', assetId: a1.id }] }),
+        client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'lower_third', assetId: a2.id }] }),
+      ]);
+      for (const r of both) expect(r.status).toBe(200);
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === kit.id).ads).toHaveLength(1); // one winner, never two rows
+
+      const victim = (await upload(client, fakePng(1280, 240), 'ad', 'Victim')).body;
+      const [save, del] = await Promise.all([
+        client.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'side_third', assetId: victim.id }] }),
+        client.del(`/assets/${victim.id}`),
+      ]);
+      expect(save.status).toBeLessThan(500);
+      expect(del.status).toBeLessThan(500);
+      expect([200, 400]).toContain(save.status);
+      expect([204, 409]).toContain(del.status);
+    });
   });
 });

@@ -10,7 +10,7 @@ import { BirdBusy } from '../components/BirdBusy';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { AdIntervalFields } from '../components/AdsPanel';
 import { getMyLimits } from '../api/plans';
-import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, type AdPlacement } from '../studio/ads';
+import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, describeSchedule, type AdPlacement } from '../studio/ads';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
 
 const MB = 1024 * 1024;
@@ -38,7 +38,7 @@ export function BrandPage() {
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** Custom ads need a plan without the "Powered by StreamBird" mark; the server enforces it too. */
-  const [adsAllowed, setAdsAllowed] = useState(true);
+  const [adsAllowed, setAdsAllowed] = useState<boolean | null>(null);
 
   /** A short confirmation after an action (saved, uploaded...), so the person is never left wondering. */
   function say(message: string) {
@@ -52,7 +52,7 @@ export function BrandPage() {
       setLib(l);
       setConnections(conns);
       setKits(l.quotaBytes > 0 ? await assetsApi.listBrandKits() : []);
-      getMyLimits().then((lim) => setAdsAllowed(!lim.watermark)).catch(() => undefined);
+      getMyLimits().then((lim) => setAdsAllowed(!lim.watermark)).catch(() => setAdsAllowed(true)); // unknown: let the server decide
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load your brand library.');
     }
@@ -399,7 +399,8 @@ interface KitEditorProps {
   kit: BrandKit | null;
   assets: LibraryAsset[];
   connections: PlatformConnection[];
-  adsAllowed: boolean;
+  /** null while the plan is still loading; false = the plan has the Powered-by mark (kit ads can be seen and removed, not added). */
+  adsAllowed: boolean | null;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onError: (m: string | null) => void;
@@ -439,8 +440,8 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         wallpaperAssetId: form.wallpaperAssetId,
         wallpaperDim: form.wallpaperDim,
         lowerThirdStyle: form.lowerThirdStyle,
-        // Only send ads when the plan allows them or there is something to clear: Free never has any.
-        ...(adsAllowed || (form.ads ?? []).length === 0 ? { ads: form.ads ?? [] } : {}),
+        // Only send ads when the plan allows them, or to clear them (always allowed): ads saved on a plan that is now Free stay until removed.
+        ...(adsAllowed === true || (form.ads ?? []).length === 0 ? { ads: form.ads ?? [] } : {}),
       };
       const saved = kit
         ? await assetsApi.updateBrandKit(kit.id, { ...body, ...(isDefault && !kit.isDefault ? { isDefault: true } : {}) })
@@ -531,11 +532,30 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
           Up to three ads on the broadcast picture, one in each place. Pictures or GIFs of type <strong>Ad</strong> from your library. Studio hosts can still switch them off or
           replace them per stream.
         </p>
-        {!adsAllowed ? (
-          <p className="notice" data-testid="kit-ads-free-notice">
-            <Lock size={14} /> Your own ads are on the plans without the “Powered by StreamBird” mark. Free streams carry a StreamBird ad instead.{' '}
-            <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
-          </p>
+        {adsAllowed === null ? (
+          <p className="field-hint">Checking your plan…</p>
+        ) : adsAllowed === false ? (
+          <>
+            <p className="notice" data-testid="kit-ads-free-notice">
+              <Lock size={14} /> Your own ads are on the plans without the “Powered by StreamBird” mark. Free streams carry a StreamBird ad instead.{' '}
+              <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
+            </p>
+            {(form.ads ?? []).length > 0 && (
+              <div data-testid="kit-ads-readonly">
+                <p className="field-hint">This kit still has ads from when your plan allowed them. They are not used on this plan. You can remove them (this also frees their files for deletion).</p>
+                <ul>
+                  {(form.ads ?? []).map((ad) => (
+                    <li key={ad.placement}>
+                      {AD_PLACEMENT_LABEL[ad.placement]}: {assets.find((a) => a.id === ad.assetId)?.name ?? 'a file'} ({describeSchedule(ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' })})
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" onClick={() => set('ads', [])}>
+                  <Trash2 size={14} /> Remove ads
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           AD_PLACEMENTS.map((p) => (
             <AdSlotEditor

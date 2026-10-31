@@ -55,7 +55,7 @@ export class CreateBrandKitDto {
 
   /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
   @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
-  ads?: BrandKitAdDto[];
+  ads?: BrandKitAdDto[] | null;
 }
 
 export class UpdateBrandKitDto {
@@ -85,7 +85,7 @@ export class UpdateBrandKitDto {
 
   /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
   @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
-  ads?: BrandKitAdDto[];
+  ads?: BrandKitAdDto[] | null;
 }
 
 export class AssignBrandKitDto {

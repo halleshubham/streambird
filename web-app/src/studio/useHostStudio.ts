@@ -9,8 +9,8 @@ import {
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy } from './poweredBy';
 import { decodeAnimatedLogo, type AnimatedLogo } from './animatedLogo';
-import { AdLayer, type AdInfo, type AdSource } from './adLayer';
-import { AD_PLACEMENTS, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
+import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
+import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
 import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
@@ -287,7 +287,7 @@ function saveAdFile(streamId: string, placement: AdPlacement, dataUrl: string | 
 /** Ads picked on this computer: pictures only, and not absurdly large (the canvas holds them in memory). */
 const MAX_AD_FILE_BYTES = 12 * 1024 * 1024;
 const AD_FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null };
+const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false };
 const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
 // The host's green-screen background picture lives in its own key (a full quota must not drop the rest).
 const chromaBgKey = (streamId: string) => `streambird:studio:${streamId}:chromabg:v1`;
@@ -1589,6 +1589,7 @@ export function useHostStudio(streamId: string | undefined) {
         canLowerThirdRef.current = !!l.canLowerThird;
         showMarkRef.current = !!l.watermark;
         setAdsPlan(l.watermark ? 'free' : 'custom');
+        adLayerRef.current?.setFreePlan(!!l.watermark);
         setCanLowerThird(!!l.canLowerThird);
         setCanBrandLibrary((l.assetStorageMb ?? 0) > 0);
         setResolutionState((r) => (RESOLUTION_ORDER.indexOf(r) > RESOLUTION_ORDER.indexOf(l.maxResolution) ? l.maxResolution : r));
@@ -1904,32 +1905,51 @@ export function useHostStudio(streamId: string | undefined) {
   async function applyBrandKit(kit: BrandKit | null, opts: { silent?: boolean } = {}) {
     setActiveKitId(kit ? kit.id : null);
     if (streamIdRef.current) savePersisted(streamIdRef.current, { brandKitId: kit ? kit.id : null });
-    if (!kit) return;
-    try {
-      setLogoPosition(kit.logoPosition);
-      setLogoSize(kit.logoSize);
-      setLowerThird({ style: kit.lowerThirdStyle });
-      if (kit.logoAssetId) setLogoFile(await fetchAssetFile(kit.logoAssetId, `${kit.name} logo`));
-      else clearLogo();
-      if (kit.wallpaperAssetId) {
-        await setWallpaperFile(await fetchAssetFile(kit.wallpaperAssetId, `${kit.name} wallpaper`));
-        setWallpaperDim(kit.wallpaperDim);
-      } else if (wallpaperRef.current) {
-        clearWallpaper();
+    if (!kit) {
+      // "Manual": the look stays as it is, but ads that came from a kit leave the canvas (ads picked on this computer stay).
+      clearKitAds();
+      return;
+    }
+    setLogoPosition(kit.logoPosition);
+    setLogoSize(kit.logoSize);
+    setLowerThird({ style: kit.lowerThirdStyle });
+    // The logo, the wallpaper and each ad load on their own: one missing file never stops the others.
+    const failed: string[] = [];
+    const guard = async (what: string, work: () => Promise<void>) => {
+      try {
+        await work();
+      } catch {
+        failed.push(what);
       }
-      if (!opts.silent) await applyKitAds(kit);
-      if (!opts.silent) setStatus({ text: `Applied brand kit "${kit.name}".`, isError: false });
-    } catch {
-      setStatus({ text: `Could not load the files of brand kit "${kit.name}". Check your connection and pick it again.`, isError: true });
+    };
+    await Promise.all([
+      guard('logo', async () => {
+        if (kit.logoAssetId) setLogoFile(await fetchAssetFile(kit.logoAssetId, `${kit.name} logo`));
+        else clearLogo();
+      }),
+      guard('wallpaper', async () => {
+        if (kit.wallpaperAssetId) {
+          await setWallpaperFile(await fetchAssetFile(kit.wallpaperAssetId, `${kit.name} wallpaper`));
+          setWallpaperDim(kit.wallpaperDim);
+        } else if (wallpaperRef.current) {
+          clearWallpaper();
+        }
+      }),
+      // A reload (silent) keeps the per-stream ad overrides the host made; only an explicit pick applies the kit's ads.
+      ...(opts.silent ? [] : AD_PLACEMENTS.map((p) => guard(`${AD_PLACEMENT_LABEL[p]} ad`, () => applyKitAd(kit, p)))),
+    ]);
+    if (!opts.silent) {
+      refreshAds();
+      persistAds();
+    }
+    if (failed.length > 0) {
+      setStatus({ text: `Could not load the ${failed.join(', ')} of brand kit "${kit.name}". Check your connection and pick the kit again.`, isError: true });
+    } else if (!opts.silent) {
+      setStatus({ text: `Applied brand kit "${kit.name}".`, isError: false });
     }
   }
 
   // ---- Ads ---------------------------------------------------------------
-
-  function adCanvasHint() {
-    const c = canvasRef.current;
-    return { w: Math.max(1280, c?.width ?? 0), h: Math.max(720, c?.height ?? 0) };
-  }
 
   function refreshAds() {
     const layer = adLayerRef.current!;
@@ -1986,8 +2006,12 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: `That picture is too large for an ad -- the limit is ${MAX_AD_FILE_BYTES / 1024 / 1024} MB.`, isError: true });
       return;
     }
-    const ok = await layer.setMedia(p, file, { source: 'computer', name: file.name }, adCanvasHint());
-    if (!ok) {
+    const ok = await layer.setMedia(p, file, { source: 'computer', name: file.name }, MAX_AD_SIDE);
+    if (ok === 'too-big') {
+      setStatus({ text: `That picture is too big for an ad -- its longest side must be at most ${MAX_AD_SIDE}px.`, isError: true });
+      return;
+    }
+    if (ok !== true) {
       setStatus({ text: 'That picture could not be opened. Try a different file.', isError: true });
       return;
     }
@@ -2007,22 +2031,25 @@ export function useHostStudio(streamId: string | undefined) {
   async function loadKitAd(p: AdPlacement, ad: BrandKit['ads'][number], kitName: string): Promise<void> {
     const layer = adLayerRef.current!;
     const file = await fetchAssetFile(ad.assetId, `${kitName} ${p}`);
-    const ok = await layer.setMedia(p, file, { source: 'kit', assetId: ad.assetId, name: file.name }, adCanvasHint());
-    if (!ok) throw new Error('ad picture');
+    const ok = await layer.setMedia(p, file, { source: 'kit', assetId: ad.assetId, name: file.name });
+    if (ok !== true) throw new Error('ad picture');
     layer.setEnabled(p, ad.enabled);
     layer.setSchedule(p, ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' });
     layer.setManual(p, null);
     if (streamIdRef.current) saveAdFile(streamIdRef.current, p, null); // the kit's file lives in the library, not in this browser
   }
 
-  /** The kit's ads fill the cards. A card showing a file picked on this computer is left alone when the kit has no ad for that place. */
-  async function applyKitAds(kit: BrandKit) {
+  /** One place of the kit's ads: the kit's ad fills the card; with none, a kit ad already there goes (a file picked on this computer stays). */
+  async function applyKitAd(kit: BrandKit, p: AdPlacement) {
+    const ad = (kit.ads ?? []).find((a) => a.placement === p);
+    if (ad) await loadKitAd(p, ad, kit.name);
+    else if (adLayerRef.current!.info(p).source === 'kit') adLayerRef.current!.clearMedia(p);
+  }
+
+  /** "Manual (no kit)": ads that came from a kit are taken off the canvas; ads the host picked from the computer stay. */
+  function clearKitAds() {
     const layer = adLayerRef.current!;
-    for (const p of AD_PLACEMENTS) {
-      const ad = (kit.ads ?? []).find((a) => a.placement === p);
-      if (ad) await loadKitAd(p, ad, kit.name);
-      else if (layer.info(p).source === 'kit') layer.clearMedia(p);
-    }
+    for (const p of AD_PLACEMENTS) if (layer.info(p).source === 'kit') layer.clearMedia(p);
     refreshAds();
     persistAds();
   }
@@ -2048,22 +2075,25 @@ export function useHostStudio(streamId: string | undefined) {
     const files = loadAdFiles(streamId);
     for (const p of AD_PLACEMENTS) {
       const a = saved[p];
-      if (!a) continue;
-      const apply = (ok: boolean) => {
-        if (!ok) return;
-        layer.setEnabled(p, a.enabled);
-        layer.setSchedule(p, a.schedule);
+      if (!a || typeof a !== 'object') continue;
+      // What the browser kept may be old or hand-edited: a bad schedule falls back to "always on", never breaks the draw loop.
+      const sched: AdSchedule =
+        a.schedule && (a.schedule.mode === 'continuous' || (a.schedule.mode === 'interval' && !scheduleError(a.schedule))) ? a.schedule : { mode: 'continuous' };
+      const apply = (ok: unknown) => {
+        if (ok !== true) return;
+        layer.setEnabled(p, a.enabled !== false);
+        layer.setSchedule(p, sched);
         refreshAds();
       };
       if (a.source === 'kit' && a.assetId) {
         void fetchAssetFile(a.assetId, a.name)
-          .then((f) => layer.setMedia(p, f, { source: 'kit', assetId: a.assetId, name: a.name }, adCanvasHint()))
+          .then((f) => layer.setMedia(p, f, { source: 'kit', assetId: a.assetId, name: a.name }))
           .then(apply)
           .catch(() => undefined);
       } else if (a.source === 'computer' && files[p]) {
         void fetch(files[p]!)
           .then((r) => r.blob())
-          .then((b) => layer.setMedia(p, b, { source: 'computer', name: a.name }, adCanvasHint()))
+          .then((b) => layer.setMedia(p, b, { source: 'computer', name: a.name }, MAX_AD_SIDE))
           .then(apply)
           .catch(() => undefined);
       }
@@ -2072,6 +2102,7 @@ export function useHostStudio(streamId: string | undefined) {
 
   useEffect(() => {
     const layer = adLayerRef.current;
+    if (layer) layer.onChange = refreshAds; // a GIF that falls back to a still picture shows a hint in its card
     return () => layer?.dispose();
   }, []);
 

@@ -1,7 +1,8 @@
 // The advertisement layer of the broadcast canvas: holds the (up to three) ad pictures, decodes animated GIF ads
 // once, and draws them every frame with the opacity the schedule asks for (see ads.ts for the exact rules).
 // No React in here. The draw path allocates nothing per frame: pictures and GIF frames are cached, the slot
-// objects are reused and rectangles are only recomputed when the canvas, ticker or picture size changes.
+// objects (including the Free plan's) are reused and rectangles are only recomputed when the canvas, ticker or
+// picture size changes.
 
 import {
   AD_DRAW_ORDER,
@@ -19,20 +20,32 @@ import {
 } from './ads';
 import { decodeAnimatedImage, type AnimatedImage } from './animatedImage';
 
-/** Tests set this to a number of seconds to pin the ad clock (otherwise it is the wall clock since go-live / page open). */
+/**
+ * Tests can pin the ad clock with `window.__SB_TEST_AD_ELAPSED__` (seconds), but only after they arm it with the
+ * localStorage key below, and never on the Free plan (its StreamBird ad cannot be retimed). Without the key the
+ * property is ignored, so a stray global in production does nothing.
+ */
 declare global {
   interface Window {
     __SB_TEST_AD_ELAPSED__?: number;
   }
 }
+export const AD_TEST_ARM_KEY = 'streambird:test:adclock';
 
 export const FREE_AD_URL = '/streambird-ad-lower-third.png';
 /** Where a custom ad's picture came from: the brand kit (library asset) or a file picked on this computer. */
 export type AdSource = 'kit' | 'computer';
+/** A computer-picked picture may not be bigger than the server allows for library files. */
+export const MAX_AD_SIDE = 8192;
+const FREE_AD_RETRY_MS = 10_000;
 
 interface Runtime {
   img: HTMLImageElement | null;
+  blob: Blob | null;
   anim: { image: AnimatedImage; startedAt: number } | null;
+  /** A GIF whose animation was not (or could not be) decoded: it is drawn as a still picture. */
+  still: boolean;
+  animStarted: boolean;
   token: number;
   enabled: boolean;
   schedule: AdSchedule;
@@ -55,7 +68,10 @@ interface Runtime {
 
 const newRuntime = (): Runtime => ({
   img: null,
+  blob: null,
   anim: null,
+  still: false,
+  animStarted: false,
   token: 0,
   enabled: true,
   schedule: { mode: 'continuous' },
@@ -83,20 +99,34 @@ export interface AdInfo {
   enabled: boolean;
   schedule: AdSchedule;
   manual: AdManual;
+  /** An animated GIF that is being shown as a still picture (no animation support here, or too heavy). */
+  still: boolean;
 }
+
+export type SetMediaResult = true | false | 'too-big';
 
 export class AdLayer {
   private readonly rt: Record<AdPlacement, Runtime> = { lower_third: newRuntime(), side_third: newRuntime(), full_screen: newRuntime() };
   private readonly slotList: AdSlot[] = AD_DRAW_ORDER.map((placement) => ({ placement, enabled: false, schedule: { mode: 'continuous' } as AdSchedule, manual: null as AdManual }));
   private readonly targets: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0 };
+  private readonly freeSlot: AdSlot = { placement: 'lower_third', enabled: true, schedule: FREE_PLAN_AD_SCHEDULE, manual: null };
   private free: Runtime = newRuntime();
   private freeLoading = false;
+  private freeRetryAt = 0;
+  private freePlan = false;
   private clockStart = performance.now();
   private lastNow: number | null = null;
+  /** Called when an ad's still/animated state changes, so the studio can refresh its cards. */
+  onChange: (() => void) | null = null;
 
   info(p: AdPlacement): AdInfo {
     const r = this.rt[p];
-    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual };
+    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still };
+  }
+
+  /** The Free plan draws only StreamBird's own ad, so custom GIFs are not even decoded there. */
+  setFreePlan(free: boolean): void {
+    this.freePlan = free;
   }
 
   /** Restarts the schedule clock at 0 (called when the host goes live). */
@@ -105,8 +135,16 @@ export class AdLayer {
   }
 
   elapsedSec(now: number): number {
-    const pinned = typeof window !== 'undefined' ? window.__SB_TEST_AD_ELAPSED__ : undefined;
-    return typeof pinned === 'number' && Number.isFinite(pinned) ? pinned : (now - this.clockStart) / 1000;
+    if (!this.freePlan && typeof window !== 'undefined' && typeof window.__SB_TEST_AD_ELAPSED__ === 'number' && Number.isFinite(window.__SB_TEST_AD_ELAPSED__)) {
+      let armed = false;
+      try {
+        armed = localStorage.getItem(AD_TEST_ARM_KEY) === 'on';
+      } catch {
+        armed = false;
+      }
+      if (armed) return window.__SB_TEST_AD_ELAPSED__;
+    }
+    return (now - this.clockStart) / 1000;
   }
 
   setEnabled(p: AdPlacement, enabled: boolean): void {
@@ -121,8 +159,12 @@ export class AdLayer {
     this.rt[p].manual = manual;
   }
 
-  /** Loads a picture (PNG/JPG/WebP/GIF) into a placement. Resolves true when it is ready to draw; a newer call supersedes an older one. */
-  async setMedia(p: AdPlacement, blob: Blob, meta: { source: AdSource; assetId?: string | null; name: string }, canvasHint: { w: number; h: number }): Promise<boolean> {
+  /**
+   * Loads a picture (PNG/JPG/WebP/GIF) into a placement. Resolves true when it is ready to draw, false when it
+   * could not be opened or was superseded by a newer call, 'too-big' when a side is over `maxSide` (when given).
+   * An animated GIF is decoded later, only when the ad is actually going to be drawn.
+   */
+  async setMedia(p: AdPlacement, blob: Blob, meta: { source: AdSource; assetId?: string | null; name: string }, maxSide?: number): Promise<SetMediaResult> {
     const r = this.rt[p];
     const token = ++r.token;
     const url = URL.createObjectURL(blob);
@@ -136,21 +178,22 @@ export class AdLayer {
       URL.revokeObjectURL(url);
       return false;
     }
+    if (maxSide && (img.naturalWidth > maxSide || img.naturalHeight > maxSide)) {
+      URL.revokeObjectURL(url);
+      return 'too-big';
+    }
     if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     r.img = img;
+    r.blob = blob;
     r.anim = null;
+    r.still = false;
+    r.animStarted = false;
     r.previewUrl = url;
     r.source = meta.source;
     r.assetId = meta.assetId ?? null;
     r.name = meta.name;
     r.snap = true;
     r.keyW = -1; // force a fresh fit
-    if (blob.type === 'image/gif') {
-      // Frames no bigger than the area they will be drawn into (the canvas is the upper bound for any placement).
-      void decodeAnimatedImage(blob, Math.max(64, canvasHint.h), Math.max(64, canvasHint.w)).then((image) => {
-        if (image && token === r.token) r.anim = { image, startedAt: performance.now() };
-      });
-    }
     return true;
   }
 
@@ -159,7 +202,10 @@ export class AdLayer {
     r.token += 1;
     if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     r.img = null;
+    r.blob = null;
     r.anim = null;
+    r.still = false;
+    r.animStarted = false;
     r.previewUrl = null;
     r.source = null;
     r.assetId = null;
@@ -172,13 +218,32 @@ export class AdLayer {
     for (const p of AD_DRAW_ORDER) this.clearMedia(p);
   }
 
-  private loadFreeAd(): void {
-    if (this.freeLoading) return;
+  /** Decodes a GIF ad's frames, at most as big as the area it is drawn into. Called the first time the ad can be seen. */
+  private startAnim(p: AdPlacement, r: Runtime, w: number, h: number): void {
+    r.animStarted = true;
+    const blob = r.blob;
+    if (!blob || blob.type !== 'image/gif') return;
+    const area = adRect(p, w, h, 0);
+    const token = r.token;
+    void decodeAnimatedImage(blob, Math.max(32, area.h), Math.max(32, area.w)).then((image) => {
+      if (token !== r.token) return;
+      if (image) r.anim = { image, startedAt: performance.now() };
+      else r.still = true;
+      this.onChange?.();
+    });
+  }
+
+  private loadFreeAd(now: number): void {
+    if (this.freeLoading || now < this.freeRetryAt) return;
     this.freeLoading = true;
     const img = new Image();
     img.onload = () => {
       this.free.img = img;
       this.free.snap = true;
+    };
+    img.onerror = () => {
+      this.freeLoading = false; // try again a little later (a flaky network at the start must not remove the ad for the whole stream)
+      this.freeRetryAt = performance.now() + FREE_AD_RETRY_MS;
     };
     img.src = FREE_AD_URL;
   }
@@ -209,12 +274,13 @@ export class AdLayer {
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, now: number, tickerBar: number, freePlan: boolean): void {
     const dt = this.lastNow === null ? 0 : Math.min(0.25, Math.max(0, (now - this.lastNow) / 1000));
     this.lastNow = now;
+    this.freePlan = freePlan;
     const elapsed = this.elapsedSec(now);
 
     if (freePlan) {
-      this.loadFreeAd();
+      this.loadFreeAd(now);
       const f = this.free;
-      const target = f.img ? adTargetAlpha(elapsed, { placement: 'lower_third', enabled: true, schedule: FREE_PLAN_AD_SCHEDULE, manual: null }) : 0;
+      const target = f.img ? adTargetAlpha(elapsed, this.freeSlot) : 0;
       f.alpha = f.snap ? target : stepAlpha(f.alpha, target, dt);
       f.snap = false;
       this.drawOne(ctx, f, 'lower_third', w, h, tickerBar, now);
@@ -229,6 +295,7 @@ export class AdLayer {
       slot.schedule = r.schedule;
       slot.manual = r.manual;
       if (slot.enabled || r.alpha > 0) any = true;
+      if (slot.enabled && !r.animStarted && r.blob) this.startAnim(slot.placement, r, w, h);
     }
     if (!any) return;
     resolveAdAlphas(elapsed, this.slotList, this.targets);

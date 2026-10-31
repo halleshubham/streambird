@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { BrandKit } from './entities/brand-kit.entity';
@@ -99,17 +99,32 @@ export class BrandKitsService {
     return out;
   }
 
+  /** Logo and wallpaper must be the right kind of file (an ad file is not a logo), so "GIF only for logo/ad" stays strict. */
   private async checkAssets(accountId: string, dto: { logoAssetId?: string | null; wallpaperAssetId?: string | null }): Promise<void> {
-    const wanted = [dto.logoAssetId, dto.wallpaperAssetId].filter((v): v is string => !!v);
-    const owned = await this.assets.ownedIds(accountId, wanted);
-    if (wanted.some((id) => !owned.has(id))) throw new BadRequestException('One of the chosen files is not in your library.');
+    const logo = dto.logoAssetId ? await this.assets.findOwnedOfKind(accountId, [dto.logoAssetId], ['logo', 'other']) : null;
+    const wall = dto.wallpaperAssetId ? await this.assets.findOwnedOfKind(accountId, [dto.wallpaperAssetId], ['wallpaper', 'background', 'other']) : null;
+    if ((dto.logoAssetId && !logo!.has(dto.logoAssetId)) || (dto.wallpaperAssetId && !wall!.has(dto.wallpaperAssetId))) {
+      throw new BadRequestException('One of the chosen files is not in your library, or is the wrong type for a logo or wallpaper.');
+    }
+  }
+
+  /** A foreign-key or unique violation from a race (file deleted, two saves at once) is the caller's conflict, not a server error. */
+  private async guard<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? (err as { driverError?: { code?: string } }).driverError?.code;
+      if (code === '23503') throw new BadRequestException('One of the chosen files was just deleted from your library. Pick it again.');
+      if (code === '23505') throw new ConflictException('This kit was changed at the same moment. Reload and try again.');
+      throw err;
+    }
   }
 
   async create(accountId: string, dto: CreateBrandKitDto): Promise<BrandKitView> {
     await this.assertAllowed(accountId);
     await this.checkAssets(accountId, dto);
-    const ads = await this.checkAds(accountId, dto.ads ?? []);
-    const saved = await this.dataSource.transaction(async (m) => {
+    const ads = await this.checkAds(accountId, dto.ads ?? []); // null/omitted = no ads
+    const saved = await this.guard(() => this.dataSource.transaction(async (m) => {
       const repo = m.getRepository(BrandKit);
       const makeDefault = dto.isDefault === true || (await repo.count({ where: { accountId } })) === 0; // the first kit is the default
       if (makeDefault) await repo.update({ accountId, isDefault: true }, { isDefault: false });
@@ -128,7 +143,7 @@ export class BrandKitsService {
       );
       await this.replaceAds(m, kit.id, ads);
       return kit;
-    });
+    }));
     return { ...saved, connectionIds: [], ads: await this.adsOf(saved.id) };
   }
 
@@ -150,18 +165,22 @@ export class BrandKitsService {
 
   async update(accountId: string, id: string, dto: UpdateBrandKitDto): Promise<BrandKitView> {
     await this.assertAllowed(accountId);
-    const kit = await this.findOwned(accountId, id);
-    await this.checkAssets(accountId, dto);
-    const ads = dto.ads === undefined ? undefined : await this.checkAds(accountId, dto.ads);
-    if (dto.name !== undefined) kit.name = dto.name.trim();
-    if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
-    if (dto.logoPosition !== undefined) kit.logoPosition = dto.logoPosition;
-    if (dto.logoSize !== undefined) kit.logoSize = dto.logoSize;
-    if (dto.wallpaperAssetId !== undefined) kit.wallpaperAssetId = dto.wallpaperAssetId;
-    if (dto.wallpaperDim !== undefined) kit.wallpaperDim = dto.wallpaperDim;
-    if (dto.lowerThirdStyle !== undefined) kit.lowerThirdStyle = dto.lowerThirdStyle;
-    const saved = await this.dataSource.transaction(async (m) => {
+    await this.findOwned(accountId, id); // 404 for another account's kit before anything else
+    // `ads: null` is treated like an omitted `ads`: unchanged.
+    const saved = await this.guard(() => this.dataSource.transaction(async (m) => {
       const repo = m.getRepository(BrandKit);
+      // Lock the kit row so two saves of the same kit (or its ads) run one after the other.
+      const kit = await repo.createQueryBuilder('k').setLock('pessimistic_write').where({ id, accountId }).getOne();
+      if (!kit) throw new NotFoundException('Brand kit not found.');
+      await this.checkAssets(accountId, dto);
+      const ads = dto.ads == null ? undefined : await this.checkAds(accountId, dto.ads);
+      if (dto.name !== undefined) kit.name = dto.name.trim();
+      if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
+      if (dto.logoPosition !== undefined) kit.logoPosition = dto.logoPosition;
+      if (dto.logoSize !== undefined) kit.logoSize = dto.logoSize;
+      if (dto.wallpaperAssetId !== undefined) kit.wallpaperAssetId = dto.wallpaperAssetId;
+      if (dto.wallpaperDim !== undefined) kit.wallpaperDim = dto.wallpaperDim;
+      if (dto.lowerThirdStyle !== undefined) kit.lowerThirdStyle = dto.lowerThirdStyle;
       if (dto.isDefault === true && !kit.isDefault) {
         await repo.update({ accountId, isDefault: true }, { isDefault: false });
         kit.isDefault = true;
@@ -170,7 +189,7 @@ export class BrandKitsService {
       const out = await repo.save(kit);
       if (ads !== undefined) await this.replaceAds(m, id, ads);
       return out;
-    });
+    }));
     const connectionIds = (await this.connections.find({ where: { accountId, brandKitId: id }, select: ['id'] })).map((c) => c.id);
     return { ...saved, connectionIds, ads: await this.adsOf(id) };
   }

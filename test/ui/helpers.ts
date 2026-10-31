@@ -100,5 +100,7 @@ export const isPlainAd = (p: Rgb) => isRed(p) || isGreen(p) || isBlue(p);
 /** Pins the ad clock to `sec` seconds since going live (the studio's test hook), so a test does not have to wait for a schedule. */
 export const pinAdClock = (page: Page, sec: number | null) =>
   page.evaluate((s) => {
+    // The hook only works when armed (and never on the Free plan).
+    localStorage.setItem('streambird:test:adclock', 'on');
     (window as unknown as { __SB_TEST_AD_ELAPSED__?: number }).__SB_TEST_AD_ELAPSED__ = s === null ? undefined : s;
   }, sec);
