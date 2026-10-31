@@ -553,7 +553,11 @@ export class StreamsService {
     return destination;
   }
 
-  async end(id: string, accountId: string): Promise<LiveStream> {
+  /**
+   * `opts.reason` (an automatic end: no video arrived, the picture froze) is shown on the ended destinations so the
+   * host can see why; `opts.usageUntil` bills hours only up to that moment (a stream that never sent a picture bills none).
+   */
+  async end(id: string, accountId: string, opts: { reason?: string; usageUntil?: Date } = {}): Promise<LiveStream> {
     const stream = await this.findByIdOrThrow(id, accountId);
 
     // Ending is idempotent: a repeat call (the Android app's stale-stream card plus its own End, a retry after a
@@ -578,6 +582,7 @@ export class StreamsService {
             d.errorMessage = `Could not confirm the end on the platform: ${this.describeError(err)}`;
           }
           d.status = DestinationStatus.ENDED;
+          if (opts.reason && !d.errorMessage) d.errorMessage = opts.reason;
           await this.destinations.save(d);
         }),
     );
@@ -611,8 +616,9 @@ export class StreamsService {
     // never accrues usage. Best-effort: a failure here shouldn't block the
     // stream from ending.
     if (stream.startedAt) {
-      const hours = (stream.endedAt.getTime() - stream.startedAt.getTime()) / 3_600_000;
-      await this.accountsService.recordStreamUsage(accountId, hours).catch(() => {});
+      const billedUntil = opts.usageUntil && opts.usageUntil.getTime() < stream.endedAt.getTime() ? opts.usageUntil : stream.endedAt;
+      const hours = Math.max(0, (billedUntil.getTime() - stream.startedAt.getTime()) / 3_600_000);
+      if (hours > 0) await this.accountsService.recordStreamUsage(accountId, hours).catch(() => {});
     }
 
     return this.findByIdOrThrow(id, accountId);
