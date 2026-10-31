@@ -428,6 +428,25 @@ describe('StreamsService', () => {
     expect(hours).toBeCloseTo(2, 1);
   });
 
+  it('end() is idempotent: a second call records no extra usage and keeps the first endedAt', async () => {
+    const youtube = fakeProvider(Platform.YOUTUBE, 'succeed');
+    const { service, connectionRepo, liveStreamRepo, accountsService } = await build([youtube]);
+    connectionRepo.rows.set('c1', makeConnection('c1', Platform.YOUTUBE));
+    const stream = await service.create('acc_1', { title: 'Twice', destinationConnectionIds: ['c1'] });
+    (liveStreamRepo.rows.get(stream.id) as any).startedAt = new Date(Date.now() - 3_600_000);
+
+    const first = await service.end(stream.id, 'acc_1');
+    const firstEndedAt = first.endedAt;
+    const endBroadcastCalls = (youtube.endBroadcast as jest.Mock).mock.calls.length;
+
+    const second = await service.end(stream.id, 'acc_1');
+
+    expect(second.status).toBe(StreamStatus.ENDED);
+    expect(second.endedAt).toEqual(firstEndedAt);
+    expect(accountsService.recordStreamUsage).toHaveBeenCalledTimes(1);
+    expect((youtube.endBroadcast as jest.Mock).mock.calls.length).toBe(endBroadcastCalls);
+  });
+
   describe('start() (scheduled streams)', () => {
     async function scheduled(providers: StreamProvider[]) {
       const ctx = await build(providers);
