@@ -532,20 +532,35 @@ export interface BrandKitAd {
 export interface BrandKit {
   id: string;
   name: string;
+  /** Landscape (16:9) logo / wallpaper / ads. These are also the only fields older clients know. */
   logoAssetId: string | null;
+  /** Portrait (9:16) logo / wallpaper / ads. */
+  logoAssetIdPortrait: string | null;
   logoPosition: 'left' | 'right';
   logoSize: number;
   wallpaperAssetId: string | null;
+  wallpaperAssetIdPortrait: string | null;
   wallpaperDim: number;
   lowerThirdStyle: LowerThirdStyleId;
   isDefault: boolean;
+  /** Shrink the live picture into the space an ad leaves free while it shows. */
+  adsShrinkPicture: boolean;
   /** The channels/pages (platform connections) using this kit. */
   connectionIds: string[];
-  /** At most one ad per placement. */
+  /** Landscape ads: at most one ad per placement. */
   ads: BrandKitAd[];
+  /** Portrait ads: at most one ad per placement. */
+  adsPortrait: BrandKitAd[];
 }
 
-export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & { isDefault?: boolean; ads?: BrandKitAd[] };
+export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & {
+  logoAssetIdPortrait?: string | null;
+  wallpaperAssetIdPortrait?: string | null;
+  adsShrinkPicture?: boolean;
+  isDefault?: boolean;
+  ads?: BrandKitAd[];
+  adsPortrait?: BrandKitAd[];
+};
 
 /** The superadmin's registration switch and the signup history it is decided by. */
 export interface RegistrationStatus {

@@ -757,7 +757,8 @@ test.describe('brand library and kits', () => {
     await page.getByRole('link', { name: 'Brand' }).click();
     await expect(page.getByTestId('brand-free-notice')).toContainText('stay saved in this browser');
     await expect(page.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
-    await expect(page.getByLabel('Image (PNG, JPG, WebP or GIF (logos and ads only), up to 4 MB)')).toHaveCount(0);
+    await expect(page.getByLabel('Logo file')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New brand kit' })).toHaveCount(0);
   });
 
   test.describe('on a plan with brand storage', () => {
@@ -773,24 +774,18 @@ test.describe('brand library and kits', () => {
       await page.goto('/brand');
       await expect(page.getByTestId('brand-usage')).toContainText('0.0 MB of 5.0 MB used');
 
-      await page.getByLabel('Type').selectOption('logo');
-      await expect(page.getByRole('button', { name: 'Upload' })).toBeDisabled(); // nothing chosen yet
-      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'main-logo.png', mimeType: 'image/png', buffer: solidPng(220, 30, 40) });
-      await expect(page.locator('.brand-drop')).toContainText('main-logo.png'); // the chosen file is shown, with a preview
-      await expect(page.locator('.brand-drop-preview')).toBeVisible();
-      await page.getByRole('button', { name: 'Upload' }).click();
-      await expect(page.getByRole('status').filter({ hasText: 'Uploaded "main-logo"' })).toBeVisible();
-      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
-      await expect(card).toBeVisible();
-      await expect(card).toContainText('Logo');
-      // The image really comes back from the server.
-      await expect.poll(() => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
-
-      // Kit 1: that logo on the Hindi channel; kit 2 reuses the same file on the English channel.
+      // There is no separate upload section: the file is uploaded in the kit's own Logo slot.
+      await expect(page.getByLabel(/Image \(PNG/)).toHaveCount(0);
       await page.getByRole('button', { name: 'New brand kit' }).click();
       const kit1 = page.getByRole('form', { name: 'New brand kit' });
       await kit1.getByLabel('Kit name').fill('Hindi');
-      await kit1.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
+      await kit1.getByLabel('Logo file').setInputFiles({ name: 'main-logo.png', mimeType: 'image/png', buffer: solidPng(220, 30, 40) });
+      const slot = kit1.getByTestId('kit-slot-logo');
+      await expect(slot).toHaveAttribute('data-has-file', 'true'); // uploaded right away and shown in the slot
+      await expect(slot).toContainText('main-logo');
+      await expect(slot.locator('.brand-drop-preview')).toBeVisible();
+      await expect.poll(() => slot.locator('.brand-drop-preview').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true); // it really comes back from the server
+      await expect(kit1.getByTestId('kit-preview').locator('.kit-preview-logo')).toBeVisible();
       await kit1.getByRole('button', { name: 'Top right' }).click();
       await kit1.getByLabel(/Hindi channel/).check();
       await kit1.getByRole('button', { name: 'Create kit' }).click();
@@ -802,18 +797,24 @@ test.describe('brand library and kits', () => {
       await page.getByRole('button', { name: 'New brand kit' }).click();
       const kit2 = page.getByRole('form', { name: 'New brand kit' });
       await kit2.getByLabel('Kit name').fill('English');
-      await kit2.getByLabel('Logo', { exact: true }).selectOption({ label: 'main-logo' });
+      await expect(kit2.getByTestId('kit-slot-logo')).toHaveAttribute('data-has-file', 'false');
+      await kit2.getByLabel('Logo: choose from uploaded').selectOption({ index: 1 }); // reuse the file that is already uploaded
+      await expect(kit2.getByTestId('kit-slot-logo')).toContainText('main-logo');
       await kit2.getByLabel(/English channel/).check();
       await kit2.getByRole('button', { name: 'Create kit' }).click();
       const englishCard = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^English/ }) });
       await expect(englishCard).toContainText('Used by English channel');
       await expect(englishCard).not.toContainText('Account default');
+      await page.locator('summary', { hasText: 'Uploaded files' }).click();
+      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
+      await expect(card).toContainText('Logo');
       await expect(card).toContainText('used by Hindi, English');
 
       // It survives a reload (it is on the server, not in the browser), and the live preview follows the form.
       await page.reload();
       await page.getByRole('button', { name: 'Edit Hindi' }).click();
       const hindiForm = page.getByRole('form', { name: 'Brand kit Hindi' });
+      await expect(hindiForm.getByTestId('kit-slot-logo')).toContainText('main-logo');
       await expect(hindiForm.getByRole('button', { name: 'Top right' })).toHaveAttribute('aria-pressed', 'true');
       await expect(hindiForm.locator('.kit-preview-logo--right')).toBeVisible();
       await hindiForm.getByRole('button', { name: 'Top left' }).click();
@@ -825,6 +826,7 @@ test.describe('brand library and kits', () => {
 
       // A file in use is refused; once the kits are gone it can be deleted.
       page.on('dialog', (d) => void d.accept());
+      await page.locator('summary', { hasText: 'Uploaded files' }).click();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
       await expect(page.getByRole('alert')).toContainText('used by the brand kits');
       await page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Delete kit' }).click();
@@ -900,9 +902,14 @@ test.describe('brand library and kits', () => {
     test('an upload that is not an image, or is too big for the plan, is refused with a message', async ({ page, context }) => {
       await signIn(context);
       await page.goto('/brand');
-      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'notes.png', mimeType: 'image/png', buffer: Buffer.from('definitely not a picture') });
-      await page.getByRole('button', { name: 'Upload' }).click();
+      await page.getByRole('button', { name: 'New brand kit' }).click();
+      const form = page.getByRole('form', { name: 'New brand kit' });
+      await form.getByLabel('Logo file').setInputFiles({ name: 'notes.png', mimeType: 'image/png', buffer: Buffer.from('definitely not a picture') });
       await expect(page.getByRole('alert')).toContainText('PNG, JPG or WebP');
+      await expect(form.getByTestId('kit-slot-logo')).toHaveAttribute('data-has-file', 'false');
+      // A file over the 4 MB limit is refused before it is sent, with the limit named.
+      await form.getByLabel('Logo file').setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(4 * 1024 * 1024 + 10, 1) });
+      await expect(page.getByRole('alert')).toContainText('the limit is 4 MB');
     });
   });
 });
@@ -1789,19 +1796,19 @@ test.describe('animated GIF logo', () => {
     test('the Brand page takes a GIF as a logo (animated preview) and refuses it as a wallpaper', async ({ page, context }) => {
       await signIn(context);
       await page.goto('/brand');
-      await page.getByLabel('Type').selectOption('logo');
-      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
-      await expect(page.locator('.brand-drop-preview')).toBeVisible();
-      await page.getByRole('button', { name: 'Upload' }).click();
-      await expect(page.getByRole('status').filter({ hasText: 'Uploaded "spin"' })).toBeVisible();
-      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of spin') });
-      await expect(card).toContainText('Logo');
-      await expect.poll(() => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+      await page.getByRole('button', { name: 'New brand kit' }).click();
+      const form = page.getByRole('form', { name: 'New brand kit' });
+      await form.getByLabel('Logo file').setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
+      const slot = form.getByTestId('kit-slot-logo');
+      await expect(slot).toHaveAttribute('data-has-file', 'true');
+      await expect(slot).toContainText('spin');
+      await expect.poll(() => slot.locator('.brand-drop-preview').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
+      await page.locator('summary', { hasText: 'Uploaded files' }).click();
+      await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of spin') })).toContainText('Logo');
 
-      await page.getByLabel('Type').selectOption('wallpaper');
-      await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'wall.gif', mimeType: 'image/gif', buffer: GIF });
-      await page.getByRole('button', { name: 'Upload' }).click();
+      await form.getByLabel('Wallpaper file').setInputFiles({ name: 'wall.gif', mimeType: 'image/gif', buffer: GIF });
       await expect(page.getByRole('alert')).toContainText('GIF images can only be used as a logo');
+      await expect(form.getByTestId('kit-slot-wallpaper')).toHaveAttribute('data-has-file', 'false');
     });
   });
 });

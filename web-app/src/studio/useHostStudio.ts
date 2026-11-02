@@ -9,6 +9,7 @@ import {
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy } from './poweredBy';
 import { decodeAnimatedLogo, type AnimatedLogo } from './animatedLogo';
+import { kitSetFor } from './brandKitSet';
 import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
 import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
 import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
@@ -256,6 +257,8 @@ interface PersistedStudioState {
   chroma: ChromaSettings;
   /** Per-stream ad overrides (on/off, schedule, where the file came from). The pictures themselves: adFilesKey / the asset library. */
   ads: Partial<Record<AdPlacement, PersistedAd>>;
+  /** "Shrink picture while ads show" for this stream; undefined = the kit's choice (default on). */
+  adsShrink: boolean;
 }
 interface PersistedAd {
   source: AdSource;
@@ -384,6 +387,8 @@ function savePersistedWallpaper(streamId: string, wp: PersistedWallpaper | null)
 export function useHostStudio(streamId: string | undefined) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  /** Offscreen canvas the scene is drawn on while ads make the picture shrink (see ads.ts, SHRINK RULE). */
+  const sceneCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -414,6 +419,7 @@ export function useHostStudio(streamId: string | undefined) {
   /** Ads on the picture (adLayer.ts). 'free' = the plan carries a StreamBird ad instead of the host's own. */
   const adLayerRef = useRef<AdLayer | null>(null);
   if (!adLayerRef.current) adLayerRef.current = new AdLayer();
+  const [adsShrink, setAdsShrinkState] = useState(true);
   const [adsPlan, setAdsPlan] = useState<'unknown' | 'free' | 'custom'>('unknown');
   const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD });
   /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
@@ -708,14 +714,14 @@ export function useHostStudio(streamId: string | undefined) {
     ctx.globalAlpha = 1;
   }
 
-  function drawLowerThirdBanner(w: number, h: number, now: number) {
+  function drawLowerThirdBanner(w: number, h: number, now: number, noTickerReserve = false) {
     const dt = lowerThirdFrameRef.current === null ? 0 : now - lowerThirdFrameRef.current;
     lowerThirdFrameRef.current = now;
     const allowed = canLowerThirdRef.current;
     lowerThirdProgressRef.current = stepLowerThirdProgress(lowerThirdProgressRef.current, allowed && lowerThirdLiveRef.current, dt);
     if (!allowed || lowerThirdProgressRef.current <= 0) return;
     const b = brandingRef.current;
-    const reserve = b.newsText ? newsBarHeight(b.newsFontSize) : 0;
+    const reserve = b.newsText && !noTickerReserve ? newsBarHeight(b.newsFontSize) : 0;
     drawLowerThird(ctxRef.current!, w, h, lowerThirdRef.current, lowerThirdProgressRef.current, reserve);
   }
 
@@ -1117,6 +1123,7 @@ export function useHostStudio(streamId: string | undefined) {
       // DOM yet at that point, so an effect that only ever runs once on
       // mount grabs a null context and never retries. This self-heals the
       // moment the real canvas actually mounts.
+      if (ctxRef.current && ctxRef.current.canvas !== canvas) ctxRef.current = null; // left on the offscreen scene canvas by a frame that threw
       if (!ctxRef.current) {
         ctxRef.current = canvas.getContext('2d');
       }
@@ -1144,6 +1151,25 @@ export function useHostStudio(streamId: string | undefined) {
         paintWallpaper(ctx, wp, w, h, ws.x, ws.y, ws.dim);
       }
 
+      // Ads step first, so the scene knows how much room they leave (the picture shrinks while an ad shows).
+      const tickerBar = brandingRef.current.newsText ? newsBarHeight(brandingRef.current.newsFontSize) : 0;
+      const adLayer = adLayerRef.current;
+      adLayer?.step(w, h, now, tickerBar, showMarkRef.current);
+      const sceneBox = adLayer ? adLayer.sceneRect(w, h) : null;
+      const realCtx = ctx;
+      let sceneCtx = ctx;
+      if (sceneBox) {
+        let off = sceneCanvasRef.current;
+        if (!off) off = sceneCanvasRef.current = document.createElement('canvas');
+        if (off.width !== w || off.height !== h) {
+          off.width = w;
+          off.height = h;
+        }
+        sceneCtx = off.getContext('2d')!;
+        sceneCtx.clearRect(0, 0, w, h);
+        ctxRef.current = sceneCtx; // every scene draw function paints on ctxRef.current
+      }
+
       const layout = layoutModeRef.current;
       if (isFramedLayout(layout)) {
         // A slide layout is still worth drawing with nobody on camera (the slides are the content).
@@ -1157,10 +1183,18 @@ export function useHostStudio(streamId: string | undefined) {
       }
 
       drawLogo(now);
-      drawNewsline(w, h, now);
-      drawLowerThirdBanner(w, h, now);
+      if (sceneBox) {
+        // Scene done: the logo and name banner are part of it. Put the shrunken scene on the real canvas; the ticker stays at the bottom edge.
+        drawLowerThirdBanner(w, h, now, true);
+        ctxRef.current = realCtx;
+        realCtx.drawImage(sceneCanvasRef.current!, 0, 0, w, h, sceneBox.x, sceneBox.y, sceneBox.w, sceneBox.h);
+        drawNewsline(w, h, now);
+      } else {
+        drawNewsline(w, h, now);
+        drawLowerThirdBanner(w, h, now);
+      }
       // Ads sit above everything but the Free plan's mark (so no ad ever hides it).
-      adLayerRef.current?.draw(ctx, w, h, now, brandingRef.current.newsText ? newsBarHeight(brandingRef.current.newsFontSize) : 0, showMarkRef.current);
+      adLayer?.paint(realCtx, now);
       if (showMarkRef.current) {
         if (!brandImgRef.current) {
           const mark = new Image();
@@ -1489,6 +1523,10 @@ export function useHostStudio(streamId: string | undefined) {
         }
 
         restoreAds(streamRow.id, saved.ads);
+        if (typeof saved.adsShrink === 'boolean') {
+          adLayerRef.current?.setShrink(saved.adsShrink);
+          setAdsShrinkState(saved.adsShrink);
+        }
 
         const savedWp = loadPersistedWallpaper(streamRow.id);
         if (savedWp) {
@@ -1619,8 +1657,9 @@ export function useHostStudio(streamId: string | undefined) {
       if (!kit) return;
       setActiveKitId(kit.id);
       // Big pictures are not kept in the browser: fetch them again so a reload keeps the look.
-      const missingLogo = !!kit.logoAssetId && !saved.logoDataUrl;
-      const missingWall = !!kit.wallpaperAssetId && !loadPersistedWallpaper(stream.id);
+      const set = kitSetFor(kit, stream.orientation ?? 'landscape');
+      const missingLogo = !!set.logoAssetId && !saved.logoDataUrl;
+      const missingWall = !!set.wallpaperAssetId && !loadPersistedWallpaper(stream.id);
       if (missingLogo || missingWall) void applyBrandKit(kit, { silent: true });
       return;
     }
@@ -1910,9 +1949,11 @@ export function useHostStudio(streamId: string | undefined) {
       clearKitAds();
       return;
     }
+    const set = kitSetFor(kit, orientationRef.current);
     setLogoPosition(kit.logoPosition);
     setLogoSize(kit.logoSize);
     setLowerThird({ style: kit.lowerThirdStyle });
+    if (!opts.silent) setAdsShrink(kit.adsShrinkPicture !== false);
     // The logo, the wallpaper and each ad load on their own: one missing file never stops the others.
     const failed: string[] = [];
     const guard = async (what: string, work: () => Promise<void>) => {
@@ -1924,12 +1965,12 @@ export function useHostStudio(streamId: string | undefined) {
     };
     await Promise.all([
       guard('logo', async () => {
-        if (kit.logoAssetId) setLogoFile(await fetchAssetFile(kit.logoAssetId, `${kit.name} logo`));
+        if (set.logoAssetId) setLogoFile(await fetchAssetFile(set.logoAssetId, `${kit.name} logo`));
         else clearLogo();
       }),
       guard('wallpaper', async () => {
-        if (kit.wallpaperAssetId) {
-          await setWallpaperFile(await fetchAssetFile(kit.wallpaperAssetId, `${kit.name} wallpaper`));
+        if (set.wallpaperAssetId) {
+          await setWallpaperFile(await fetchAssetFile(set.wallpaperAssetId, `${kit.name} wallpaper`));
           setWallpaperDim(kit.wallpaperDim);
         } else if (wallpaperRef.current) {
           clearWallpaper();
@@ -1967,6 +2008,13 @@ export function useHostStudio(streamId: string | undefined) {
       if (i.hasMedia && i.source) ads[p] = { source: i.source, assetId: i.assetId, name: i.name ?? '', enabled: i.enabled, schedule: i.schedule };
     }
     savePersisted(id, { ads });
+  }
+
+  /** "Shrink picture while ads show": per stream, starts from the kit's choice (default on). */
+  function setAdsShrink(on: boolean) {
+    adLayerRef.current!.setShrink(on);
+    setAdsShrinkState(on);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { adsShrink: on });
   }
 
   function setAdEnabled(p: AdPlacement, enabled: boolean) {
@@ -2041,7 +2089,7 @@ export function useHostStudio(streamId: string | undefined) {
 
   /** One place of the kit's ads: the kit's ad fills the card; with none, a kit ad already there goes (a file picked on this computer stays). */
   async function applyKitAd(kit: BrandKit, p: AdPlacement) {
-    const ad = (kit.ads ?? []).find((a) => a.placement === p);
+    const ad = kitSetFor(kit, orientationRef.current).ads.find((a) => a.placement === p);
     if (ad) await loadKitAd(p, ad, kit.name);
     else if (adLayerRef.current!.info(p).source === 'kit') adLayerRef.current!.clearMedia(p);
   }
@@ -2057,7 +2105,7 @@ export function useHostStudio(streamId: string | undefined) {
   /** Goes back to the active brand kit's ad for this place (after a file was picked from the computer). */
   async function useKitAd(p: AdPlacement) {
     const kit = brandKits.find((k) => k.id === activeKitId);
-    const ad = kit?.ads?.find((a) => a.placement === p);
+    const ad = kit ? kitSetFor(kit, orientationRef.current).ads.find((a) => a.placement === p) : undefined;
     if (!kit || !ad) return;
     try {
       await loadKitAd(p, ad, kit.name);
@@ -2860,6 +2908,7 @@ export function useHostStudio(streamId: string | undefined) {
     canBrandLibrary,
     adsPlan,
     ads: adsUi,
+    adsShrink,
     canRecord,
     canChromaKey,
     canLowerThird,
@@ -2906,6 +2955,7 @@ export function useHostStudio(streamId: string | undefined) {
       setLogoFile,
       applyBrandKit,
       setAdEnabled,
+      setAdsShrink,
       setAdSchedule,
       setAdManual,
       setAdFile,

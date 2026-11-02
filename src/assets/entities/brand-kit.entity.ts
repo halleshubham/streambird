@@ -17,6 +17,17 @@ export class BrandKit {
   @Column({ type: 'uuid', nullable: true })
   logoAssetId!: string | null;
 
+  /** The 9:16 (portrait) set. logoAssetId / wallpaperAssetId are the landscape set (and what older clients read). */
+  @Column({ type: 'uuid', nullable: true })
+  logoAssetIdPortrait!: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  wallpaperAssetIdPortrait!: string | null;
+
+  /** Shrink the live picture into the space an ad leaves free, while that ad shows (default on). */
+  @Column({ default: true })
+  adsShrinkPicture!: boolean;
+
   @Column({ type: 'text', default: 'left' })
   logoPosition!: 'left' | 'right';
 

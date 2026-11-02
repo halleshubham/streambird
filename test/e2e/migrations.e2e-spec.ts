@@ -254,4 +254,65 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0028 turns existing kit ads into the landscape set, adds the portrait set and the shrink switch, and ads are one per placement PER orientation', async () => {
+    const live = `e2e_migrate_orient_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0027', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0028: a kit with a logo, a wallpaper and two ads.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('orient-acct', 'horient', 'pro', 30) RETURNING id`)).rows[0].id;
+      const asset = async (kind: string, key: string) =>
+        (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, $2, $2, 'image/png', 10, 1, 1, $3) RETURNING id`, [acct, kind, key])).rows[0].id;
+      const [logo, wall, adA, logoP] = [await asset('logo', 'o1'), await asset('wallpaper', 'o2'), await asset('ad', 'o3'), await asset('logo', 'o4')];
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, logo_asset_id, wallpaper_asset_id, is_default) VALUES ($1, 'Main', $2, $3, true) RETURNING id`, [acct, logo, wall])).rows[0].id;
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'lower_third', $2), ($1, 'full_screen', $2)`, [kit, adA]);
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0028%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: still fine
+
+      // Existing rows are the landscape set; nothing was lost; the portrait set is empty; shrinking defaults to on.
+      expect((await db.query(`SELECT placement, orientation FROM brand_kit_ads WHERE brand_kit_id = $1 ORDER BY placement`, [kit])).rows).toEqual([
+        { placement: 'full_screen', orientation: 'landscape' },
+        { placement: 'lower_third', orientation: 'landscape' },
+      ]);
+      expect((await db.query(`SELECT logo_asset_id, wallpaper_asset_id, logo_asset_id_portrait, wallpaper_asset_id_portrait, ads_shrink_picture FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({
+        logo_asset_id: logo,
+        wallpaper_asset_id: wall,
+        logo_asset_id_portrait: null,
+        wallpaper_asset_id_portrait: null,
+        ads_shrink_picture: true,
+      });
+
+      // The old insert shape (no orientation) still works and is landscape: an older release keeps running.
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'side_third', $2)`, [kit, adA]);
+      expect((await db.query(`SELECT orientation FROM brand_kit_ads WHERE placement = 'side_third'`)).rows[0].orientation).toBe('landscape');
+
+      // One ad per placement per orientation; unknown orientation refused.
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation) VALUES ($1, 'lower_third', $2, 'portrait')`, [kit, adA]);
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation) VALUES ($1, 'lower_third', $2, 'portrait')`, [kit, adA])).rejects.toThrow();
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'lower_third', $2)`, [kit, adA])).rejects.toThrow(); // landscape still unique
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation) VALUES ($1, 'full_screen', $2, 'square')`, [kit, adA])).rejects.toThrow();
+
+      // Portrait logo files are protected like the others.
+      await db.query(`UPDATE brand_kits SET logo_asset_id_portrait = $2 WHERE id = $1`, [kit, logoP]);
+      await expect(db.query(`DELETE FROM assets WHERE id = $1`, [logoP])).rejects.toThrow();
+      await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]);
+      await db.query(`DELETE FROM assets WHERE id = $1`, [logoP]);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });
