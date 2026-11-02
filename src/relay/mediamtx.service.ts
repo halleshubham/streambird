@@ -47,6 +47,35 @@ import { firstValueFrom } from 'rxjs';
 export class MediaMtxService {
   private readonly logger = new Logger(MediaMtxService.name);
 
+  private listFailStreak = 0;
+  private listFailSince = 0;
+
+  /** "ECONNRESET" / "HTTP 502" style reason plus any response body -- the bare axios message alone ("read ECONNRESET") says little. */
+  private describeError(err: unknown): string {
+    const e = err as { code?: string; message?: string; response?: { status?: number; data?: unknown } };
+    const status = e.response?.status;
+    const body = e.response?.data !== undefined ? ` body=${JSON.stringify(e.response.data).slice(0, 200)}` : '';
+    return `${status ? `HTTP ${status}` : (e.code ?? 'error')}: ${e.message ?? String(err)}${body}`;
+  }
+
+  /** Monitoring poll failed: warn on the first miss and every 20th after (not every few seconds), then log the recovery with the outage length. */
+  private noteListFailure(err: unknown, ms: number): void {
+    if (this.listFailStreak === 0) this.listFailSince = Date.now();
+    this.listFailStreak += 1;
+    if (this.listFailStreak === 1 || this.listFailStreak % 20 === 0) {
+      this.logger.warn(
+        `MediaMTX API GET /v3/paths/list failed (${this.describeError(err)}) after ${ms}ms; ${this.listFailStreak} consecutive failure(s) over ${Math.round((Date.now() - this.listFailSince) / 1000)}s. Stream monitoring skips this tick; publishing is unaffected.`,
+      );
+    }
+  }
+
+  private noteListSuccess(): void {
+    if (this.listFailStreak > 0) {
+      this.logger.log(`MediaMTX API recovered after ${this.listFailStreak} failed poll(s) over ${Math.round((Date.now() - this.listFailSince) / 1000)}s.`);
+      this.listFailStreak = 0;
+    }
+  }
+
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
@@ -244,7 +273,7 @@ export class MediaMtxService {
       // MediaMTX answers 400 "path already exists" if a slate is already running.
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 400) return true;
-      this.logger.warn(`Failed to start slate for '${pathName}': ${(err as Error).message}`);
+      this.logger.warn(`Failed to start slate for '${pathName}': ${this.describeError(err)}`);
       return false;
     }
   }
@@ -264,7 +293,7 @@ export class MediaMtxService {
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status !== 404) {
-        this.logger.warn(`Failed to stop slate for '${pathName}': ${(err as Error).message}`);
+        this.logger.warn(`Failed to stop slate for '${pathName}': ${this.describeError(err)}`);
       }
     }
   }
@@ -292,6 +321,7 @@ export class MediaMtxService {
     const apiUrl = this.apiUrl;
     if (!apiUrl) return null;
 
+    const t0 = Date.now();
     try {
       const res = await firstValueFrom(
         this.http.get<{ items?: Array<{ name: string; ready?: boolean; inboundBytes?: number; bytesReceived?: number }> }>(
@@ -299,6 +329,7 @@ export class MediaMtxService {
           this.authConfig,
         ),
       );
+      this.noteListSuccess();
       return new Map(
         (res.data?.items ?? []).map((item) => {
           const bytes = typeof item.inboundBytes === 'number' ? item.inboundBytes : typeof item.bytesReceived === 'number' ? item.bytesReceived : null;
@@ -306,7 +337,7 @@ export class MediaMtxService {
         }),
       );
     } catch (err) {
-      this.logger.warn(`Failed to list MediaMTX paths: ${(err as Error).message}`);
+      this.noteListFailure(err, Date.now() - t0);
       return null;
     }
   }
@@ -338,7 +369,7 @@ export class MediaMtxService {
       );
       return `${whipBaseUrl.replace(/\/$/, '')}/${pathName}/whip`;
     } catch (err) {
-      this.logger.warn(`Failed to register MediaMTX forward path '${pathName}': ${(err as Error).message}`);
+      this.logger.warn(`Failed to register MediaMTX forward path '${pathName}': ${this.describeError(err)}`);
       return null;
     }
   }
@@ -362,7 +393,7 @@ export class MediaMtxService {
         ),
       );
     } catch (err) {
-      this.logger.warn(`Failed to update MediaMTX forward destinations for path '${pathName}': ${(err as Error).message}`);
+      this.logger.warn(`Failed to update MediaMTX forward destinations for path '${pathName}': ${this.describeError(err)}`);
     }
   }
 
@@ -379,7 +410,7 @@ export class MediaMtxService {
         this.http.delete(`${apiUrl}/v3/config/paths/delete/${pathName}`, this.authConfig),
       );
     } catch (err) {
-      this.logger.warn(`Failed to remove MediaMTX forward path '${pathName}': ${(err as Error).message}`);
+      this.logger.warn(`Failed to remove MediaMTX forward path '${pathName}': ${this.describeError(err)}`);
     }
   }
 }

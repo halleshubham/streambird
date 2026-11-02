@@ -223,6 +223,26 @@ describe('MediaMtxService', () => {
     expect(await service.listPaths()).toBeNull();
   });
 
+  it('collapses repeated poll failures into one warning (with status/code) and logs the recovery', async () => {
+    const err = Object.assign(new Error('Request failed with status code 502'), { response: { status: 502 } });
+    const get = jest
+      .fn()
+      .mockReturnValueOnce(throwError(() => err))
+      .mockReturnValueOnce(throwError(() => err))
+      .mockReturnValueOnce(of({ data: { items: [] } }));
+    const service = buildService({ get });
+    const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation();
+    const log = jest.spyOn((service as any).logger, 'log').mockImplementation();
+
+    await service.listPaths();
+    await service.listPaths();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('HTTP 502');
+    expect(warn.mock.calls[0][0]).toContain('/v3/paths/list');
+    await service.listPaths();
+    expect(log.mock.calls[0][0]).toContain('recovered after 2 failed poll');
+  });
+
   it('reports each path\'s inbound byte counter (inboundBytes, or bytesReceived on older MediaMTX), null when neither is present', async () => {
     const get = jest.fn().mockReturnValueOnce(
       of({
