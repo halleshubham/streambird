@@ -4055,3 +4055,5 @@ video.chroma-preview {
 .kit-shared { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 12px 0 0; }
 .ad-shrink { margin-top: 8px; }
 .brand-files summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+.ad-shrink-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-weight: 500; cursor: pointer; }
+.ad-shrink-row input[type='checkbox'] { width: auto; flex: none; margin: 0; }

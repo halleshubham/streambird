@@ -90,7 +90,7 @@ export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props
 export function ShrinkSwitch({ shrink, onChange }: { shrink: boolean; onChange: (on: boolean) => void }) {
   return (
     <div className="ad-shrink">
-      <label className="checkbox-row">
+      <label className="ad-shrink-row">
         <input type="checkbox" checked={shrink} aria-label="Shrink picture while ads show" onChange={(e) => onChange(e.target.checked)} /> Shrink picture while ads show
       </label>
       <p className="field-hint">The live picture is made smaller to fit beside or above a lower-third or left-third ad, so nothing important is hidden. Full-screen ads always cover the picture.</p>

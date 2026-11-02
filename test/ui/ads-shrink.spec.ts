@@ -61,9 +61,11 @@ test.describe('the picture shrinks while an ad shows (plan without the Powered-b
       await openStudio(page, await newStream(api, orientation));
       const { width: W, height: H } = await canvasSize(page);
       const u = H / 720;
-      const before = (await logoBox(page))!;
-      expect(near(before.x, 16, 3)).toBe(true);
-      expect(near(before.w, LOGO_SIDE, 3)).toBe(true);
+      let before: Box = null;
+      await expect.poll(async () => (before = await logoBox(page))?.w ?? 0).toBeGreaterThan(LOGO_SIDE - 4); // read it while fully drawn
+      before = before!;
+      expect(near(before!.x, 16, 3)).toBe(true);
+      expect(near(before!.w, LOGO_SIDE, 3)).toBe(true);
       await pinAdClock(page, 0);
 
       // Lower third: scene = the canvas scaled into the area above the ad picture.
@@ -78,7 +80,7 @@ test.describe('the picture shrinks while an ad shows (plan without the Powered-b
       // The ad itself is drawn at its own place, untouched by the shrinking.
       expect(isRed(await canvasPixel(page, W / 2, fitted.y + fitted.h / 2))).toBe(true);
       // The letterbox beside the scene is the studio background, not stretched picture (nothing yellow out there).
-      expect(box.x).toBeGreaterThan(before.x + (orientation === 'landscape' ? 100 : 20));
+      expect(box.x).toBeGreaterThan(before!.x + (orientation === 'landscape' ? 100 : 20));
 
       // Left third as well: the intersection.
       await addAd(page, 'side_third', [0, 255, 0]);
