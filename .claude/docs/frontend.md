@@ -41,7 +41,7 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
   2. `.landing-section--alt > * { max-width:1100px; margin-left/right:auto }` beats single-class margin rules. Use `margin: X auto Y` on children there, or they sit off-centre (this broke the currency switch).
   3. Global `button` styling is the accent-filled look; a "plain" button must override background/border/colour **and** their `:hover:not(:disabled)` state.
   4. A `<label>` is `display:block; font-weight:600` globally — a label used as a button needs its own class (`label.slide-add-btn`).
-  5. Sticky/fixed elements: the studio top bar is sticky only above 720 px wide; it is three rows tall on phones.
+  5. Sticky/fixed elements: the studio top bar is sticky only above 720 px wide; it is three rows tall on phones (there it is `position: relative; z-index: 30` so its popovers, e.g. invite password and camera/mic, stay above the picture; `.studio-invite-group` / `.studio-devices-group` are `static` so the popover spans the bar). The camera/mic popover reuses `.studio-popover`; its rows are `.studio-device-row`.
 - Verify layout changes with screenshots at ~1366×800 and 390×800 (skill `streambird-ui-change`).
 
 ## Home page hero (`routes/LandingPage.tsx`, `components/HeroShowcase.tsx`)

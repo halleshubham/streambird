@@ -39,6 +39,8 @@ import {
   TextCursorInput,
   Users,
   Megaphone,
+  Settings2,
+  RefreshCw,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
@@ -54,6 +56,7 @@ import { BirdLoader } from '../../components/BirdLoader';
 import { DocsLink } from '../../components/DocsLink';
 import { formatElapsed } from '../../studio/recorder';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
+import { isTouchDevice } from '../../studio/cameraDevices';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
@@ -93,6 +96,7 @@ export function HostStudioPage() {
   // The password that new invite links actually use. Typing in the box changes nothing until Save.
   const [savedInvitePassword, setSavedInvitePassword] = useState('');
   const [inviteOptionsOpen, setInviteOptionsOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const [chromaOpenId, setChromaOpenId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [inviteOptionsNote, setInviteOptionsNote] = useState<string | null>(null);
@@ -135,6 +139,11 @@ export function HostStudioPage() {
     recordingSince,
     cameraStarting,
     cameraStarted,
+    cameraDevices,
+    micDevices,
+    cameraId,
+    micId,
+    switchingDevice,
     isLive,
     goLiveNotice,
     ending,
@@ -394,6 +403,78 @@ export function HostStudioPage() {
           >
             {layoutMode === 'grid' ? <LayoutGrid size={18} /> : <Focus size={18} />} <span className="tb-label tb-label--wide">Layout</span>
           </button>
+        </div>
+
+        <div className="studio-topbar-group studio-devices-group">
+          {cameraStarted && isTouchDevice() && cameraDevices.filter((c) => c.id).length > 1 && (
+            <button
+              type="button"
+              className="tb-btn tb-btn--icon"
+              aria-label="Flip camera"
+              title="Switch between the front and back camera"
+              disabled={switchingDevice}
+              onClick={() => void actions.flipCamera()}
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="tb-btn tb-btn--icon"
+            aria-label="Choose camera and microphone"
+            aria-expanded={devicesOpen}
+            title={`Camera: ${cameraDevices.find((c) => c.id === cameraId)?.label ?? 'default'} / Microphone: ${micDevices.find((m) => m.id === micId)?.label ?? 'default'}`}
+            onClick={() => setDevicesOpen((o) => !o)}
+          >
+            <Settings2 size={16} />
+          </button>
+          {devicesOpen && (
+            <div className="studio-popover" role="dialog" aria-label="Camera and microphone">
+              {cameraDevices.some((c) => c.id) ? (
+                <>
+                  <label className="studio-device-row">
+                    <span>Camera</span>
+                    <select
+                      id="cameraSelect"
+                      aria-label="Camera"
+                      value={cameraId ?? ''}
+                      disabled={switchingDevice}
+                      onChange={(e) => void actions.selectCamera(e.target.value)}
+                    >
+                      {!cameraId && <option value="">{cameraStarted ? 'Default camera' : 'Choose a camera…'}</option>}
+                      {cameraDevices.filter((c) => c.id).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="studio-device-row">
+                    <span>Microphone</span>
+                    <select
+                      id="micSelect"
+                      aria-label="Microphone"
+                      value={micId ?? ''}
+                      disabled={switchingDevice}
+                      onChange={(e) => void actions.selectMic(e.target.value)}
+                    >
+                      {!micId && <option value="">Default microphone</option>}
+                      {micDevices.filter((m) => m.id).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="studio-popover-note">
+                    {cameraStarted ? 'Switching keeps your stream running.' : 'Picking a camera turns it on.'} Your choice is remembered on this computer.
+                  </p>
+                </>
+              ) : (
+                <p className="studio-popover-note">Turn your camera on first. Your browser then shows the cameras and microphones you can choose from.</p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="studio-topbar-group studio-invite-group">

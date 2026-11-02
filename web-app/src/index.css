@@ -2210,6 +2210,18 @@ select:focus-visible {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 
+.studio-device-row {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.studio-device-row select {
+  width: 100%;
+  margin: 0;
+}
+
 .studio-password-row {
   display: flex;
   gap: 8px;
@@ -2250,10 +2262,12 @@ select:focus-visible {
 
 @media (max-width: 720px) {
   .studio-topbar {
-    position: static; /* three rows tall here: pinning it would cover the picture */
+    position: relative; /* three rows tall here: pinning (sticky) it would cover the picture; relative keeps its popovers above the picture */
+    z-index: 30;
   }
 
-  .studio-invite-group {
+  .studio-invite-group,
+  .studio-devices-group {
     position: static;
   }
 
