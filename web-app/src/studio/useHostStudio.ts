@@ -13,6 +13,22 @@ import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
 import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
 import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
+import {
+  buildAudioConstraints,
+  buildVideoConstraints,
+  describeMediaError,
+  guessFacing,
+  isIOS,
+  loadDeviceChoice,
+  nextCamera,
+  normaliseDevices,
+  otherFacing,
+  pickFlipTarget,
+  resolveRemembered,
+  saveDeviceChoice,
+  type DeviceOption,
+  type Facing,
+} from './cameraDevices';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
@@ -454,6 +470,17 @@ export function useHostStudio(streamId: string | undefined) {
   );
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
+  // Camera and microphone choice (cameraDevices.ts). Lists come from enumerateDevices(); labels are only filled in after permission.
+  const [cameraDevices, setCameraDevices] = useState<DeviceOption[]>([]);
+  const [micDevices, setMicDevices] = useState<DeviceOption[]>([]);
+  const [cameraId, setCameraId] = useState<string | null>(null);
+  const [micId, setMicId] = useState<string | null>(null);
+  const [switchingDevice, setSwitchingDevice] = useState(false);
+  const devicesRef = useRef<{ cams: DeviceOption[]; mics: DeviceOption[] }>({ cams: [], mics: [] });
+  const cameraIdRef = useRef<string | null>(null);
+  const micIdRef = useRef<string | null>(null);
+  const cameraFacingRef = useRef<Facing>('user');
+  const switchingRef = useRef(false);
   const [isLive, setIsLive] = useState(false);
   const [picturePriority, setPicturePriorityState] = useState<PicturePriority>('balanced');
   const picturePriorityRef = useRef<PicturePriority>('balanced');
@@ -1633,13 +1660,74 @@ export function useHostStudio(streamId: string | undefined) {
 
   // ---- 2. Actions exposed to the page ----------------------------------
 
+  // ---- Camera and microphone choice ---------------------------------------
+
+  const refreshDevices = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const cams = normaliseDevices(all, 'videoinput');
+      const mics = normaliseDevices(all, 'audioinput');
+      devicesRef.current = { cams, mics };
+      setCameraDevices(cams);
+      setMicDevices(mics);
+    } catch {
+      // the lists just stay as they were
+    }
+  }, []);
+
+  // A webcam plugged in or out changes the lists.
+  useEffect(() => {
+    void refreshDevices();
+    const md = navigator.mediaDevices;
+    if (!md?.addEventListener) return;
+    const onChange = () => void refreshDevices();
+    md.addEventListener('devicechange', onChange);
+    return () => md.removeEventListener('devicechange', onChange);
+  }, [refreshDevices]);
+
+  const labelOf = (list: DeviceOption[], id: string | null) => list.find((d) => d.id === id)?.label ?? null;
+
+  /** Notes which device a fresh track really came from (the browser knows even when the request was only "back" or "default"). */
+  function rememberCameraTrack(track: MediaStreamTrack, hint: { exactId?: string | null; facing?: Facing | null }) {
+    const settings = track.getSettings?.() ?? {};
+    const id = settings.deviceId || hint.exactId || null;
+    cameraIdRef.current = id;
+    setCameraId(id);
+    const f = settings.facingMode;
+    cameraFacingRef.current = f === 'user' || f === 'environment' ? f : (hint.facing ?? guessFacing(track.label || '') ?? cameraFacingRef.current);
+  }
+
+  function rememberMicTrack(track: MediaStreamTrack, hint: string | null) {
+    const id = track.getSettings?.().deviceId || hint || null;
+    micIdRef.current = id;
+    setMicId(id);
+  }
+
+  /** A device unplugged (or taken by another app) while the studio is open: fall back to the default and say so; never end the stream. */
+  function watchLocalTrack(track: MediaStreamTrack, kind: 'camera' | 'microphone') {
+    track.onended = () => {
+      const p = participantsRef.current.get('local');
+      if (!p || (kind === 'camera' ? p.videoTrack : p.audioTrack) !== track || switchingRef.current) return;
+      void (kind === 'camera'
+        ? swapCameraTrack({}, 'The camera was disconnected, so the studio switched to the default camera.')
+        : swapMicTrack(null, 'The microphone was disconnected, so the studio switched to the default microphone.'));
+    };
+  }
+
   const startCamera = useCallback(async () => {
     setCameraStarting(true);
     try {
       // A vertical stream asks for a tall picture (a phone gives one; a webcam gives the closest mode it has,
-      // so less of the frame is cropped away). `ideal` never fails the request.
-      const video: MediaTrackConstraints | boolean = orientationRef.current === 'portrait' ? { aspectRatio: { ideal: 9 / 16 } } : true;
-      const localStream = await navigator.mediaDevices.getUserMedia({ video, audio: AUDIO_CONSTRAINTS });
+      // so less of the frame is cropped away). `ideal` never fails the request. The remembered camera and
+      // microphone are asked for as `ideal` too, so one that has gone away just means the default.
+      await refreshDevices(); // so a remembered camera that has since gone is recognised and skipped
+      const saved = loadDeviceChoice();
+      const camPick = resolveRemembered(saved.cameraId, devicesRef.current.cams);
+      const micPick = resolveRemembered(saved.micId, devicesRef.current.mics);
+      const video = buildVideoConstraints({ portrait: orientationRef.current === 'portrait', idealId: camPick });
+      const audio = buildAudioConstraints(AUDIO_CONSTRAINTS, { idealId: micPick });
+      const localStream = await navigator.mediaDevices.getUserMedia({ video, audio });
       const videoEl = document.createElement('video');
       videoEl.srcObject = localStream;
       videoEl.muted = true;
@@ -1668,6 +1756,15 @@ export function useHostStudio(streamId: string | undefined) {
         segPreview: false,
       });
       connectAudioTrack('local', audioTrack);
+      if (videoTrack) {
+        rememberCameraTrack(videoTrack, { exactId: camPick });
+        watchLocalTrack(videoTrack, 'camera');
+      }
+      if (audioTrack) {
+        rememberMicTrack(audioTrack, micPick);
+        watchLocalTrack(audioTrack, 'microphone');
+      }
+      void refreshDevices(); // labels exist now that the browser has asked permission
       renderParticipantList();
       setCameraStarted(true);
 
@@ -1684,6 +1781,234 @@ export function useHostStudio(streamId: string | undefined) {
     } finally {
       setCameraStarting(false);
     }
+  }, [refreshDevices]);
+
+  /** Sends a new local track to every guest connection in place of the old one (no renegotiation, guests keep their view). */
+  function replaceOnPeers(oldTrack: MediaStreamTrack | null, next: MediaStreamTrack) {
+    if (!oldTrack) return;
+    for (const g of participantsRef.current.values()) {
+      const sender = g.pc?.getSenders().find((s) => s.track === oldTrack);
+      if (sender) void sender.replaceTrack(next).catch((e) => console.warn('replaceTrack failed', e));
+    }
+  }
+
+  /**
+   * Swaps the host's camera while everything keeps running: the new picture is already playing in a fresh video
+   * element before it replaces the old one, so the tile never goes black, and the guests' connections get
+   * replaceTrack. The broadcast carries the canvas, which keeps drawing from `p.videoEl`, so it is untouched.
+   * On failure the previous camera keeps running (or is re-opened where the browser allows only one camera).
+   */
+  async function swapCameraTrack(
+    choice: { exactId?: string | null; facing?: Facing | null },
+    note?: string,
+    quietFail = false,
+  ): Promise<{ ok: boolean; error?: unknown }> {
+    const p = participantsRef.current.get('local');
+    if (!p || switchingRef.current) return { ok: false };
+    switchingRef.current = true;
+    setSwitchingDevice(true);
+    const portrait = orientationRef.current === 'portrait';
+    const old = p.videoTrack;
+    const prevId = cameraIdRef.current;
+    const ask = (c: { exactId?: string | null; facing?: Facing | null }) =>
+      navigator.mediaDevices.getUserMedia({ video: buildVideoConstraints({ portrait, ...c }) });
+    const busy = (e: unknown) => ['NotReadableError', 'AbortError', 'TrackStartError'].includes((e as { name?: string })?.name ?? '');
+    try {
+      let ns: MediaStream | null = null;
+      let failure: unknown = null;
+      // Some phones (iOS Safari, many Androids) allow one open camera: release the old one first there.
+      if (isIOS() && old) old.stop();
+      try {
+        ns = await ask(choice);
+      } catch (e) {
+        failure = e;
+        if (busy(e) && old && old.readyState === 'live') {
+          old.stop();
+          try {
+            ns = await ask(choice);
+            failure = null;
+          } catch (e2) {
+            failure = e2;
+          }
+        }
+      }
+      if (!ns) {
+        // If the old camera was already released, open it (or the default) again so the picture does not stay frozen.
+        if (old && old.readyState === 'ended') {
+          let back: MediaStream | null = null;
+          try {
+            back = await ask({ exactId: prevId });
+          } catch {
+            back = await ask({}).catch(() => null);
+          }
+          if (back) await installVideo(back, {});
+        }
+        if (!quietFail) setStatus({ text: `Could not switch camera: ${describeMediaError(failure)} The previous camera stays on.`, isError: true });
+        return { ok: false, error: failure };
+      }
+      await installVideo(ns, choice);
+      // Only a choice the host made is remembered (not the automatic fallback after an unplug, which passes a note).
+      if (!note && cameraIdRef.current) saveDeviceChoice({ cameraId: cameraIdRef.current });
+      const label = labelOf(devicesRef.current.cams, cameraIdRef.current);
+      setStatus({ text: note ?? (label ? `Camera: ${label}` : 'Camera switched.'), isError: false });
+      void refreshDevices();
+      return { ok: true };
+    } finally {
+      switchingRef.current = false;
+      setSwitchingDevice(false);
+    }
+  }
+
+  async function installVideo(ns: MediaStream, hint: { exactId?: string | null; facing?: Facing | null }) {
+    const p = participantsRef.current.get('local');
+    const track = ns.getVideoTracks()[0];
+    if (!p || !track) {
+      ns.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const el = document.createElement('video');
+    el.srcObject = new MediaStream([track, ...(p.audioTrack ? [p.audioTrack] : [])]);
+    el.muted = true;
+    el.autoplay = true;
+    el.playsInline = true;
+    await el.play().catch(() => {});
+    if (el.readyState < 2) {
+      await new Promise<void>((res) => {
+        el.onloadeddata = () => res();
+        setTimeout(res, 1500);
+      });
+    }
+    track.enabled = p.videoEnabled;
+    const oldTrack = p.videoTrack;
+    const oldEl = p.videoEl;
+    p.videoEl = el;
+    p.videoTrack = track;
+    replaceOnPeers(oldTrack, track);
+    if (oldTrack) {
+      oldTrack.onended = null;
+      oldTrack.stop();
+    }
+    oldEl.srcObject = null;
+    rememberCameraTrack(track, hint);
+    watchLocalTrack(track, 'camera');
+    renderParticipantList();
+  }
+
+  /** Swaps the host's microphone: the mix's local source node is replaced; guests get replaceTrack. */
+  async function swapMicTrack(exactId: string | null, note?: string): Promise<boolean> {
+    const p = participantsRef.current.get('local');
+    if (!p || switchingRef.current) return false;
+    switchingRef.current = true;
+    setSwitchingDevice(true);
+    const old = p.audioTrack;
+    const ask = (id: string | null) => navigator.mediaDevices.getUserMedia({ audio: buildAudioConstraints(AUDIO_CONSTRAINTS, { exactId: id }) });
+    try {
+      let ns: MediaStream;
+      try {
+        ns = await ask(exactId);
+      } catch (e) {
+        const name = (e as { name?: string })?.name ?? '';
+        if (!(old && old.readyState === 'live' && (name === 'NotReadableError' || name === 'AbortError'))) throw e;
+        old.stop();
+        try {
+          ns = await ask(exactId);
+        } catch (e2) {
+          const back = await ask(micIdRef.current).catch(() => null);
+          if (back) await installAudio(back, micIdRef.current);
+          throw e2;
+        }
+      }
+      await installAudio(ns, exactId);
+      if (!note && micIdRef.current) saveDeviceChoice({ micId: micIdRef.current });
+      const label = labelOf(devicesRef.current.mics, micIdRef.current);
+      setStatus({ text: note ?? (label ? `Microphone: ${label}` : 'Microphone switched.'), isError: false });
+      void refreshDevices();
+      return true;
+    } catch (err) {
+      setStatus({ text: `Could not switch microphone: ${describeMediaError(err, 'microphone')} The previous microphone stays on.`, isError: true });
+      return false;
+    } finally {
+      switchingRef.current = false;
+      setSwitchingDevice(false);
+    }
+  }
+
+  async function installAudio(ns: MediaStream, hint: string | null = null) {
+    const p = participantsRef.current.get('local');
+    const track = ns.getAudioTracks()[0];
+    if (!p || !track) {
+      ns.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    track.enabled = p.audioEnabled;
+    const oldTrack = p.audioTrack;
+    p.audioTrack = track;
+    // Replace the local source node in the mix (a host moved backstage stays out of the broadcast mix).
+    removeParticipantAudio('local');
+    connectAudioTrack('local', track);
+    if (!p.onStage) {
+      try {
+        audioSourceNodesRef.current.get('local')?.disconnect(audioDestinationRef.current!);
+      } catch {
+        // already apart
+      }
+    }
+    replaceOnPeers(oldTrack, track);
+    if (oldTrack) {
+      oldTrack.onended = null;
+      oldTrack.stop();
+    }
+    rememberMicTrack(track, hint);
+    watchLocalTrack(track, 'microphone');
+    renderParticipantList();
+  }
+
+  /** Picks a camera. Before the camera is on this starts it with that choice. */
+  const selectCamera = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      if (!participantsRef.current.has('local')) {
+        saveDeviceChoice({ cameraId: id });
+        cameraIdRef.current = id;
+        setCameraId(id);
+        await startCamera();
+        return;
+      }
+      if (id === cameraIdRef.current) return;
+      await swapCameraTrack({ exactId: id });
+    },
+    [startCamera],
+  );
+
+  const selectMic = useCallback(async (id: string) => {
+    if (!id) return;
+    if (!participantsRef.current.has('local')) {
+      saveDeviceChoice({ micId: id });
+      micIdRef.current = id;
+      setMicId(id);
+      return;
+    }
+    if (id === micIdRef.current) return;
+    await swapMicTrack(id);
+  }, []);
+
+  /** Front <-> back. Names that tell the cameras apart pick a device; otherwise the browser is asked for the other facing, and failing that the next camera. */
+  const flipCamera = useCallback(async () => {
+    if (!participantsRef.current.has('local') || switchingRef.current) return;
+    const cams = devicesRef.current.cams;
+    const target = pickFlipTarget(cams, cameraIdRef.current, cameraFacingRef.current);
+    if (target) {
+      await swapCameraTrack({ exactId: target.id, facing: target.facing });
+      return;
+    }
+    const first = await swapCameraTrack({ facing: otherFacing(cameraFacingRef.current) }, undefined, true);
+    if (first.ok) return;
+    const next = nextCamera(cams, cameraIdRef.current);
+    if (next) {
+      const second = await swapCameraTrack({ exactId: next.id }, undefined, true);
+      if (second.ok) return;
+    }
+    setStatus({ text: `Could not flip the camera: ${describeMediaError(first.error)} The previous camera stays on.`, isError: true });
   }, []);
 
   // setLayout is the shared primitive -- it sets the layout directly (used
@@ -2871,6 +3196,11 @@ export function useHostStudio(streamId: string | undefined) {
     recordingSince,
     cameraStarting,
     cameraStarted,
+    cameraDevices,
+    micDevices,
+    cameraId,
+    micId,
+    switchingDevice,
     isLive,
     goLiveNotice,
     ending,
@@ -2888,6 +3218,10 @@ export function useHostStudio(streamId: string | undefined) {
       startScheduledStream,
       resumeLive,
       startCamera,
+      selectCamera,
+      selectMic,
+      flipCamera,
+      refreshDevices,
       createInviteLink,
       toggleLayout,
       setLayout,
