@@ -411,21 +411,17 @@ test.describe('brand kit ads', () => {
     const upload = async (name: string, buffer: Buffer, kind: string) =>
       (await (await api.post(`${APP}/api/assets`, { multipart: { kind, name, file: { name: `${name}.png`, mimeType: 'image/png', buffer } }, headers: { Origin: APP } })).json()).id as string;
 
-    // Upload a library file of the new kind "Ad" through the page itself.
-    await page.goto('/brand');
-    await page.getByLabel('Type').selectOption('ad');
-    await page.getByLabel(/Image \(PNG/).setInputFiles({ name: 'sponsor.png', mimeType: 'image/png', buffer: solidPng(255, 0, 0, 128, 24) });
-    await page.getByRole('button', { name: 'Upload' }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'Uploaded "sponsor"' })).toBeVisible();
-    await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of sponsor') })).toContainText('Ad');
+    // The ad is uploaded straight into the kit's Lower third slot (it is stored as a library file of type "Ad").
     await upload('not-an-ad', solidPng(0, 255, 0, 16), 'logo');
-
+    await page.goto('/brand');
     await page.getByRole('button', { name: 'New brand kit' }).click();
     const form = page.getByRole('form', { name: 'New brand kit' });
     await form.getByLabel('Kit name').fill('Sponsors');
     const slot = form.getByRole('group', { name: 'Lower third ad' });
-    await expect(slot.getByLabel('Lower third ad file').locator('option')).toHaveText(['No ad', 'sponsor']); // only files of type Ad
-    await slot.getByLabel('Lower third ad file').selectOption({ label: 'sponsor' });
+    await expect(slot.getByLabel('Lower third ad: choose from uploaded')).toHaveCount(0); // nothing of type Ad uploaded yet (the logo is not offered)
+    await slot.getByLabel('Lower third ad file').setInputFiles({ name: 'sponsor.png', mimeType: 'image/png', buffer: solidPng(255, 0, 0, 128, 24) });
+    await expect(slot.getByTestId('kit-slot-lower_third')).toContainText('sponsor');
+    await expect(slot.getByLabel('Lower third ad: choose from uploaded').locator('option')).toHaveText(['Choose from uploaded…', 'sponsor (128x24)']); // only files of type Ad
     await expect(form.getByTestId('kit-preview-ad-lower_third')).toBeVisible(); // live preview of the geometry
     await slot.getByRole('button', { name: 'Now and then' }).click();
     await slot.getByLabel('Lower third ad: show for', { exact: true }).fill('10');
@@ -455,6 +451,8 @@ test.describe('brand kit ads', () => {
 
     // The file in use cannot be deleted from the library.
     page.on('dialog', (d) => void d.accept());
+    await page.locator('summary', { hasText: 'Uploaded files' }).click();
+    await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of sponsor') })).toContainText('Ad');
     await page.getByRole('button', { name: 'Delete sponsor' }).click();
     await expect(page.getByRole('alert')).toContainText('used by the brand kit');
 

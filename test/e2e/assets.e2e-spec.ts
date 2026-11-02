@@ -358,4 +358,104 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       expect([204, 409]).toContain(del.status);
     });
   });
+
+  describe('brand kit orientation sets (landscape 16:9 and portrait 9:16)', () => {
+    afterEach(async () => {
+      await admin.patch('/superadmin/plans/free', { watermark: true, assetStorageMb: 5 });
+    });
+
+    it('a kit has separate logo, wallpaper and ads per orientation; the old fields are the landscape set', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const up = async (kind: string, name: string, w = 100, h = 100) => (await upload(client, fakePng(w, h), kind, name)).body.id as string;
+      const logoL = await up('logo', 'logo16');
+      const logoP = await up('logo', 'logo9');
+      const wallL = await up('wallpaper', 'wall16', 1920, 1080);
+      const wallP = await up('wallpaper', 'wall9', 1080, 1920);
+      const adL = await up('ad', 'ad16', 1280, 240);
+      const adP = await up('ad', 'ad9', 1080, 360);
+
+      // A kit made the old way (no portrait fields) is the landscape set; portrait is empty and the shrink switch defaults to on.
+      const legacy = await client.post('/brand-kits', { name: 'Legacy', logoAssetId: logoL, wallpaperAssetId: wallL, ads: [{ placement: 'lower_third', assetId: adL }] });
+      expect(legacy.status).toBe(201);
+      expect(legacy.body).toMatchObject({ logoAssetId: logoL, wallpaperAssetId: wallL, logoAssetIdPortrait: null, wallpaperAssetIdPortrait: null, adsPortrait: [], adsShrinkPicture: true });
+      expect(legacy.body.ads).toHaveLength(1);
+
+      const created = await client.post('/brand-kits', {
+        name: 'Both',
+        logoAssetId: logoL,
+        logoAssetIdPortrait: logoP,
+        wallpaperAssetId: wallL,
+        wallpaperAssetIdPortrait: wallP,
+        ads: [{ placement: 'lower_third', assetId: adL }],
+        adsPortrait: [{ placement: 'lower_third', assetId: adP, mode: 'interval', showSec: 10, everySec: 60 }, { placement: 'full_screen', assetId: adP }],
+        adsShrinkPicture: false,
+      });
+      expect(created.status).toBe(201);
+      const id = created.body.id;
+      expect(created.body).toMatchObject({ logoAssetId: logoL, logoAssetIdPortrait: logoP, wallpaperAssetId: wallL, wallpaperAssetIdPortrait: wallP, adsShrinkPicture: false });
+      expect(created.body.ads).toEqual([{ placement: 'lower_third', assetId: adL, enabled: true, mode: 'continuous', showSec: null, everySec: null }]);
+      expect(created.body.adsPortrait).toEqual([
+        { placement: 'lower_third', assetId: adP, enabled: true, mode: 'interval', showSec: 10, everySec: 60 },
+        { placement: 'full_screen', assetId: adP, enabled: true, mode: 'continuous', showSec: null, everySec: null },
+      ]);
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === id).adsPortrait).toHaveLength(2);
+
+      // An old client PATCHing only the landscape fields leaves the portrait set alone (and vice versa).
+      const oldClient = await client.patch(`/brand-kits/${id}`, { name: 'Both 2', ads: [], logoAssetId: null });
+      expect(oldClient.status).toBe(200);
+      expect(oldClient.body).toMatchObject({ logoAssetId: null, logoAssetIdPortrait: logoP, wallpaperAssetIdPortrait: wallP, ads: [] });
+      expect(oldClient.body.adsPortrait).toHaveLength(2);
+      const portraitOnly = await client.patch(`/brand-kits/${id}`, { adsPortrait: [{ placement: 'side_third', assetId: adP }], wallpaperAssetIdPortrait: null, adsShrinkPicture: true });
+      expect(portraitOnly.body.adsPortrait.map((a: any) => a.placement)).toEqual(['side_third']);
+      expect(portraitOnly.body).toMatchObject({ wallpaperAssetIdPortrait: null, wallpaperAssetId: wallL, adsShrinkPicture: true });
+      expect((await client.patch(`/brand-kits/${id}`, { adsPortrait: null })).body.adsPortrait).toHaveLength(1); // null = unchanged
+
+      // Files used by the portrait set are protected and show up in the library's usedBy.
+      const lib = await client.get('/assets');
+      expect(lib.body.items.find((a: any) => a.id === logoP).usedBy).toEqual(['Both 2']);
+      const refused = await client.del(`/assets/${logoP}`);
+      expect(refused.status).toBe(409);
+      expect(msg(refused.body)).toMatch(/Both 2/);
+      expect((await client.del(`/assets/${wallP}`)).status).toBe(204); // no longer used by the kit
+      await client.patch(`/brand-kits/${id}`, { logoAssetIdPortrait: null, adsPortrait: [] });
+      expect((await client.del(`/assets/${logoP}`)).status).toBe(204);
+    });
+
+    it('validates portrait files like landscape ones, and the portrait ads follow the same plan gate', async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
+      const { client } = await h.signIn();
+      const other = await h.signIn();
+      const logo = (await upload(client, fakePng(50, 50), 'logo', 'L')).body.id as string;
+      const wall = (await upload(client, fakePng(50, 50), 'wallpaper', 'W')).body.id as string;
+      const ad = (await upload(client, fakePng(50, 50), 'ad', 'A')).body.id as string;
+      const foreign = (await upload(other.client, fakePng(50, 50), 'logo', 'F')).body.id as string;
+      const kit = (await client.post('/brand-kits', { name: 'V' })).body.id as string;
+
+      expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: wall })).status).toBe(400); // a wallpaper is not a logo
+      expect((await client.patch(`/brand-kits/${kit}`, { wallpaperAssetIdPortrait: logo })).status).toBe(400); // nor a logo a wallpaper
+      expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: ad })).status).toBe(400); // an ad file is neither
+      expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: foreign })).status).toBe(400); // another account's file
+      expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: 'nope' })).status).toBe(400);
+      expect((await client.patch(`/brand-kits/${kit}`, { adsPortrait: [{ placement: 'lower_third', assetId: logo }] })).status).toBe(400); // portrait ads must be files of type Ad
+      expect((await client.patch(`/brand-kits/${kit}`, { adsPortrait: [{ placement: 'lower_third', assetId: ad }, { placement: 'lower_third', assetId: ad }] })).status).toBe(400); // one per place
+      expect((await client.patch(`/brand-kits/${kit}`, { adsPortrait: [{ placement: 'top_banner', assetId: ad }] })).status).toBe(400);
+      expect((await client.patch(`/brand-kits/${kit}`, { adsShrinkPicture: 'yes' })).status).toBe(400);
+      // The same file may serve both orientations.
+      const both = await client.patch(`/brand-kits/${kit}`, { ads: [{ placement: 'lower_third', assetId: ad }], adsPortrait: [{ placement: 'lower_third', assetId: ad }] });
+      expect(both.status).toBe(200);
+      expect(both.body.ads).toHaveLength(1);
+      expect(both.body.adsPortrait).toHaveLength(1);
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === kit)).toMatchObject({ logoAssetIdPortrait: null }); // nothing half-saved
+
+      // Plan gate: on a plan with the mark, portrait ads are refused too (clearing is always fine).
+      await admin.patch('/superadmin/plans/free', { watermark: true });
+      expect((await client.patch(`/brand-kits/${kit}`, { adsPortrait: [{ placement: 'side_third', assetId: ad }] })).status).toBe(403);
+      expect((await client.patch(`/brand-kits/${kit}`, { name: 'V2' })).body.adsPortrait).toHaveLength(1); // still readable
+      expect((await client.patch(`/brand-kits/${kit}`, { adsPortrait: [], ads: [] })).status).toBe(200);
+      // The Free plan without storage cannot use kits at all (unchanged).
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 0 });
+      expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: logo })).status).toBe(403);
+    });
+  });
 });

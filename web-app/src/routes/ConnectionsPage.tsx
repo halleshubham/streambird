@@ -22,7 +22,7 @@ const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   youtube_oauth_failed: "Connecting YouTube failed. Please try again.",
   youtube_no_channel: "That Google account doesn't have a YouTube channel to connect.",
   facebook_oauth_failed: 'Connecting Facebook failed. Please try again.',
-  facebook_no_pages: "That Facebook account doesn't manage any Pages to connect.",
+  facebook_no_pages: "We couldn't find a Facebook Page you manage. In the Facebook dialog choose 'Edit settings' and tick your Page, make sure you're logged in as the Page's admin, then try again.",
 };
 
 /** The one permanent link a host shares: opens their live stream while live, their channel/page otherwise. */

@@ -126,6 +126,7 @@ export function HostStudioPage() {
     activeKitId,
     canBrandLibrary,
     adsPlan,
+    adsShrink,
     ads,
     canRecord,
     canChromaKey,
@@ -949,7 +950,7 @@ export function HostStudioPage() {
                   </div>
           </div>
           <div role="tabpanel" id="studio-panel-ads" aria-labelledby="studio-tab-ads" hidden={sideTab !== 'ads'}>
-            <AdsPanel plan={adsPlan} ads={ads} kit={brandKits.find((k) => k.id === activeKitId) ?? null} actions={actions} />
+            <AdsPanel plan={adsPlan} ads={ads} kit={brandKits.find((k) => k.id === activeKitId) ?? null} orientation={orientation} shrink={adsShrink} actions={actions} />
           </div>
         </aside>
 

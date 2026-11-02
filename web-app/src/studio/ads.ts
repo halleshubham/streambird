@@ -182,3 +182,82 @@ export function scheduleError(schedule: AdSchedule): string | null {
   if (!Number.isInteger(everySec) || everySec < AD_EVERY_SEC_RANGE.min || everySec > AD_EVERY_SEC_RANGE.max) return 'Time between showings must be between 1 second and 24 hours.';
   return null;
 }
+
+// ---- Reserving space: the picture shrinks while an ad shows -------------------------------------------------
+//
+// SHRINK RULE (switch "Shrink picture while ads show", default on). While a lower_third or side_third ad is visible,
+// the SCENE (camera tiles / layout / slides, the logo and the name lower-third banner) is scaled down, aspect ratio
+// kept, to fit the area the ad leaves free, and centred in it. The wallpaper / canvas colour stay full-frame behind
+// it (letterbox). The ticker stays at the very bottom edge (the ad stands on it), and the Free plan's mark is always
+// on top. full_screen never shrinks anything (it is meant to cover).
+//   lower_third: free area = x 0..W, y 0..top of the DRAWN ad picture (`fitAd` result, already above the ticker)
+//   side_third:  free area = the right two thirds, x round(W/3)..W, full height
+//   both at once: the intersection (right two thirds, above the lower third)
+// Progress: each ad's current opacity (0..1, the 300 ms schedule/manual fade) through `shrinkEase` (smoothstep), so
+// the picture eases in and out in step with the fade. insets = full inset * eased progress.
+
+/** Smoothstep of an ad's opacity: 0 -> 0, 1 -> 1, gentle at both ends. */
+export function shrinkEase(alpha: number): number {
+  const t = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+  return t * t * (3 - 2 * t);
+}
+
+export interface SceneInsets {
+  /** Pixels taken from the left edge. */
+  left: number;
+  /** Pixels taken from the bottom edge (includes the ticker bar the ad stands on). */
+  bottom: number;
+}
+
+/**
+ * The room an ad takes at full progress. `fitted` = where the ad picture is actually drawn (fitAd); without it the
+ * placement's whole area is used. full_screen reserves nothing.
+ */
+export function adReserve(placement: AdPlacement, W: number, H: number, tickerBarHeight = 0, fitted: AdRect | null = null): SceneInsets {
+  switch (placement) {
+    case 'lower_third': {
+      const top = fitted && fitted.h > 0 ? fitted.y : adRect('lower_third', W, H, tickerBarHeight).y;
+      return { left: 0, bottom: Math.max(0, H - top) };
+    }
+    case 'side_third':
+      return { left: adRect('side_third', W, H).w, bottom: 0 };
+    case 'full_screen':
+      return { left: 0, bottom: 0 };
+  }
+}
+
+/** Contain-fits the W x H scene into what is left after the insets, centred both ways. Never larger than the canvas. */
+export function sceneRect(W: number, H: number, insets: SceneInsets): AdRect {
+  const areaX = Math.min(Math.max(0, insets.left), W - 1);
+  const areaW = W - areaX;
+  const areaH = Math.max(1, H - Math.max(0, insets.bottom));
+  const scale = Math.min(1, areaW / W, areaH / H);
+  const w = W * scale;
+  const h = H * scale;
+  return { x: areaX + (areaW - w) / 2, y: (areaH - h) / 2, w, h };
+}
+
+export interface AdShrinkInput {
+  /** The ad's current opacity 0..1 (after priority), 0 when it is not showing. */
+  alpha: number;
+  /** Where the ad picture is drawn; null = use the placement's whole area. */
+  fitted?: AdRect | null;
+}
+
+/**
+ * Where the scene is drawn while the given ads show (any subset of the three; missing = not showing). Returns the
+ * whole canvas when nothing shrinks it. `tickerBarHeight` only matters for a lower_third without `fitted`.
+ */
+export function sceneRectFor(W: number, H: number, ads: Partial<Record<AdPlacement, AdShrinkInput>>, tickerBarHeight = 0): AdRect {
+  let left = 0;
+  let bottom = 0;
+  for (const p of AD_PLACEMENTS) {
+    const a = ads[p];
+    if (!a || !(a.alpha > 0)) continue;
+    const full = adReserve(p, W, H, tickerBarHeight, a.fitted ?? null);
+    const k = shrinkEase(a.alpha);
+    left = Math.max(left, full.left * k);
+    bottom = Math.max(bottom, full.bottom * k);
+  }
+  return left === 0 && bottom === 0 ? { x: 0, y: 0, w: W, h: H } : sceneRect(W, H, { left, bottom });
+}

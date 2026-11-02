@@ -4048,3 +4048,26 @@ video.chroma-preview {
 .kit-preview-ad-tag { position: absolute; top: 2px; right: 3px; font-size: 8px; line-height: 1; color: #fff; background: rgba(0, 0, 0, 0.55); padding: 2px 3px; border-radius: 3px; }
 .studio-tab { padding: 8px 9px; gap: 4px; }
 .ad-card > .icon-btn { align-self: flex-start; }
+
+/* Unified brand kit editor: orientation tabs, graphic slots, size hints and warnings */
+.kit-orientation { display: flex; gap: 4px; margin: 12px 0 0; border-bottom: 1px solid var(--border); }
+.kit-orientation [role='tab'] { flex: 1 1 0; padding: 10px 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.kit-orientation [role='tab'].active { border-color: var(--border); background: var(--card-bg); color: var(--text-h); box-shadow: inset 0 -2px 0 var(--accent); }
+.kit-orientation [role='tab']:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kit-orientation-panel { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
+.kit-preview--portrait { aspect-ratio: 9 / 16; width: 135px; }
+.brand-kit--editing .kit-preview--portrait { width: 150px; }
+.brand-kit-summary .kit-preview--portrait { width: 90px; }
+.kit-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kit-slot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.kit-slot-drop { padding: 12px; }
+.kit-slot-name { overflow-wrap: anywhere; }
+.kit-slot-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--text-h); font-size: 13px; }
+.kit-slot-warning svg { flex: none; margin-top: 2px; color: var(--warning); }
+.kit-slot-actions { justify-content: flex-start; align-items: center; }
+.kit-slot-choose { width: auto; max-width: 100%; margin: 0; }
+.kit-shared { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 12px 0 0; }
+.ad-shrink { margin-top: 8px; }
+.brand-files summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+.ad-shrink-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-weight: 500; cursor: pointer; }
+.ad-shrink-row input[type='checkbox'] { width: auto; flex: none; margin: 0; }

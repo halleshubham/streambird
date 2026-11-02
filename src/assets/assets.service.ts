@@ -66,7 +66,7 @@ export class AssetsService {
       this.kits.find({ where: { accountId } }),
     ]);
     const ads = kits.length > 0 ? await this.kitAds.find({ where: { brandKitId: In(kits.map((k) => k.id)) } }) : [];
-    const kitUsing = (assetId: string) => kits.filter((k) => k.logoAssetId === assetId || k.wallpaperAssetId === assetId || ads.some((ad) => ad.brandKitId === k.id && ad.assetId === assetId));
+    const kitUsing = (assetId: string) => kits.filter((k) => k.logoAssetId === assetId || k.wallpaperAssetId === assetId || k.logoAssetIdPortrait === assetId || k.wallpaperAssetIdPortrait === assetId || ads.some((ad) => ad.brandKitId === k.id && ad.assetId === assetId));
     return {
       enabled: this.storage.enabled,
       quotaBytes,
@@ -131,7 +131,7 @@ export class AssetsService {
     const asset = await this.findOwned(accountId, id);
     const adKits = (await this.kitAds.find({ where: { assetId: id }, select: ['brandKitId'] })).map((a) => a.brandKitId);
     const using = await this.kits.find({
-      where: [{ accountId, logoAssetId: id }, { accountId, wallpaperAssetId: id }, ...(adKits.length > 0 ? [{ accountId, id: In(adKits) }] : [])],
+      where: [{ accountId, logoAssetId: id }, { accountId, wallpaperAssetId: id }, { accountId, logoAssetIdPortrait: id }, { accountId, wallpaperAssetIdPortrait: id }, ...(adKits.length > 0 ? [{ accountId, id: In(adKits) }] : [])],
     });
     if (using.length > 0) {
       throw new ConflictException(`This file is used by the brand kit${using.length > 1 ? 's' : ''} ${using.map((k) => `"${k.name}"`).join(', ')}. Change or delete ${using.length > 1 ? 'them' : 'it'} first.`);

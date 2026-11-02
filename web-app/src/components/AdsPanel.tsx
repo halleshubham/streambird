@@ -17,6 +17,8 @@ import {
 } from '../studio/ads';
 import type { AdInfo } from '../studio/adLayer';
 import type { BrandKit } from '../types/api';
+import { kitSetFor } from '../studio/brandKitSet';
+import { slotHelp, type BrandOrientation } from '../studio/brandSizes';
 
 interface Props {
   /** 'free' = the plan carries a StreamBird ad and cannot run its own. */
@@ -24,7 +26,12 @@ interface Props {
   ads: Record<AdPlacement, AdInfo>;
   /** The brand kit applied to this stream (its ads can be picked as the file source). */
   kit: BrandKit | null;
+  /** The stream's orientation: decides which set of the kit's ads is offered and which sizes are suggested. */
+  orientation: BrandOrientation;
+  /** "Shrink picture while ads show" for this stream. */
+  shrink: boolean;
   actions: {
+    setAdsShrink: (on: boolean) => void;
     setAdEnabled: (p: AdPlacement, enabled: boolean) => void;
     setAdSchedule: (p: AdPlacement, schedule: AdSchedule) => void;
     setAdManual: (p: AdPlacement, manual: AdManual) => void;
@@ -34,13 +41,13 @@ interface Props {
 }
 
 const WHERE: Record<AdPlacement, string> = {
-  lower_third: 'The bottom third of the picture (above the ticker). Best size 1280 x 240.',
-  side_third: 'The left third of the picture, full height. Best size 427 x 720.',
-  full_screen: 'The whole picture. It hides the other two while it is on. Best size 1280 x 720.',
+  lower_third: 'The bottom third of the picture (above the ticker).',
+  side_third: 'The left third of the picture, full height.',
+  full_screen: 'The whole picture. It hides the other two while it is on.',
 };
 
 /** The studio's Ads tab: up to three ads on the broadcast picture, each with its own file, schedule and manual control. */
-export function AdsPanel({ plan, ads, kit, actions }: Props) {
+export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props) {
   if (plan === 'unknown') return <div className="panel" aria-busy="true" />;
   if (plan === 'free') {
     return (
@@ -52,6 +59,7 @@ export function AdsPanel({ plan, ads, kit, actions }: Props) {
           Streams on the Free plan carry a short <strong>StreamBird ad</strong> over the lower third ({describeSchedule(FREE_PLAN_AD_SCHEDULE).toLowerCase()}) and the “Powered by StreamBird” mark. It cannot be
           changed or hidden on this plan.
         </p>
+        <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
         <p className="field-hint">
           Paid plans and day passes remove it and let you run your own ads (a lower third, a left third or the full screen) from a file or your brand kit.{' '}
           <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
@@ -69,15 +77,40 @@ export function AdsPanel({ plan, ads, kit, actions }: Props) {
           Show your own sponsor or promo pictures over the broadcast. Each ad can be on all the time or pop up now and then. Pictures chosen here are used for this stream only; to keep ads for every stream,
           add them to a <Link to="/brand">brand kit</Link>.
         </p>
+        <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
       </div>
       {AD_PLACEMENTS.map((p) => (
-        <AdCard key={p} placement={p} info={ads[p]} kitAd={kit?.ads?.find((a) => a.placement === p) ?? null} actions={actions} />
+        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} />
       ))}
     </div>
   );
 }
 
-function AdCard({ placement, info, kitAd, actions }: { placement: AdPlacement; info: AdInfo; kitAd: BrandKit['ads'][number] | null; actions: Props['actions'] }) {
+/** The picture-shrinks-while-an-ad-shows switch (studio Ads tab and brand kit editor share its wording). */
+export function ShrinkSwitch({ shrink, onChange }: { shrink: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <div className="ad-shrink">
+      <label className="ad-shrink-row">
+        <input type="checkbox" checked={shrink} aria-label="Shrink picture while ads show" onChange={(e) => onChange(e.target.checked)} /> Shrink picture while ads show
+      </label>
+      <p className="field-hint">The live picture is made smaller to fit beside or above a lower-third or left-third ad, so nothing important is hidden. Full-screen ads always cover the picture.</p>
+    </div>
+  );
+}
+
+function AdCard({
+  placement,
+  orientation,
+  info,
+  kitAd,
+  actions,
+}: {
+  placement: AdPlacement;
+  orientation: BrandOrientation;
+  info: AdInfo;
+  kitAd: BrandKit['ads'][number] | null;
+  actions: Props['actions'];
+}) {
   const label = AD_PLACEMENT_LABEL[placement];
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -111,6 +144,7 @@ function AdCard({ placement, info, kitAd, actions }: { placement: AdPlacement; i
         </label>
       </div>
       <p className="field-hint">{WHERE[placement]}</p>
+      <p className="field-hint" data-testid={`ad-size-${placement}`}>{slotHelp(orientation, placement)}</p>
 
       <div className="ad-media">
         <div className={`ad-thumb ad-thumb--${placement}`} aria-hidden="true">

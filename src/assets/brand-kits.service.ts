@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { BrandKit } from './entities/brand-kit.entity';
 import { BrandKitAd } from './entities/brand-kit-ad.entity';
-import type { AdMode, AdPlacement } from './entities/brand-kit-ad.entity';
+import type { AdMode, AdPlacement, BrandOrientation } from './entities/brand-kit-ad.entity';
 import { AssetsService } from './assets.service';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AccountsService } from '../accounts/accounts.service';
@@ -19,7 +19,12 @@ export interface BrandKitAdView {
   everySec: number | null;
 }
 
-export type BrandKitView = BrandKit & { connectionIds: string[]; ads: BrandKitAdView[] };
+/**
+ * `ads` is the LANDSCAPE (16:9) set and `adsPortrait` the portrait (9:16) set. logoAssetId / wallpaperAssetId are the
+ * landscape files, logoAssetIdPortrait / wallpaperAssetIdPortrait the portrait ones. Older clients only know the
+ * landscape fields (rows from before migration 0028 are all landscape), so they keep working unchanged.
+ */
+export type BrandKitView = BrandKit & { connectionIds: string[]; ads: BrandKitAdView[]; adsPortrait: BrandKitAdView[] };
 
 const PLACEMENT_ORDER: AdPlacement[] = ['lower_third', 'side_third', 'full_screen'];
 const toAdView = (a: BrandKitAd): BrandKitAdView => ({ placement: a.placement, assetId: a.assetId, enabled: a.enabled, mode: a.mode, showSec: a.showSec, everySec: a.everySec });
@@ -56,8 +61,15 @@ export class BrandKitsService {
     return kits.map((k) => ({
       ...k,
       connectionIds: conns.filter((c) => c.brandKitId === k.id).map((c) => c.id),
-      ads: this.sortedAds(ads.filter((a) => a.brandKitId === k.id)),
+      ...this.adSets(ads.filter((a) => a.brandKitId === k.id)),
     }));
+  }
+
+  private adSets(rows: BrandKitAd[]): { ads: BrandKitAdView[]; adsPortrait: BrandKitAdView[] } {
+    return {
+      ads: this.sortedAds(rows.filter((a) => a.orientation !== 'portrait')),
+      adsPortrait: this.sortedAds(rows.filter((a) => a.orientation === 'portrait')),
+    };
   }
 
   private sortedAds(rows: BrandKitAd[]): BrandKitAdView[] {
@@ -100,10 +112,15 @@ export class BrandKitsService {
   }
 
   /** Logo and wallpaper must be the right kind of file (an ad file is not a logo), so "GIF only for logo/ad" stays strict. */
-  private async checkAssets(accountId: string, dto: { logoAssetId?: string | null; wallpaperAssetId?: string | null }): Promise<void> {
-    const logo = dto.logoAssetId ? await this.assets.findOwnedOfKind(accountId, [dto.logoAssetId], ['logo', 'other']) : null;
-    const wall = dto.wallpaperAssetId ? await this.assets.findOwnedOfKind(accountId, [dto.wallpaperAssetId], ['wallpaper', 'background', 'other']) : null;
-    if ((dto.logoAssetId && !logo!.has(dto.logoAssetId)) || (dto.wallpaperAssetId && !wall!.has(dto.wallpaperAssetId))) {
+  private async checkAssets(
+    accountId: string,
+    dto: { logoAssetId?: string | null; wallpaperAssetId?: string | null; logoAssetIdPortrait?: string | null; wallpaperAssetIdPortrait?: string | null },
+  ): Promise<void> {
+    const logoIds = [dto.logoAssetId, dto.logoAssetIdPortrait].filter((v): v is string => !!v);
+    const wallIds = [dto.wallpaperAssetId, dto.wallpaperAssetIdPortrait].filter((v): v is string => !!v);
+    const logos = await this.assets.findOwnedOfKind(accountId, logoIds, ['logo', 'other']);
+    const walls = await this.assets.findOwnedOfKind(accountId, wallIds, ['wallpaper', 'background', 'other']);
+    if (logoIds.some((id) => !logos.has(id)) || wallIds.some((id) => !walls.has(id))) {
       throw new BadRequestException('One of the chosen files is not in your library, or is the wrong type for a logo or wallpaper.');
     }
   }
@@ -124,6 +141,7 @@ export class BrandKitsService {
     await this.assertAllowed(accountId);
     await this.checkAssets(accountId, dto);
     const ads = await this.checkAds(accountId, dto.ads ?? []); // null/omitted = no ads
+    const adsPortrait = await this.checkAds(accountId, dto.adsPortrait ?? []);
     const saved = await this.guard(() => this.dataSource.transaction(async (m) => {
       const repo = m.getRepository(BrandKit);
       const makeDefault = dto.isDefault === true || (await repo.count({ where: { accountId } })) === 0; // the first kit is the default
@@ -133,28 +151,32 @@ export class BrandKitsService {
           accountId,
           name: dto.name.trim(),
           logoAssetId: dto.logoAssetId ?? null,
+          logoAssetIdPortrait: dto.logoAssetIdPortrait ?? null,
           logoPosition: dto.logoPosition ?? 'left',
           logoSize: dto.logoSize ?? 90,
           wallpaperAssetId: dto.wallpaperAssetId ?? null,
+          wallpaperAssetIdPortrait: dto.wallpaperAssetIdPortrait ?? null,
+          adsShrinkPicture: dto.adsShrinkPicture ?? true,
           wallpaperDim: dto.wallpaperDim ?? 0,
           lowerThirdStyle: dto.lowerThirdStyle ?? 'accent',
           isDefault: makeDefault,
         }),
       );
-      await this.replaceAds(m, kit.id, ads);
+      await this.replaceAds(m, kit.id, 'landscape', ads);
+      await this.replaceAds(m, kit.id, 'portrait', adsPortrait);
       return kit;
     }));
-    return { ...saved, connectionIds: [], ads: await this.adsOf(saved.id) };
+    return { ...saved, connectionIds: [], ...(await this.adsOf(saved.id)) };
   }
 
-  private async replaceAds(m: EntityManager, kitId: string, ads: BrandKitAdView[]): Promise<void> {
+  private async replaceAds(m: EntityManager, kitId: string, orientation: BrandOrientation, ads: BrandKitAdView[]): Promise<void> {
     const repo = m.getRepository(BrandKitAd);
-    await repo.delete({ brandKitId: kitId });
-    if (ads.length > 0) await repo.insert(ads.map((a) => ({ brandKitId: kitId, ...a })));
+    await repo.delete({ brandKitId: kitId, orientation });
+    if (ads.length > 0) await repo.insert(ads.map((a) => ({ brandKitId: kitId, orientation, ...a })));
   }
 
-  private async adsOf(kitId: string): Promise<BrandKitAdView[]> {
-    return this.sortedAds(await this.kitAds.find({ where: { brandKitId: kitId } }));
+  private async adsOf(kitId: string): Promise<{ ads: BrandKitAdView[]; adsPortrait: BrandKitAdView[] }> {
+    return this.adSets(await this.kitAds.find({ where: { brandKitId: kitId } }));
   }
 
   private async findOwned(accountId: string, id: string): Promise<BrandKit> {
@@ -174,8 +196,12 @@ export class BrandKitsService {
       if (!kit) throw new NotFoundException('Brand kit not found.');
       await this.checkAssets(accountId, dto);
       const ads = dto.ads == null ? undefined : await this.checkAds(accountId, dto.ads);
+      const adsPortrait = dto.adsPortrait == null ? undefined : await this.checkAds(accountId, dto.adsPortrait);
       if (dto.name !== undefined) kit.name = dto.name.trim();
       if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
+      if (dto.logoAssetIdPortrait !== undefined) kit.logoAssetIdPortrait = dto.logoAssetIdPortrait;
+      if (dto.wallpaperAssetIdPortrait !== undefined) kit.wallpaperAssetIdPortrait = dto.wallpaperAssetIdPortrait;
+      if (dto.adsShrinkPicture !== undefined) kit.adsShrinkPicture = dto.adsShrinkPicture;
       if (dto.logoPosition !== undefined) kit.logoPosition = dto.logoPosition;
       if (dto.logoSize !== undefined) kit.logoSize = dto.logoSize;
       if (dto.wallpaperAssetId !== undefined) kit.wallpaperAssetId = dto.wallpaperAssetId;
@@ -187,11 +213,12 @@ export class BrandKitsService {
       }
       // Turning the default off is done by making another kit the default, so an account never ends up with none by accident.
       const out = await repo.save(kit);
-      if (ads !== undefined) await this.replaceAds(m, id, ads);
+      if (ads !== undefined) await this.replaceAds(m, id, 'landscape', ads);
+      if (adsPortrait !== undefined) await this.replaceAds(m, id, 'portrait', adsPortrait);
       return out;
     }));
     const connectionIds = (await this.connections.find({ where: { accountId, brandKitId: id }, select: ['id'] })).map((c) => c.id);
-    return { ...saved, connectionIds, ads: await this.adsOf(id) };
+    return { ...saved, connectionIds, ...(await this.adsOf(id)) };
   }
 
   /** Deleting a kit frees its files for deletion and sends its connections back to the account default. */

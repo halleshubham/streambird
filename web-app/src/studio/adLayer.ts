@@ -11,10 +11,12 @@ import {
   adTargetAlpha,
   fitAd,
   resolveAdAlphas,
+  sceneRectFor,
   stepAlpha,
   type AdManual,
   type AdPlacement,
   type AdRect,
+  type AdShrinkInput,
   type AdSchedule,
   type AdSlot,
 } from './ads';
@@ -38,6 +40,8 @@ export type AdSource = 'kit' | 'computer';
 /** A computer-picked picture may not be bigger than the server allows for library files. */
 export const MAX_AD_SIDE = 8192;
 const FREE_AD_RETRY_MS = 10_000;
+/** The placements that make room for themselves (full screen covers instead). */
+const SHRINKING: readonly AdPlacement[] = ['lower_third', 'side_third'];
 
 interface Runtime {
   img: HTMLImageElement | null;
@@ -114,6 +118,8 @@ export class AdLayer {
   private freeLoading = false;
   private freeRetryAt = 0;
   private freePlan = false;
+  private shrinkOn = true;
+  private readonly shrinkInput: Partial<Record<AdPlacement, AdShrinkInput>> = {};
   private clockStart = performance.now();
   private lastNow: number | null = null;
   /** Called when an ad's still/animated state changes, so the studio can refresh its cards. */
@@ -248,9 +254,10 @@ export class AdLayer {
     img.src = FREE_AD_URL;
   }
 
-  private drawOne(ctx: CanvasRenderingContext2D, r: Runtime, p: AdPlacement, w: number, h: number, tickerBar: number, now: number): void {
+  /** Recomputes where the picture is drawn when the canvas, ticker or picture size changed. */
+  private fit(r: Runtime, p: AdPlacement, w: number, h: number, tickerBar: number): void {
     const img = r.img;
-    if (!img || r.alpha <= 0.002) return;
+    if (!img) return;
     const iw = img.naturalWidth;
     const ih = img.naturalHeight;
     if (r.keyW !== w || r.keyH !== h || r.keyBar !== tickerBar || r.keyIw !== iw || r.keyIh !== ih) {
@@ -261,17 +268,22 @@ export class AdLayer {
       r.keyIw = iw;
       r.keyIh = ih;
     }
-    if (r.rect.w <= 0) return;
+  }
+
+  private drawOne(ctx: CanvasRenderingContext2D, r: Runtime, now: number): void {
+    const img = r.img;
+    if (!img || r.alpha <= 0.002 || r.rect.w <= 0) return;
     ctx.globalAlpha = r.alpha;
     ctx.drawImage(r.anim ? r.anim.image.frameAt(now - r.anim.startedAt) : img, r.rect.x, r.rect.y, r.rect.w, r.rect.h);
     ctx.globalAlpha = 1;
   }
 
   /**
-   * Draws the ads over the finished picture. `freePlan` = the plan carries the "Powered by StreamBird" mark: then
-   * only StreamBird's own lower-third ad is drawn (15 s every 180 s) and the custom ones are not.
+   * Advances the ads one frame: schedule, fades and rectangles. Call it BEFORE drawing the scene (so `sceneRect`
+   * is current), then `paint` after. `freePlan` = the plan carries the "Powered by StreamBird" mark: then only
+   * StreamBird's own lower-third ad runs (15 s every 180 s) and the custom ones do not.
    */
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, now: number, tickerBar: number, freePlan: boolean): void {
+  step(w: number, h: number, now: number, tickerBar: number, freePlan: boolean): void {
     const dt = this.lastNow === null ? 0 : Math.min(0.25, Math.max(0, (now - this.lastNow) / 1000));
     this.lastNow = now;
     this.freePlan = freePlan;
@@ -283,7 +295,7 @@ export class AdLayer {
       const target = f.img ? adTargetAlpha(elapsed, this.freeSlot) : 0;
       f.alpha = f.snap ? target : stepAlpha(f.alpha, target, dt);
       f.snap = false;
-      this.drawOne(ctx, f, 'lower_third', w, h, tickerBar, now);
+      this.fit(f, 'lower_third', w, h, tickerBar);
       return;
     }
 
@@ -303,7 +315,51 @@ export class AdLayer {
       const r = this.rt[p];
       r.alpha = r.snap ? this.targets[p] : stepAlpha(r.alpha, this.targets[p], dt);
       if (r.img) r.snap = false;
-      this.drawOne(ctx, r, p, w, h, tickerBar, now);
+      this.fit(r, p, w, h, tickerBar);
     }
+  }
+
+  /** Draws the ads (as stepped) over the finished picture. */
+  paint(ctx: CanvasRenderingContext2D, now: number): void {
+    if (this.freePlan) {
+      this.drawOne(ctx, this.free, now);
+      return;
+    }
+    for (const p of AD_DRAW_ORDER) this.drawOne(ctx, this.rt[p], now);
+  }
+
+  /** step + paint in one call. */
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, now: number, tickerBar: number, freePlan: boolean): void {
+    this.step(w, h, now, tickerBar, freePlan);
+    this.paint(ctx, now);
+  }
+
+  /** Whether the live picture shrinks to make room for ads (the "Shrink picture while ads show" switch). */
+  setShrink(on: boolean): void {
+    this.shrinkOn = on;
+  }
+
+  get shrink(): boolean {
+    return this.shrinkOn;
+  }
+
+  /**
+   * Where the scene is drawn right now (as of the last `step`), or null when it fills the canvas (switch off, no
+   * shrinking ad visible). See the SHRINK RULE in ads.ts.
+   */
+  sceneRect(w: number, h: number): AdRect | null {
+    if (!this.shrinkOn) return null;
+    const input = this.shrinkInput;
+    if (this.freePlan) {
+      input.lower_third = { alpha: this.free.img ? this.free.alpha : 0, fitted: this.free.rect };
+      input.side_third = { alpha: 0, fitted: null };
+    } else {
+      for (const p of SHRINKING) {
+        const r = this.rt[p];
+        input[p] = { alpha: r.img ? r.alpha : 0, fitted: r.rect };
+      }
+    }
+    if (!((input.lower_third?.alpha ?? 0) > 0.002 || (input.side_third?.alpha ?? 0) > 0.002)) return null;
+    return sceneRectFor(w, h, input);
   }
 }

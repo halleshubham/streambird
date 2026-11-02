@@ -28,6 +28,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { GoogleOAuthService } from '../auth/google-oauth.service';
 import { PlatformConnection } from './entities/platform-connection.entity';
 import { buildLiveLinkUrl } from './live-link';
+import { describeFacebookPermissions, summarizeFacebookPermissions } from './facebook-permissions';
 
 const YOUTUBE_OAUTH_STATE_COOKIE_NAME = 'sb_yt_oauth_state';
 const YOUTUBE_OAUTH_BASE_PATH = '/api/platform-connections/youtube';
@@ -317,6 +318,7 @@ export class PlatformConnectionsController {
 
       if (!pages || pages.length === 0) {
         this.logger.warn(`Facebook account for account.id=${account.id} manages no Pages -- nothing to connect.`);
+        await this.logFacebookPermissions(account.id, longLivedToken);
         res.redirect('/connections?error=facebook_no_pages');
         return;
       }
@@ -438,5 +440,22 @@ export class PlatformConnectionsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.platformConnectionsService.remove(id, account.id);
+  }
+
+  /**
+   * Diagnostics for "no Pages found": asks Facebook which permissions the user granted or declined (a declined
+   * pages_show_list explains it) and logs the NAMES at warn level. The token is only sent to Facebook, never logged.
+   */
+  private async logFacebookPermissions(accountId: string, longLivedToken: string): Promise<void> {
+    try {
+      const res = await fetch(`${FACEBOOK_API_BASE}/me/permissions?access_token=${encodeURIComponent(longLivedToken)}`);
+      if (!res.ok) {
+        this.logger.warn(`Facebook /me/permissions lookup for account.id=${accountId} failed (${res.status}).`);
+        return;
+      }
+      this.logger.warn(`Facebook permissions for account.id=${accountId} (no Pages found) -- ${describeFacebookPermissions(summarizeFacebookPermissions(await res.json()))}`);
+    } catch (err) {
+      this.logger.warn(`Facebook /me/permissions lookup for account.id=${accountId} threw: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
   }
 }
