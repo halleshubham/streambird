@@ -99,7 +99,12 @@ export function StudioTour({ open, platforms, onClose }: { open: boolean; platfo
     popover = rect || narrow ? { left: 12, right: 12, bottom: 12, width: 'auto' } : { left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: POPOVER_W };
   } else {
     const left = Math.min(Math.max(12, rect.left), window.innerWidth - POPOVER_W - 12);
-    popover = { left, top: rect.bottom + 14, width: POPOVER_W };
+    // Below the target when it fits, else above it (the bottom control dock leaves no room underneath).
+    const POPOVER_H = 220;
+    const fitsBelow = rect.bottom + 14 + POPOVER_H <= window.innerHeight - 8;
+    popover = fitsBelow
+      ? { left, top: rect.bottom + 14, width: POPOVER_W }
+      : { left, bottom: Math.max(8, window.innerHeight - rect.top + 14), width: POPOVER_W };
   }
   const last = index === steps.length - 1;
 
