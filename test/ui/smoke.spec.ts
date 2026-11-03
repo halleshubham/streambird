@@ -287,14 +287,14 @@ test.describe('admin', () => {
     await expect(guests).toHaveValue('4');
     await guests.fill('5');
     await page.getByRole('button', { name: 'Save plan' }).click();
-    await expect(page.getByText('Saved Starter.')).toBeVisible();
+    await expect(page.getByText('Saved Starter.').first()).toBeVisible();
     await expect(page.getByRole('row', { name: /Starter/ })).toContainText('5');
 
     // put it back
     await page.getByRole('row', { name: /Starter/ }).getByRole('button', { name: 'Edit' }).click();
     await page.getByLabel('Max guests (at once)').fill('4');
     await page.getByRole('button', { name: 'Save plan' }).click();
-    await expect(page.getByText('Saved Starter.')).toBeVisible();
+    await expect(page.getByText('Saved Starter.').first()).toBeVisible();
   });
 
   test('Dashboard: "Heavy usage this month" lists accounts, highlights >= 80%, and has an empty state', async ({ page, context }) => {
@@ -320,7 +320,7 @@ test.describe('admin', () => {
   test('Billing page: payments switch and setup status', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/billing');
-    await expect(page.getByRole('heading', { name: /Online payments: OFF/ })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Online payments' })).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByText(/test mode/)).toBeVisible();
     await expect(page.getByText('subscription.charged', { exact: false })).toBeVisible();
   });
@@ -1896,14 +1896,14 @@ test.describe('admin console', () => {
       const waitingEmail = await pendingSignup(await browser.newContext());
       await signIn(context, { superadmin: true });
       await page.goto('/admin');
-      const section = page.getByRole('heading', { name: /Registration: paused/ });
+      const section = page.getByRole('heading', { name: /^Registration\s+Paused/ });
       await expect(section).toBeVisible();
       await expect(page.getByRole('button', { name: 'Manual review' })).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('registration-history')).toContainText('waiting for approval now');
 
       // Open: a brand-new signup is approved the moment it signs in.
       await page.getByRole('button', { name: 'Auto-approve' }).click();
-      await expect(page.getByRole('heading', { name: /Registration: open/ })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Registration\s+Open/ })).toBeVisible();
       await expect(page.getByRole('status').filter({ hasText: 'Auto-approve is on' })).toBeVisible();
       const openCtx = await browser.newContext();
       const openEmail = await pendingSignup(openCtx);
@@ -1916,19 +1916,19 @@ test.describe('admin console', () => {
       await page.getByRole('button', { name: 'Manual review' }).click();
       await expect(page.getByRole('status').filter({ hasText: 'Registrations paused' })).toBeVisible();
       await page.reload();
-      await expect(page.getByRole('heading', { name: /Registration: paused/ })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Registration\s+Paused/ })).toBeVisible();
       const pausedEmail = await pendingSignup(await browser.newContext());
       await page.reload();
       await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toBeVisible();
       await expect(page.getByRole('row', { name: new RegExp(waitingEmail) })).toBeVisible();
 
       // Approve everyone waiting in one go.
-      await page.getByRole('button', { name: /Approve all waiting/ }).click();
+      await page.getByRole('button', { name: /Approve all \(\d+\)/ }).click();
       await expect(confirmDialog(page)).toContainText(/Approve all \d+ signup/);
       await acceptConfirm(page);
-      await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup/ })).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup.*emailed/ })).toBeVisible();
       await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: /Approve all waiting/ })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Approve all \(\d+\)/ })).toHaveCount(0);
     });
   });
 

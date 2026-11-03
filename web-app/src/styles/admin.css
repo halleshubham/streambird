@@ -772,3 +772,8 @@
 .admin-shell .admin-reject:hover:not(:disabled) { background: var(--danger-soft); }
 .admin-shell .admin-field-tight { margin-bottom: 6px; }
 .admin-shell .admin-toolbar .ui-select { min-width: 220px; }
+@media (max-width: 640px) {
+  .admin-shell .admin-table-wrap .admin-table .hide-sm { display: none; }
+  .admin-shell .admin-table .show-sm { display: block; }
+}
+@media (max-width: 640px) { .admin-shell .admin-table-wrap .admin-table td.hide-sm, .admin-shell .admin-table-wrap .admin-table th.hide-sm { display: none; } }
