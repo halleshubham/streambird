@@ -28,7 +28,35 @@ export function LegalLayout({ title, updated, children }: { title: string; updat
         return { id: h.id, text: h.textContent ?? '' };
       }),
     );
-    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
+    if (!hash) return;
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return;
+    target.scrollIntoView();
+    // The page height keeps changing for a moment after the first paint (the web font swaps in and re-flows the text above, images
+    // load), and the browser does not always compensate: the section drifts out of view. Re-align for a few seconds, unless the
+    // reader has taken over by scrolling or touching the page.
+    let reader = false;
+    const stop = () => {
+      reader = true;
+    };
+    const opts = { passive: true } as const;
+    window.addEventListener('wheel', stop, opts);
+    window.addEventListener('touchstart', stop, opts);
+    window.addEventListener('keydown', stop);
+    window.addEventListener('mousedown', stop);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      if (!reader) target.scrollIntoView();
+    });
+    observer?.observe(document.body);
+    const timer = window.setTimeout(() => observer?.disconnect(), 4000);
+    return () => {
+      window.clearTimeout(timer);
+      observer?.disconnect();
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      window.removeEventListener('mousedown', stop);
+    };
   }, [pathname, hash]);
 
   return (
