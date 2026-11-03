@@ -25,7 +25,7 @@ export function Field({ label, hint, error, id, className, children }: FieldShel
   const errId = error ? `${fieldId}-err` : undefined;
   const describedBy = [errId, hintId].filter(Boolean).join(' ') || undefined;
   return (
-    <div className={cx('ui-field', error && 'ui-field--error', className)}>
+    <div className={cx('ui-field', !!error && 'ui-field--error', className)}>
       <label className="ui-field-label" htmlFor={fieldId}>
         {label}
       </label>

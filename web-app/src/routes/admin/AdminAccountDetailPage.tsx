@@ -111,18 +111,19 @@ export function AdminAccountDetailPage() {
 
   async function handleToggleSuspend() {
     if (!id || !account) return;
+    const shownName = account.companyName ?? account.name;
     const confirmed = account.suspendedAt
       ? await confirm({
-          title: `Reactivate ${account.name}?`,
+          title: `Reactivate ${shownName}?`,
           body: 'Users can sign in again straight away. Their plan and settings are unchanged.',
           confirmLabel: 'Reactivate account',
         })
       : await confirm({
-          title: `Suspend ${account.name}?`,
+          title: `Suspend ${shownName}?`,
           body: 'This immediately blocks every user on this account from logging in or streaming, and ends any live stream.',
           confirmLabel: 'Suspend account',
           destructive: true,
-          typeToConfirm: account.name,
+          typeToConfirm: shownName,
           typeToConfirmLabel: 'Type the company name to confirm',
         });
     if (!confirmed) return;
