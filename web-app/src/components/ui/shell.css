@@ -87,6 +87,13 @@
   font-size: 13px;
   color: var(--muted);
 }
+a.user-email {
+  text-decoration: none;
+}
+a.user-email:hover {
+  color: var(--brand-text);
+  text-decoration: underline;
+}
 
 .app-avatar {
   display: none; /* phones only */

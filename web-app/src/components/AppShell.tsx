@@ -30,7 +30,7 @@ export function AppShell() {
   }, []);
 
   const isAdmin = user?.role === 'company_admin';
-  const moreActive = location.pathname.startsWith('/billing') || location.pathname.startsWith('/team');
+  const moreActive = location.pathname.startsWith('/billing') || location.pathname.startsWith('/team') || location.pathname.startsWith('/account');
   const close = () => setSheet(null);
 
   return (
@@ -64,7 +64,11 @@ export function AppShell() {
           )}
         </nav>
         <div className="app-header-right">
-          {user && <span className="user-email">{user.email}</span>}
+          {user && (
+            <Link to="/account" className="user-email" title="Your account">
+              {user.email}
+            </Link>
+          )}
           <Button variant="ghost" size="sm" className="app-logout" icon={<LogOut size={16} aria-hidden="true" />} onClick={() => void logout()}>
             Log out
           </Button>
@@ -77,7 +81,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <footer className="app-footer">
-        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+        <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link> · <Link to="/delete-account">Delete your account</Link>
         <CookieSettingsLink />
       </footer>
 
@@ -128,6 +132,11 @@ export function AppShell() {
               )}
             </>
           )}
+          <li>
+            <Link to="/account" onClick={close}>
+              Account
+            </Link>
+          </li>
           <li>
             <button
               type="button"
