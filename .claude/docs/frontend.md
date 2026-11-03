@@ -10,6 +10,7 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 | `src/main.tsx` | mounts `BrowserRouter` → `AuthProvider` → `<App/>` + `<BusyOverlay/>` |
 | `src/App.tsx` | **all routes** (below) |
 | `src/routes/` | one file per page; `routes/admin/*` superadmin pages; `routes/studio/{HostStudioPage,GuestJoinPage}.tsx` |
+| `src/components/ui/` | **the UI kit** (Button, Field, Chip/Badge, Card, Modal/Drawer/BottomSheet, ConfirmDialog, Toast, Loader/Skeleton, EmptyState) + `ui.css`, `shell.css`; see "UI kit" below |
 | `src/components/` | shells/guards (`AppShell`, `AdminShell`, `ProtectedRoute`, `SuperadminRoute`, `HomeRoute`), loaders (`BirdLoader`, `BirdBusy`, `BusyOverlay`), `SlideControls`, `ScheduledStreamPanel`, `UsageMeter`, platform badges/logos, `ThumbnailPicker` (create form, both modes), `LiveThumbnailPanel` (stream page while live), `GuestEmailsField`, `DocsLink` |
 | `src/api/` | `client.ts` (`api.get/post/patch/delete`, `ApiError(message,status)`), one module per domain (`auth`, `streams`, `studio`, `connections`, `billing`, `plans`, `team`, `accounts`, `superadmin`) |
 | `src/context/` | `AuthContext/AuthProvider`: `useAuth()` → `{status: loading|authenticated|anonymous, user, accountId, login, refresh}` |
@@ -33,7 +34,7 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 - Do not add a UI/CSS framework. Do not introduce state libraries; hooks + context is the pattern.
 
 ## Styling (`src/index.css`, ~2400 lines, single file)
-- Theme = CSS variables on `:root` (`--text --text-h --bg --card-bg --border --accent --accent-hover --error --warning`). Dark mode is **only** `@media (prefers-color-scheme: dark)` overriding those variables — always use variables, never raw colours, for anything that must work in both.
+- Theme = CSS variables on `:root` (new token names below; the legacy `--text --text-h --card-bg --border --accent --accent-hover --error --warning` still exist and map onto them). Dark mode is **only** `@media (prefers-color-scheme: dark)` overriding those variables — always use variables, never raw colours, for anything that must work in both.
 - Class names are plain kebab-case with BEM-ish `--modifier`. Shared blocks: `.panel`, `.icon-btn(--small|--accent|--danger)`, `.chip-link(--sm|--lg)`, `.segmented`, `.checkbox-row`, `.field-hint`, `.docs-hint`, `.error`, `.success`.
 - The newest additions live in the "UI polish" block near the end of the file (chips, segmented control, busy overlay, studio top bar, slide controls). Add new feature CSS next to the related existing rules, or append a clearly commented block.
 - **Pitfalls**
@@ -43,6 +44,51 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
   4. A `<label>` is `display:block; font-weight:600` globally — a label used as a button needs its own class (`label.slide-add-btn`).
   5. Sticky/fixed elements: the studio top bar is sticky only above 720 px wide; it is three rows tall on phones (there it is `position: relative; z-index: 30` so its popovers, e.g. invite password and camera/mic, stay above the picture; `.studio-invite-group` / `.studio-devices-group` are `static` so the popover spans the bar). The camera/mic popover reuses `.studio-popover`; its rows are `.studio-device-row`.
 - Verify layout changes with screenshots at ~1366×800 and 390×800 (skill `streambird-ui-change`).
+
+## UI kit and design tokens (redesign foundation)
+The app chrome was redesigned (calm, roomy, purple; Plus Jakarta Sans). **Page agents build on this layer; do not hand-roll buttons, dialogs or toasts.** Mockups (Claude design canvases, private): kit and public pages claude.ai/artifact/17i3oeaVhtWrACso7KkyKT, host app F62gPsCo3wxychN6bWJL3f, studio and guest VbXj1B9MTr2WMUjMmJzxjz, admin G3dtsm3upWdKkrtSLhn2gK. The broadcast canvas (`studio/compose.ts`, themes) is NOT part of this and is untouched.
+
+### Tokens (`index.css` `:root`, dark values in the `prefers-color-scheme: dark` block)
+| Token | Light | Use |
+|---|---|---|
+| `--ink` / `--muted` | `#1c1830` / `#5b5675` | headings+body text / secondary text (both pass 4.5:1 on `--surface`/`--bg`) |
+| `--bg` `--surface` `--line` `--soft` | `#f7f5fc` `#fff` `#e3ddf3` `#ebe7f6` | page, cards, borders, tinted fills (hover, selected, icon tiles) |
+| `--brand` `--brand-hover` `--brand-deep` `--brand-text` | `#7c3aed` `#6d28d9` `#5b21b6` `#5b21b6` | fills / hover / hero gradient end + admin / brand-coloured text (use `--brand-text`, it flips in dark) |
+| `--live` `--live-btn` `--live-soft` | `#e5484d` `#d93a3f` `#fdecec` | live dot and big fills / **button fill with white text** / badge background |
+| `--danger-btn` `--danger-btn-hover` `--danger-text` `--danger-soft` | `#c9302f` `#b4232a` `#b4262b` `#fdeceb` | destructive buttons / red text on surface / icon tile |
+| `--success` `--success-text` `--success-soft` | `#34d399` `#047857` `#e3f8ef` | dots+fills / **text** / badge bg |
+| `--warning` `--warning-text` `--warning-soft` | `#d97706` `#b45309` `#fdf1dc` | dots+fills / **text** / badge bg |
+| `--radius` `--radius-lg` `--radius-pill` | 12 / 14 / 999 px | controls / cards+dialogs / buttons, chips, badges |
+| `--studio-bg` `--studio-panel` `--studio-text` | `#0e0c16` `#14121f` `#c9c4de` | surfaces that stay dark in both schemes (studio chrome, camera, hero) |
+| `--tabbar-h` | `0px`, `calc(64px + safe-area)` on phones inside `AppShell` | toasts and the cookie strip sit above the tab bar: use `bottom: calc(var(--tabbar-h) + 16px)` for anything fixed at the bottom |
+Rules: white text only on `--brand`, `--brand-deep`, `--live-btn`, `--danger-btn`; never white on `--live` or `--success` unless 18px+ bold; text in green/amber/red uses the `*-text` variants. Legacy names (`--accent`, `--text`, `--text-h`, `--card-bg`, `--border`, `--error`) keep working for un-migrated pages: in new CSS use the new names. Font: `--sans` = Plus Jakarta Sans via the Google Fonts `<link>` in `web-app/index.html` (400/600/700/800); no CSP exists in the app or Dockerfile, so it loads; if a CSP is ever added it needs `style-src fonts.googleapis.com` and `font-src fonts.gstatic.com` (or self-host `@fontsource/plus-jakarta-sans`).
+
+### Components (`import { ... } from '../components/ui'`; all classes are `ui-*`, no collisions with legacy `.badge/.panel/.chip-link`)
+| Component | Props / API |
+|---|---|
+| `Button` | `variant` primary \| secondary \| ghost \| danger \| live (default primary), `size` sm \| md \| lg, `busy` (shows the bird, disables, `aria-busy`), `block`, `icon`; plain `<button>` props. `buttonClass(variant,size,extra)` gives the same look to a `<Link>`/`<a>`. One primary per screen; `danger` only behind `confirm()`; `live` only for Go live. Min height 44px. |
+| `Field`, `Input`, `TextArea`, `SelectField` | `label`, `hint`, `error` (aria-invalid + `role=alert` message, ids wired), plus normal control props. `Field` takes a render function for any custom control. The label is a real `<label for>`. |
+| `Chip` | toggle pill: `selected` (filled, `aria-pressed`), `outline`. |
+| `Badge` | `tone` live \| scheduled \| ended \| success \| warning \| neutral \| pro, `dot`. |
+| `Card` (alias `Panel`) | `tone` plain \| soft \| hero (gradient: hero and the primary feature card only), `compact`, `as`. |
+| `Modal`, `Drawer`, `BottomSheet` | `open`, `onClose`, `title` (the accessible name), `description`, `role` dialog \| alertdialog, `footer`, `initialFocus`, `hideTitle`, `testId`. Portal to body, `aria-modal`, focus moves in and returns to the opener, Tab trapped, Esc closes, scroll locked. A scrim click closes a plain dialog, never an alertdialog. |
+| `confirm(opts)` / `useConfirm()` | `await confirm({ title, body?, details?, confirmLabel?, cancelLabel?, destructive?, typeToConfirm?, typeToConfirmLabel? }) : Promise<boolean>`. Backed by `ConfirmProvider` (mounted in `main.tsx`, queues overlapping calls). `destructive` => `role=alertdialog`, red confirm button, focus starts on Cancel; otherwise `role=dialog` and focus starts on the confirm button; `typeToConfirm` adds a labelled input and keeps confirm disabled until the phrase matches (case/space-insensitive). Accessible name of the dialog = `title`; confirm button name = `confirmLabel`; testids `confirm-dialog`, `confirm-accept`, `confirm-cancel`. Works from non-React code (`lib/deleteUpcoming.ts`). |
+| `toast.success/error/info(message, { action?: {label,onClick}, durationMs? })` | Shown by `ToastProvider` (main.tsx): bottom centre, above the tab bar on phones, max 3. Success/info `role=status`, error `role=alert`; 4 s (errors 8 s, with an action 10 s; hover/focus pauses); Dismiss button `aria-label="Dismiss notification"`. It is a window event (`streambird:toast`), so helpers outside React can call it. Use for transient confirmations ("Join link copied", "Preset saved" + Undo, "Couldn't reach Twitch" + Retry); keep persistent page messages as `role=status`/`alert` lines. |
+| `Spinner`, `Skeleton`, `SkeletonGroup`, `PageLoader`/`BirdLoader`, `EmptyState` | spinner for inline waits; skeleton for list/card placeholders; the bird loader stays for first page loads; `EmptyState({icon,title,children,action,tone})` for "nothing here yet" and (`tone="error"`) "we couldn't load this". |
+Pure helpers (`ui/helpers.ts`: `nextFocusIndex`, `typedConfirmationMatches`, `toastDurationMs`, `initialsFor`, `cx`) are unit-tested in `test/ui/ui-kit.spec.ts`.
+
+### Shells (`components/ui/shell.css` holds all shell CSS)
+- `AppShell`: sticky white header (logo + StreamBird, nav pills `Dashboard Upcoming Connections Brand Billing Docs [Team]`, email, ghost `Log out`). **<= 640px**: the header shrinks to brand + avatar button `Account menu` (opens a bottom sheet with email + Log out) and a fixed **tab bar** (`nav` "Tab bar": Home, Upcoming, Connect, Brand, More; More opens a sheet "More" with Billing, Docs, Team (company admins), Log out). Both navs are in the DOM; CSS hides one, so the desktop link names stay valid for tests at desktop width and only one set is ever visible. `AppShell` sets `body[data-tabbar]` so `--tabbar-h` applies. The studio and guest pages are outside the shell (no header/tab bar).
+- `AdminShell`: sticky white header with deep-purple bottom rule, `ADMIN` badge, `nav` "Admin" with the red pending count (`.admin-nav-count`, `aria-label="N waiting"`), secondary `Log out`; on phones a single scrolling nav row (no tab bar).
+- Footer and cookie strip are restyled in the same files; the strip sits above the tab bar.
+
+### Adding or restyling a page
+1. Use `Card`/`EmptyState`/`Button`/`Input` instead of new CSS; page layout CSS goes next to the page in `index.css` (or a page-level `.css` imported by the page) using only tokens.
+2. One `Button` primary per screen, destructive things `variant="danger"` after `await confirm({... destructive: true})`, async buttons `busy={saving}`.
+3. Loading: `PageLoader`/`SkeletonGroup`; empty: `EmptyState`; error: `EmptyState tone="error"` or a `role=alert` line.
+4. Keep every selector in the contract in `testing.md`; shortened labels keep their full `aria-label`.
+5. Check 1366x800 and 390x800 (no horizontal scroll; tap targets >= 44px).
+6. **Banned: `window.confirm`, `window.alert`, `window.prompt` for confirmations** (they cannot be styled, tested reliably or made accessible). Use `confirm()` / `toast`. (`window.prompt` is still used for one rename in the brand page; replace it when that page is redone.)
 
 ## Home page hero (`routes/LandingPage.tsx`, `components/HeroShowcase.tsx`)
 Pure-CSS motion, no JS timers: a pulsing "live" pill, an H1 whose platform name cycles YouTube → Facebook → Twitch (`.hero-word`, three words in one grid cell, 9 s loop, delays 0/3/6 s; a visually-hidden sentence gives screen readers the plain headline), drifting glow blobs, and `HeroShowcase`, a decorative (`aria-hidden`) miniature of the studio (slide, two speaking tiles, ticker, three destinations going live). Every animation is switched off under `prefers-reduced-motion` (the list at the end of the hero CSS block — **add any new animated hero class there**). To change the cycle, edit `HERO_WORDS` and the keyframe timing together.
@@ -65,7 +111,7 @@ Every admin page is `PageHeader` + `Section`/`DataTable` from `web-app/src/compo
 - **There is no Users page**: Companies search also matches the email of any user on an account (`matchedUserEmail` says which), and per-user Suspend/Reactivate lives in the Users table on the company page. `/admin/users` redirects to Companies. (`GET /superadmin/users?email=` still exists on the server.)
 - **Long lists never silently truncate**: Companies is searched (account name, company name, user email) and paged on the server (`GET /superadmin/accounts?q=&limit=&offset=` returns `total`), Audit log pages with "Load older entries", Billing tables show 20 with "Show more", the live-streams list is complete but scrolls inside a capped box (`DataTable tall`).
 - **Phones**: secondary columns carry `hide-sm` (hidden ≤640px; put the essentials under the primary cell with `show-sm`), and row action buttons stack, so Approve/Reject/Suspend are always on screen. `test/ui/smoke.spec.ts` ("admin console") asserts this at 390px.
-- Destructive actions confirm (`window.confirm`): reject signup, suspend user, suspend account, force end. Row actions use `btn-sm` (+ `danger-button`); page-level actions sit in `PageHeader actions`.
+- Destructive actions confirm with the kit's `confirm()` (never `window.confirm`): reject signup, approve all, suspend user, suspend account (typed company name), reactivate account, force end. Row actions use `btn-sm` (+ `danger-button`); page-level actions sit in `PageHeader actions`.
 
 - **Admin sign-in** (`AdminLoginPage`): same identity as the admin header (logo + ADMIN badge, amber top rule), two labelled steps ("Sign in" then "Check your email"), errors as `role=alert`. Tests: `admin login page` block in smoke.spec.
 
