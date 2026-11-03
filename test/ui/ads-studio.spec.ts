@@ -279,6 +279,7 @@ test.describe('ads on the canvas (a plan without the Powered-by mark)', () => {
     const { api } = await signIn(context);
     const id = await newStream(api);
     await openStudio(page, id);
+    await page.getByRole('button', { name: 'Customize' }).click(); // on a phone the panels open from the bar
     const tabs = page.getByRole('tablist', { name: 'Studio panels' });
     await page.getByRole('tab', { name: /^People/ }).focus();
     await page.keyboard.press('End'); // last tab = Ads

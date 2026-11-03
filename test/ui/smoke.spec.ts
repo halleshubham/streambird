@@ -548,6 +548,7 @@ test.describe('host studio', () => {
       headers: apiHeaders,
     });
     await page.goto('/streams/new');
+    await page.getByRole('button', { name: /More options/ }).click(); // shape, visibility and thumbnail live under More options
     await expect(page.locator('#orientation')).toHaveValue('landscape');
     await page.selectOption('#orientation', 'portrait');
     await expect(page.getByText(/Twitch and Facebook get it vertical too/)).toBeVisible();
@@ -561,6 +562,7 @@ test.describe('host studio', () => {
       headers: apiHeaders,
     });
     await page.goto('/streams/new');
+    await page.getByRole('button', { name: /More options/ }).click(); // shape, visibility and thumbnail live under More options
     await expect(page.locator('#visibility')).toHaveValue('public');
     await expect(page.locator('#visibility option:checked')).toHaveText('Public');
     // Still a choice, and the other two are one click away.
@@ -584,6 +586,7 @@ test.describe('host studio', () => {
       headers: apiHeaders,
     });
     await page.goto('/streams/new');
+    await page.getByRole('button', { name: /More options/ }).click(); // shape, visibility and thumbnail live under More options
     await expect(page.getByText(/Sent to YouTube \(needs a verified channel\) and, best effort, to Facebook\. Twitch doesn't take a thumbnail/)).toBeVisible();
 
     // A header-only 1280x720 PNG: the server reads just the signature and size.
@@ -616,6 +619,7 @@ test.describe('host studio', () => {
         : route.continue(),
     );
     await page.goto('/streams/new');
+    await page.getByRole('button', { name: /More options/ }).click(); // shape, visibility and thumbnail live under More options
     const png = Buffer.alloc(200, 7);
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
     png.writeUInt32BE(13, 8);

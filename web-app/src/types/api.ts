@@ -585,3 +585,29 @@ export interface HeavyUsageRow {
   destinationHours: number;
   estimatedBandwidthCostInr: number;
 }
+
+// ---- Stream presets (docs/API-PRESETS.md) ------------------------------------
+
+export interface PresetConfig {
+  orientation?: 'landscape' | 'portrait';
+  destinationIds?: string[];
+  brandKitId?: string | null;
+  quality?: Resolution;
+  tickerEnabled?: boolean;
+  tickerText?: string;
+}
+
+export interface StreamPreset {
+  id: string;
+  name: string;
+  config: PresetConfig;
+  lastUsedAt: string | null;
+}
+
+/** What /use and /start add: the config as it applies today (plan limits, removed destinations/kits) and why it differs. */
+export interface StreamPresetApplied extends StreamPreset {
+  effectiveConfig: PresetConfig;
+  warnings: string[];
+}
+
+export type StartedFromPreset = Stream & { preset: StreamPresetApplied };
