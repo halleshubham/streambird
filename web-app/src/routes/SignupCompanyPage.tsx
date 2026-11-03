@@ -4,7 +4,8 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as authApi from '../api/auth';
 import { ApiError } from '../api/client';
-import { BirdBusy } from '../components/BirdBusy';
+import { AuthHeading, AuthLayout } from '../components/PublicLayout';
+import { Button, Input } from '../components/ui';
 
 /**
  * Distinct sign-up path for a brand-new company (vs. the plain magic-code
@@ -60,69 +61,94 @@ export function SignupCompanyPage() {
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <img src="/logo.png" alt="StreamBird" className="auth-logo" />
-        <h1>Create your company account</h1>
+    <AuthLayout>
+      <div className="pub-auth-col">
+        <AuthHeading
+          eyebrow={step === 'details' ? 'Step 1 of 2' : 'Step 2 of 2'}
+          title="Create your company account"
+          lead={
+            step === 'details' ? (
+              "Set up StreamBird for your company. You'll be the first admin."
+            ) : (
+              <>
+                We sent a 6-digit code to <strong>{email}</strong>.
+              </>
+            )
+          }
+        />
+        <div className="pub-auth-card">
+          {step === 'details' && (
+            <form onSubmit={handleRequestCode} className="pub-form">
+              <Input
+                id="companyName"
+                label="Company name"
+                type="text"
+                autoComplete="organization"
+                autoFocus
+                required
+                maxLength={200}
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Acme Inc"
+              />
+              <Input
+                id="email"
+                label="Your email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@acme.com"
+                error={error}
+              />
+              <Button type="submit" size="lg" block busy={busy} disabled={!companyName.trim() || !email.trim()}>
+                Send verification code
+              </Button>
+              <p className="pub-fine">
+                By continuing you agree to our <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy policy</Link>.
+              </p>
+            </form>
+          )}
 
-        {step === 'details' && (
-          <form onSubmit={handleRequestCode}>
-            <p>Set up StreamBird for your company. You'll be the first admin.</p>
-            <label htmlFor="companyName">Company name</label>
-            <input
-              id="companyName"
-              type="text"
-              autoFocus
-              required
-              maxLength={200}
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Acme Inc"
-            />
-            <label htmlFor="email">Your email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@acme.com"
-            />
-            {error && <p className="error">{error}</p>}
-            <button type="submit" disabled={busy || !companyName.trim() || !email.trim()}>
-              {busy && <BirdBusy />} Send verification code
-            </button>
-          </form>
-        )}
-
-        {step === 'code' && (
-          <form onSubmit={handleCreateCompany}>
-            <p>
-              We sent a 6-digit code to <strong>{email}</strong>.
-            </p>
-            <label htmlFor="code">Verification code</label>
-            <input
-              id="code"
-              type="text"
-              inputMode="numeric"
-              autoFocus
-              required
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="123456"
-            />
-            {error && <p className="error">{error}</p>}
-            <button type="submit" disabled={busy || code.length !== 6}>
-              {busy && <BirdBusy />} Create company account
-            </button>
-          </form>
-        )}
-
-        <p>
+          {step === 'code' && (
+            <form onSubmit={handleCreateCompany} className="pub-form">
+              <Input
+                id="code"
+                label="Verification code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className="pub-code-input"
+                autoFocus
+                required
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                error={error}
+              />
+              <Button type="submit" size="lg" block busy={busy} disabled={code.length !== 6}>
+                Create company account
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setStep('details');
+                  setCode('');
+                  setError(null);
+                }}
+              >
+                Back to details
+              </Button>
+            </form>
+          )}
+        </div>
+        <p className="pub-auth-alt">
           Already have an account? <Link to="/login">Log in</Link>
         </p>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

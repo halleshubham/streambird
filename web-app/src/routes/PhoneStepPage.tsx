@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { setPhone } from '../api/auth';
 import { ApiError } from '../api/client';
-import { BirdBusy } from '../components/BirdBusy';
+import { AuthHeading, AuthLayout } from '../components/PublicLayout';
+import { Button, Input } from '../components/ui';
 
 /**
  * Shown once, right after a brand-new sign-up (see ProtectedRoute and `needsPhone` on GET /auth/me): asks for a
@@ -29,37 +30,45 @@ export function PhoneStepPage() {
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <img src="/logo.png" alt="StreamBird" className="auth-logo" />
-        <h1>One last thing</h1>
-        <form onSubmit={submit}>
-          <p>
-            What is the best mobile number to reach you on{user ? ` (${user.email})` : ''}? We only use it to help with your
-            account and setup, never for marketing.
-          </p>
-          <label htmlFor="phone">Mobile number</label>
-          <input
-            id="phone"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            autoFocus
-            required
-            value={phone}
-            onChange={(e) => setPhoneText(e.target.value)}
-            placeholder="98765 43210"
-          />
-          <p className="field-hint">Indian numbers need no country code. For any other country, start with + and the code.</p>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button type="submit" disabled={busy || !phone.trim()}>
-            {busy && <BirdBusy />} Continue
-          </button>
-          <button type="button" className="link-button" disabled={busy} onClick={() => void logout()}>
-            Log out
-          </button>
-        </form>
+    <AuthLayout
+      headerAction={
+        <Button variant="ghost" disabled={busy} onClick={() => void logout()}>
+          Log out
+        </Button>
+      }
+    >
+      <div className="pub-auth-col">
+        <AuthHeading
+          title="One last thing"
+          lead={
+            <>
+              What is the best mobile number to reach you on{user ? ` (${user.email})` : ''}? We only use it to help with
+              your account and setup, never for marketing.
+            </>
+          }
+        />
+        <div className="pub-auth-card">
+          <form onSubmit={submit} className="pub-form">
+            <Input
+              id="phone"
+              label="Mobile number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              autoFocus
+              required
+              value={phone}
+              onChange={(e) => setPhoneText(e.target.value)}
+              placeholder="98765 43210"
+              hint="Indian numbers need no country code. For any other country, start with + and the code."
+              error={error}
+            />
+            <Button type="submit" size="lg" block busy={busy} disabled={!phone.trim()}>
+              Continue
+            </Button>
+          </form>
+        </div>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

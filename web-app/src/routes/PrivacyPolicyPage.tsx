@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { LegalLayout } from '../components/LegalLayout';
 import { useConsentBannerEnabled } from '../lib/consent';
 
 const CONTACT_EMAIL = 'support@shackyapps.in';
@@ -13,14 +12,10 @@ const CONTACT_EMAIL = 'support@shackyapps.in';
  * SPA shell/theme as everything else.
  */
 export function PrivacyPolicyPage() {
-  const { status } = useAuth();
   const consentMode = useConsentBannerEnabled();
 
   return (
-    <div className="legal-page">
-      <div className="legal-page-inner">
-        <h1>StreamBird Privacy Policy</h1>
-        <p className="legal-updated">Last updated: October 18, 2026</p>
+    <LegalLayout title="StreamBird Privacy Policy" updated="Last updated: October 18, 2026">
 
         <p>
           StreamBird ("StreamBird", "we", "us") is a multi-platform live-streaming
@@ -204,10 +199,6 @@ export function PrivacyPolicyPage() {
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
         </p>
 
-        <p className="legal-back">
-          {status === 'authenticated' ? <Link to="/dashboard">Back to dashboard</Link> : <Link to="/login">Back to sign in</Link>}
-        </p>
-      </div>
-    </div>
+    </LegalLayout>
   );
 }

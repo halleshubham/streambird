@@ -1,17 +1,13 @@
 import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { LegalLayout } from '../components/LegalLayout';
 
 const CONTACT_EMAIL = 'support@shackyapps.in';
 
 /** Public, unauthenticated route -- see PrivacyPolicyPage for why. */
 export function TermsOfServicePage() {
-  const { status } = useAuth();
 
   return (
-    <div className="legal-page">
-      <div className="legal-page-inner">
-        <h1>StreamBird Terms of Service</h1>
-        <p className="legal-updated">Last updated: October 1, 2026</p>
+    <LegalLayout title="StreamBird Terms of Service" updated="Last updated: October 1, 2026">
 
         <p>
           These Terms govern your use of StreamBird, a multi-platform
@@ -94,10 +90,6 @@ export function TermsOfServicePage() {
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
         </p>
 
-        <p className="legal-back">
-          {status === 'authenticated' ? <Link to="/dashboard">Back to dashboard</Link> : <Link to="/login">Back to sign in</Link>}
-        </p>
-      </div>
-    </div>
+    </LegalLayout>
   );
 }
