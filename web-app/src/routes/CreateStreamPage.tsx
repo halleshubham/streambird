@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, Plug, Radio } from 'lucide-react';
+import { CalendarClock, ChevronDown, Plug, Radio, Save } from 'lucide-react';
 import { listConnections } from '../api/connections';
+import { listBrandKits } from '../api/assets';
+import { getMyLimits } from '../api/plans';
+import { createPreset, listPresets } from '../api/presets';
+import { seedStudioFromPreset } from '../studio/useHostStudio';
+import { MAX_PRESET_NAME, QUALITY_ORDER, QUALITY_SHORT, lookLabel, optionsSummary } from '../lib/presets';
 import { createStream, scheduleStream, uploadScheduleThumbnail, uploadStreamThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
 import { rememberThumbnailNotice } from '../lib/thumbnailNotice';
@@ -11,7 +16,7 @@ import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } fro
 import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
-import type { PlatformConnection } from '../types/api';
+import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, Resolution, StreamPreset } from '../types/api';
 import { BirdBusy } from '../components/BirdBusy';
 import { DocsLink } from '../components/DocsLink';
 
@@ -35,10 +40,76 @@ export function CreateStreamPage() {
   const timeZone = browserTimeZone();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "More options": the look and quality choices, folded away so the first screen is just a title and destinations.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [kits, setKits] = useState<BrandKit[]>([]);
+  const [limits, setLimits] = useState<EffectiveLimits | null>(null);
+  const [presets, setPresets] = useState<StreamPreset[] | null>(null);
+  // '' = the usual look (destination's or account default kit), 'none' = no kit, otherwise a kit id.
+  const [kitChoice, setKitChoice] = useState('');
+  const [quality, setQuality] = useState<Resolution>('hd');
+  const [tickerOn, setTickerOn] = useState(false);
+  const [tickerText, setTickerText] = useState('');
+  const [presetNaming, setPresetNaming] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [presetNote, setPresetNote] = useState<string | null>(null);
 
   useEffect(() => {
     listConnections().then(setConnections);
+    // Optional extras: the page works without them.
+    listBrandKits().then(setKits).catch(() => {});
+    getMyLimits().then(setLimits).catch(() => {});
+    listPresets().then(setPresets).catch(() => {});
   }, []);
+
+  const maxQuality = limits?.maxResolution ?? 'hd';
+  const qualityChoices = QUALITY_ORDER.filter((q) => QUALITY_ORDER.indexOf(q) <= QUALITY_ORDER.indexOf(maxQuality));
+  const effectiveQuality = qualityChoices.includes(quality) ? quality : (qualityChoices[qualityChoices.length - 1] ?? 'hd');
+  const tickerActive = tickerOn && tickerText.trim().length > 0;
+  // Quality, kit and ticker are studio settings, so they only matter when going live now; a scheduled stream sets them when it starts.
+  const summary =
+    mode === 'schedule'
+      ? `${visibility[0].toUpperCase()}${visibility.slice(1)}${orientation === 'portrait' ? ' · vertical' : ''}`
+      : optionsSummary({
+          look: lookLabel(kitChoice === 'none' ? null : kitChoice || undefined, kits),
+          quality: effectiveQuality,
+          tickerOn: tickerActive,
+          portrait: orientation === 'portrait',
+        });
+
+  /** What this form would save as a preset (everything except the title, which is per stream). */
+  function currentConfig(): PresetConfig {
+    const config: PresetConfig = {
+      orientation,
+      destinationIds: (connections ?? []).filter((c) => selected.has(c.id)).map((c) => c.id),
+      quality: effectiveQuality,
+      tickerEnabled: tickerOn,
+      ...(tickerActive ? { tickerText: tickerText.trim() } : {}),
+    };
+    if (kitChoice === 'none') config.brandKitId = null;
+    else if (kitChoice) config.brandKitId = kitChoice;
+    return config;
+  }
+
+  async function savePreset() {
+    const name = presetName.trim();
+    if (!name) return setPresetNote('Give the preset a name.');
+    if (selected.size === 0) return setPresetNote('Pick at least one destination first.');
+    setPresetBusy(true);
+    setPresetNote(null);
+    try {
+      await createPreset(name, currentConfig());
+      setPresetNaming(false);
+      setPresetName('');
+      setPresetNote(`Saved "${name}". Find it on your dashboard under Ready when you are.`);
+      listPresets().then(setPresets).catch(() => {});
+    } catch (err) {
+      setPresetNote(err instanceof ApiError ? err.message : 'Could not save the preset.');
+    } finally {
+      setPresetBusy(false);
+    }
+  }
 
   // Platforms that can hold a broadcast scheduled for later (see StreamProvider.canPrescheduleBroadcast server-side).
   const PRECREATABLE = ['youtube'];
@@ -130,7 +201,11 @@ export function CreateStreamPage() {
           })
           .catch((err) => rememberThumbnailNotice(stream.id, [err instanceof ApiError ? err.message : 'The thumbnail could not be uploaded.']));
       }
-      navigate(`/streams/${stream.id}/studio`);
+      // The quality, ticker and kit chosen here are studio settings kept in this browser: hand them to the new stream's studio.
+      const config = currentConfig();
+      seedStudioFromPreset(stream.id, config);
+      // An account with no preset yet is offered to keep these settings as one (a banner in the studio).
+      navigate(`/streams/${stream.id}/studio`, presets && presets.length === 0 ? { state: { offerPreset: config } } : undefined);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create stream.');
       setBusy(false);
@@ -174,70 +249,6 @@ export function CreateStreamPage() {
           placeholder="Untitled stream"
         />
 
-        <label htmlFor="description">Description</label>
-        <textarea
-          id="description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What's this stream about?"
-          rows={3}
-        />
-
-        <label htmlFor="visibility">Visibility</label>
-        <select
-          id="visibility"
-          value={visibility}
-          onChange={(e) => setVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
-        >
-          <option value="public">Public</option>
-          <option value="unlisted">Unlisted</option>
-          <option value="private">Private</option>
-        </select>
-        <p className="field-hint">Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.</p>
-
-        <label htmlFor="orientation">Shape</label>
-        <select
-          id="orientation"
-          value={orientation}
-          onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
-        >
-          <option value="landscape">Landscape (16:9) -- the usual</option>
-          <option value="portrait">Vertical (9:16) -- phones, YouTube Shorts live</option>
-        </select>
-        <p className="field-hint">
-          {orientation === 'portrait'
-            ? 'The same vertical picture goes to every destination you pick, so Twitch and Facebook get it vertical too. YouTube shows it full-screen on phones. This cannot be changed once the stream is created.'
-            : 'Every destination gets the same 16:9 picture.'}
-        </p>
-
-        <label>Thumbnail (optional)</label>
-        <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
-        <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
-
-        {mode === 'schedule' && (
-          <>
-            <label htmlFor="when">Date and time</label>
-            <input
-              id="when"
-              type="datetime-local"
-              value={whenLocal}
-              min={toLocalInputValue(new Date())}
-              onChange={(e) => setWhenLocal(e.target.value)}
-              required
-            />
-            <p className="field-hint">Your time zone: {timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.</p>
-
-            <label htmlFor="duration">Expected duration</label>
-            <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
-              {DURATION_OPTIONS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-
         <label>Destinations</label>
         {mode === 'schedule' && (
           <p className="notice">
@@ -264,6 +275,26 @@ export function CreateStreamPage() {
 
         {mode === 'schedule' && (
           <>
+            <label htmlFor="when">Date and time</label>
+            <input
+              id="when"
+              type="datetime-local"
+              value={whenLocal}
+              min={toLocalInputValue(new Date())}
+              onChange={(e) => setWhenLocal(e.target.value)}
+              required
+            />
+            <p className="field-hint">Your time zone: {timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.</p>
+
+            <label htmlFor="duration">Expected duration</label>
+            <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+              {DURATION_OPTIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
             <label htmlFor="guest-emails">Invite guests by email (optional)</label>
             <GuestEmailsField value={guestEmailsText} onChange={setGuestEmailsText} />
 
@@ -301,6 +332,130 @@ export function CreateStreamPage() {
             {requirePassword && <p className="field-hint">The password is never emailed -- share it with your guests yourself.</p>}
           </>
         )}
+
+        <div className="more-options">
+          <button
+            type="button"
+            className="more-options-toggle"
+            aria-expanded={moreOpen}
+            aria-controls="more-options-panel"
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            <ChevronDown size={16} className={moreOpen ? 'more-options-chevron more-options-chevron--open' : 'more-options-chevron'} aria-hidden="true" />
+            <span className="more-options-title">More options</span>
+            <span className="more-options-summary" data-testid="more-options-summary">{summary}</span>
+          </button>
+          <div id="more-options-panel" className="more-options-panel" hidden={!moreOpen}>
+            <label htmlFor="description">Description</label>
+            <textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What's this stream about?"
+              rows={3}
+            />
+
+            <label htmlFor="visibility">Visibility</label>
+            <select
+              id="visibility"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
+            >
+              <option value="public">Public</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="private">Private</option>
+            </select>
+            <p className="field-hint">Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.</p>
+
+            <label htmlFor="orientation">Shape</label>
+            <select
+              id="orientation"
+              value={orientation}
+              onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
+            >
+              <option value="landscape">Landscape (16:9) -- the usual</option>
+              <option value="portrait">Vertical (9:16) -- phones, YouTube Shorts live</option>
+            </select>
+            <p className="field-hint">
+              {orientation === 'portrait'
+                ? 'The same vertical picture goes to every destination you pick, so Twitch and Facebook get it vertical too. YouTube shows it full-screen on phones. This cannot be changed once the stream is created.'
+                : 'Every destination gets the same 16:9 picture.'}
+            </p>
+
+            {mode === 'now' && (
+              <>
+              {kits.length > 0 && (
+                <>
+                  <label htmlFor="brandKit">Brand kit</label>
+                  <select id="brandKit" value={kitChoice} onChange={(e) => setKitChoice(e.target.value)}>
+                    <option value="">Default look</option>
+                    <option value="none">No brand kit</option>
+                    {kits.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="field-hint">"Default look" uses the kit of the channel or Page you stream to, else your account default.</p>
+                </>
+              )}
+
+              <label htmlFor="quality">Quality</label>
+              <select id="quality" value={effectiveQuality} onChange={(e) => setQuality(e.target.value as Resolution)}>
+                {qualityChoices.map((q) => (
+                  <option key={q} value={q}>
+                    {QUALITY_SHORT[q]}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">The studio starts at this quality; you can still change it there before you go live.</p>
+
+              <label className="checkbox-row">
+                <input type="checkbox" checked={tickerOn} onChange={(e) => setTickerOn(e.target.checked)} /> Show a news ticker
+              </label>
+              {tickerOn && (
+                <input type="text" aria-label="Ticker text" value={tickerText} maxLength={200} placeholder="Text shown along the bottom" onChange={(e) => setTickerText(e.target.value)} />
+              )}
+              </>
+            )}
+
+            <label>Thumbnail (optional)</label>
+            <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
+            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
+
+            <div className="preset-save">
+              {presetNaming ? (
+                <div className="preset-save-row">
+                  <input
+                    type="text"
+                    aria-label="Preset name"
+                    value={presetName}
+                    maxLength={MAX_PRESET_NAME}
+                    placeholder="Name this preset"
+                    onChange={(e) => setPresetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void savePreset();
+                      }
+                    }}
+                  />
+                  <button type="button" className="icon-btn" disabled={presetBusy} onClick={() => void savePreset()}>
+                    {presetBusy ? <BirdBusy /> : <Save size={16} />} Save preset
+                  </button>
+                  <button type="button" className="link-button" disabled={presetBusy} onClick={() => setPresetNaming(false)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="link-button" onClick={() => { setPresetNaming(true); setPresetNote(null); }}>
+                  <Save size={14} /> Save these settings as a preset
+                </button>
+              )}
+              {presetNote && <p className="field-hint" role="status">{presetNote}</p>}
+            </div>
+          </div>
+        </div>
 
         {error && <p className="error">{error}</p>}
         <button type="submit" className="icon-btn" disabled={busy}>

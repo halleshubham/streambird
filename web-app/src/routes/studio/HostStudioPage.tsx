@@ -2,7 +2,7 @@ import { NameBadge } from '../../components/NameBadge';
 import { formatWhen } from '../../lib/schedule';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { THUMBNAIL_NOTICE_EVENT, clearThumbnailNotice, readThumbnailNotice } from '../../lib/thumbnailNotice';
 import {
   Camera,
@@ -41,6 +41,7 @@ import {
   Megaphone,
   Settings2,
   RefreshCw,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
@@ -57,6 +58,9 @@ import { DocsLink } from '../../components/DocsLink';
 import { formatElapsed } from '../../studio/recorder';
 import { BirdBusy, isInProgress } from '../../components/BirdBusy';
 import { isTouchDevice } from '../../studio/cameraDevices';
+import { createPreset } from '../../api/presets';
+import { ApiError } from '../../api/client';
+import type { PresetConfig } from '../../types/api';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
@@ -159,6 +163,41 @@ export function HostStudioPage() {
     actions,
   } = useHostStudio(streamId);
   const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
+  const localMuted = participants.find((p) => p.id === 'local')?.audioEnabled === false;
+  // On a phone the side panels sit behind one "Customize" button (a sheet above the bar); on wide screens they stay beside the picture.
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  // "Go live now" on a preset card opens the studio with the camera already on (the host still presses Go live to publish).
+  const location = useLocation();
+  const routeState = (location.state ?? null) as { autoCamera?: boolean; offerPreset?: PresetConfig } | null;
+  const cameraAutoStarted = useRef(false);
+  useEffect(() => {
+    if (!routeState?.autoCamera || cameraAutoStarted.current || loading || !stream || cameraStarted) return;
+    cameraAutoStarted.current = true;
+    void actions.startCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeState?.autoCamera, loading, stream, cameraStarted]);
+
+  // After the first stream made from the setup form, offer to keep those settings as a preset.
+  const [offer, setOffer] = useState<PresetConfig | null>(routeState?.offerPreset ?? null);
+  const [offerName, setOfferName] = useState('');
+  const [offerBusy, setOfferBusy] = useState(false);
+  const [offerNote, setOfferNote] = useState<string | null>(null);
+  async function saveOffer() {
+    if (!offer) return;
+    const name = offerName.trim();
+    if (!name) return setOfferNote('Give the preset a name.');
+    setOfferBusy(true);
+    try {
+      await createPreset(name, offer);
+      setOffer(null);
+      setOfferNote(`Saved "${name}". Next time, go live in one tap from your dashboard.`);
+    } catch (e) {
+      setOfferNote(e instanceof ApiError ? e.message : 'Could not save the preset.');
+    } finally {
+      setOfferBusy(false);
+    }
+  }
 
   // First-run tour: offered once per browser, only for a stream that can go live right now.
   const [tourOpen, setTourOpen] = useState(false);
@@ -307,7 +346,7 @@ export function HostStudioPage() {
         <div className="panel studio-preview-banner" role="status" data-testid="preview-banner">
           <Radio size={18} className="studio-preview-icon" aria-hidden="true" />
           <span>
-            <strong>You’re in preview, not live yet.</strong> Press <strong>Go live</strong> in the top bar to start streaming to {goLiveNames(destinations, connectionById)}.
+            <strong>You’re in preview, not live yet.</strong> Press <strong>Go live</strong> in the bar below to start streaming to {goLiveNames(destinations, connectionById)}.
           </span>
           <button type="button" className="link-button link-button--inline" onClick={() => setTourOpen(true)}>
             Show me around
@@ -330,6 +369,43 @@ export function HostStudioPage() {
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {(offer || offerNote) && (
+        <div className="panel studio-preview-banner studio-preset-offer" role="status" data-testid="save-preset-offer">
+          {offer ? (
+            <>
+              <span>
+                <strong>Save as preset.</strong> Keep these settings to go live in one tap next time.
+              </span>
+              <input
+                type="text"
+                aria-label="Preset name"
+                value={offerName}
+                maxLength={80}
+                placeholder="Name this preset"
+                onChange={(e) => setOfferName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveOffer();
+                }}
+              />
+              <button type="button" className="icon-btn icon-btn--small" disabled={offerBusy} onClick={() => void saveOffer()}>
+                {offerBusy ? <BirdBusy overlay={false} /> : <Save size={14} />} Save preset
+              </button>
+              <button type="button" className="link-button link-button--inline" onClick={() => { setOffer(null); setOfferNote(null); }}>
+                Not now
+              </button>
+              {offerNote && <span className="error" role="alert">{offerNote}</span>}
+            </>
+          ) : (
+            <>
+              <span>{offerNote}</span>
+              <button type="button" className="link-button link-button--inline" onClick={() => setOfferNote(null)}>
+                Dismiss
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -377,32 +453,18 @@ export function HostStudioPage() {
           <button
             type="button"
             className="tb-btn"
-            data-tour="camera"
-            aria-label={cameraStarted ? 'Camera on' : 'Start my camera'}
-            title={cameraStarted ? 'Camera is on' : 'Start my camera'}
-            onClick={() => void actions.startCamera()}
-            disabled={cameraStarting || cameraStarted}
-          >
-            <Camera size={18} /> <span className="tb-label">{cameraStarted ? 'Camera on' : 'Camera'}</span>
-          </button>
-          <button
-            type="button"
-            className={`tb-btn${screenSharing ? ' tb-btn--on' : ''}`}
-            aria-label={screenSharing ? 'Stop sharing' : 'Share screen'}
-            title={screenSharing ? 'Stop sharing your screen' : 'Share your screen'}
-            onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
-          >
-            {screenSharing ? <MonitorOff size={18} /> : <MonitorUp size={18} />} <span className="tb-label">{screenSharing ? 'Stop' : 'Share'}</span>
-          </button>
-          <button
-            type="button"
-            className="tb-btn"
             aria-label="Toggle layout"
             title={`Toggle layout (now ${layoutMode})`}
             onClick={actions.toggleLayout}
           >
             {layoutMode === 'grid' ? <LayoutGrid size={18} /> : <Focus size={18} />} <span className="tb-label tb-label--wide">Layout</span>
           </button>
+          <RecordButton
+            canRecord={canRecord}
+            since={recordingSince}
+            onStart={() => void actions.startRecording()}
+            onStop={() => void actions.stopRecording()}
+          />
         </div>
 
         <div className="studio-topbar-group studio-devices-group">
@@ -593,35 +655,6 @@ export function HostStudioPage() {
           </label>
         </div>
 
-        <div className="studio-topbar-group studio-topbar-live">
-          <button
-            type="button"
-            data-tour="golive"
-            className={`go-live-button go-live-button--bar${isLive ? ' go-live-button--live' : ' go-live-button--hint'}`}
-            onClick={() => void actions.goLive()}
-            disabled={!stream.whipUrl || isLive}
-          >
-            <Radio size={18} /> {isLive ? 'Live' : 'Go live'}
-          </button>
-          <RecordButton
-            canRecord={canRecord}
-            since={recordingSince}
-            onStart={() => void actions.startRecording()}
-            onStop={() => void actions.stopRecording()}
-          />
-          <button
-            type="button"
-            className="tb-btn tb-btn--danger"
-            aria-label="End stream"
-            title="End the stream for everyone"
-            onClick={() => {
-              if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
-            }}
-            disabled={ending}
-          >
-            <PhoneOff size={18} /> <span className="tb-label">End</span>
-          </button>
-        </div>
       </div>
 
       <div className="studio-main" style={{ '--studio-top': `${topbarOffset}px` } as CSSProperties}>
@@ -646,7 +679,13 @@ export function HostStudioPage() {
 
         </div>
 
-        <aside className="studio-side panel" aria-label="Studio panels">
+        <aside id="studio-side-panels" className={`studio-side panel${customizeOpen ? ' studio-side--open' : ''}`} aria-label="Studio panels">
+          <div className="studio-side-head">
+            <strong>Customize</strong>
+            <button type="button" className="icon-btn icon-btn--small" aria-label="Close customize" onClick={() => setCustomizeOpen(false)}>
+              <X size={14} /> Close
+            </button>
+          </div>
           <div className="studio-tabs" role="tablist" aria-label="Studio panels" onKeyDown={onSideTabKey}>
             {SIDE_TABS.map((t) => (
               <button
@@ -1024,6 +1063,71 @@ export function HostStudioPage() {
           )}
 
         </div>
+      </div>
+      <div className="studio-dock" role="toolbar" aria-label="Live controls">
+        <button
+          type="button"
+          className={`dock-btn${localMuted ? ' dock-btn--off' : ''}`}
+          aria-label={localMuted ? 'Microphone off' : 'Microphone on'}
+          aria-pressed={!localMuted}
+          title={cameraStarted ? (localMuted ? 'Your microphone is muted. Press to unmute.' : 'Mute your microphone') : 'Start your camera first. It turns the microphone on too.'}
+          disabled={!cameraStarted}
+          onClick={() => actions.toggleParticipantAudio('local')}
+        >
+          {localMuted ? <MicOff size={20} /> : <Mic size={20} />} <span className="dock-label">Mic</span>
+        </button>
+        <button
+          type="button"
+          className="dock-btn"
+          data-tour="camera"
+          aria-label={cameraStarted ? 'Camera on' : 'Start my camera'}
+          title={cameraStarted ? 'Camera is on' : 'Start my camera'}
+          onClick={() => void actions.startCamera()}
+          disabled={cameraStarting || cameraStarted}
+        >
+          <Camera size={20} /> <span className="dock-label">{cameraStarted ? 'Camera on' : 'Camera'}</span>
+        </button>
+        <button
+          type="button"
+          className={`dock-btn${screenSharing ? ' dock-btn--on' : ''}`}
+          aria-label={screenSharing ? 'Stop sharing' : 'Share screen'}
+          title={screenSharing ? 'Stop sharing your screen' : 'Share your screen'}
+          onClick={() => (screenSharing ? actions.stopScreenShare() : void actions.startScreenShare())}
+        >
+          {screenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />} <span className="dock-label">{screenSharing ? 'Stop' : 'Share'}</span>
+        </button>
+        <button
+          type="button"
+          className={`dock-btn dock-customize${customizeOpen ? ' dock-btn--on' : ''}`}
+          aria-label="Customize"
+          aria-expanded={customizeOpen}
+          aria-controls="studio-side-panels"
+          title="People, look, titles, scenes and ads"
+          onClick={() => setCustomizeOpen((o) => !o)}
+        >
+          <SlidersHorizontal size={20} /> <span className="dock-label">Customize</span>
+        </button>
+        <button
+          type="button"
+          data-tour="golive"
+          className={`go-live-button go-live-button--dock${isLive ? ' go-live-button--live' : ' go-live-button--hint'}`}
+          onClick={() => void actions.goLive()}
+          disabled={!stream.whipUrl || isLive}
+        >
+          <Radio size={18} /> {isLive ? 'Live' : 'Go live'}
+        </button>
+        <button
+          type="button"
+          className="dock-btn dock-btn--end"
+          aria-label="End stream"
+          title="End the stream for everyone"
+          onClick={() => {
+            if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
+          }}
+          disabled={ending}
+        >
+          <PhoneOff size={20} /> <span className="dock-label">End</span>
+        </button>
       </div>
       <StudioTour open={tourOpen} platforms={goLiveNames(destinations, connectionById).replace(/^Your platforms$/, 'your platforms')} onClose={closeTour} />
     </div>

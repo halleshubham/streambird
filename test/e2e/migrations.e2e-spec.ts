@@ -315,4 +315,49 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0029 adds stream_presets next to existing accounts without touching them, and is re-runnable', async () => {
+    const live = `e2e_migrate_presets_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0028', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0029: an account with a stream. Nothing about presets exists yet.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('preset-acct', 'hpreset', 'pro', 30) RETURNING id`)).rows[0].id;
+      await db.query(`INSERT INTO live_streams (account_id, title, status) VALUES ($1, 'before presets', 'ended')`, [acct]);
+      expect((await db.query(`SELECT to_regclass('stream_presets') AS t`)).rows[0].t).toBeNull();
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0029%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: still fine
+
+      // The existing account and stream are untouched.
+      expect((await db.query(`SELECT count(*)::int AS n FROM live_streams WHERE account_id = $1`, [acct])).rows[0].n).toBe(1);
+
+      // A preset needs only a name; the config defaults to {} and the use time to null.
+      const preset = (await db.query(`INSERT INTO stream_presets (account_id, name) VALUES ($1, 'Friday show') RETURNING id, config, last_used_at`, [acct])).rows[0];
+      expect(preset.config).toEqual({});
+      expect(preset.last_used_at).toBeNull();
+      await db.query(`UPDATE stream_presets SET config = $2::jsonb WHERE id = $1`, [preset.id, JSON.stringify({ orientation: 'portrait', quality: 'hd' })]);
+      await expect(db.query(`INSERT INTO stream_presets (account_id, name) VALUES ($1, $2)`, [acct, 'x'.repeat(81)])).rejects.toThrow(); // varchar(80)
+      await expect(db.query(`INSERT INTO stream_presets (account_id, name) VALUES (gen_random_uuid(), 'orphan')`)).rejects.toThrow(); // account FK
+
+      // Presets go with their account.
+      await db.query(`DELETE FROM live_streams WHERE account_id = $1`, [acct]);
+      await db.query(`DELETE FROM accounts WHERE id = $1`, [acct]);
+      expect((await db.query(`SELECT count(*)::int AS n FROM stream_presets`)).rows[0].n).toBe(0);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

@@ -4071,3 +4071,169 @@ video.chroma-preview {
 .brand-files summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
 .ad-shrink-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-weight: 500; cursor: pointer; }
 .ad-shrink-row input[type='checkbox'] { width: auto; flex: none; margin: 0; }
+
+/* ======================================================================
+   Presets ("Ready when you are"), setup form "More options", studio dock
+   ====================================================================== */
+
+.presets { margin-bottom: 24px; }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(124, 58, 237, 0.07);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.preset-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.preset-card--default { background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, var(--card-bg)), var(--card-bg) 60%); }
+.preset-card--wide { grid-column: 1 / -1; min-width: 0; }
+.preset-card--form { padding: 18px; }
+.preset-name { margin: 0; font-size: 18px; color: var(--text-h); overflow-wrap: anywhere; }
+.preset-summary { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text); flex: 1; overflow-wrap: anywhere; }
+.preset-golive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #ec4899));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.preset-golive:hover:not(:disabled) { background: linear-gradient(135deg, var(--accent-hover), color-mix(in srgb, var(--accent-hover) 70%, #ec4899)); }
+.preset-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.preset-save-link { align-self: flex-start; margin: 0; padding: 4px 0; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.preset-card--new {
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  border: 2px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: none;
+  cursor: pointer;
+}
+.preset-card--new:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--accent); border-color: var(--accent); }
+.preset-form { display: flex; flex-direction: column; gap: 4px; }
+.preset-form input[type='text'] { margin-bottom: 8px; }
+.preset-fieldset { border: 0; padding: 0; margin: 0 0 8px; min-width: 0; }
+.preset-fieldset legend { padding: 0; font-size: 14px; font-weight: 600; color: var(--text-h); margin-bottom: 4px; }
+.preset-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 12px; }
+.preset-form-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.preset-form-actions .link-button { margin: 0; }
+
+/* Setup form: everything but the title and destinations is folded into "More options" with a one-line summary. */
+.more-options { margin: 12px 0 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); overflow: hidden; }
+.more-options-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text-h);
+  text-align: left;
+}
+.more-options-toggle:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--text-h); }
+.more-options-title { font-weight: 700; }
+.more-options-summary { font-size: 13px; color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.more-options-chevron { flex: none; transition: transform 0.15s; color: var(--accent); }
+.more-options-chevron--open { transform: rotate(180deg); }
+.more-options-panel { padding: 4px 14px 14px; border-top: 1px solid var(--border); }
+.more-options-panel[hidden] { display: none; }
+.preset-save { margin-top: 12px; }
+.preset-save-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.preset-save-row input { flex: 1 1 180px; width: auto; margin-bottom: 0; }
+.preset-save-row .icon-btn { flex: none; }
+.preset-save .link-button { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+
+.studio-preset-offer input { flex: 1 1 160px; width: auto; max-width: 260px; margin: 0; }
+.studio-preset-offer .link-button { margin: 0; padding: 4px 0; }
+
+/* Studio: the live controls float in a bar at the bottom (Mic, Camera, Share, Customize, Go live, End). */
+.studio-page { padding-bottom: 104px; }
+.studio-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 16px);
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 34px rgba(17, 12, 40, 0.28);
+}
+.dock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dock-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 14%, var(--card-bg)); color: var(--text-h); border-color: transparent; }
+.dock-btn--on, .dock-btn--on:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, var(--card-bg)); color: var(--accent); }
+.dock-btn--off, .dock-btn--off:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 14%, var(--card-bg)); color: var(--error); }
+.dock-btn--end { color: var(--error); }
+.dock-btn--end:hover:not(:disabled) { background: var(--error); color: #fff; }
+.go-live-button--dock { white-space: nowrap; padding: 11px 26px; font-size: 16px; border-radius: 999px; }
+.dock-customize { display: none; }
+/* The toast sits above the bar instead of under it. */
+.studio-page .studio-status-toast { bottom: 92px; }
+.studio-side-head { display: none; }
+@media (min-width: 1100px) {
+  .studio-side { max-height: calc(100vh - var(--studio-top, 110px) - 104px); }
+}
+@media (max-width: 720px) {
+  .studio-page { padding-bottom: 96px; }
+  .dock-label { display: none; }
+  .dock-btn { padding: 11px; }
+  .go-live-button--dock { padding: 11px 18px; }
+  .dock-customize { display: inline-flex; }
+  /* Customize: the People/Look/Titles/Scenes/Ads panels open as a sheet above the bar instead of a long page under the picture. */
+  .studio-side { display: none; }
+  .studio-side--open {
+    display: block;
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 100px;
+    z-index: 44;
+    max-height: min(68vh, 560px);
+    overflow-y: auto;
+    border-radius: 16px;
+    background: var(--card-bg);
+    box-shadow: 0 14px 40px rgba(17, 12, 40, 0.35);
+  }
+  .studio-side-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 0; color: var(--text-h); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .more-options-chevron, .preset-card { transition: none; }
+}

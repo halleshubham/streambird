@@ -4,6 +4,10 @@ import { ArrowRight, CalendarPlus, Plug, Radio, Settings2 } from 'lucide-react';
 import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
+import { listPresets } from '../api/presets';
+import { listBrandKits } from '../api/assets';
+import { getMyLimits } from '../api/plans';
+import { PresetsSection } from '../components/PresetsSection';
 import { UpgradeNudge } from '../components/UpgradeNudge';
 import { UsageMeter } from '../components/UsageMeter';
 import { BirdLoader } from '../components/BirdLoader';
@@ -11,7 +15,7 @@ import { StreamListItem } from '../components/StreamListItem';
 import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
 import { confirmAndDelete } from '../lib/deleteUpcoming';
 import { PlatformBadge } from '../components/PlatformBadge';
-import type { Account, PlatformConnection, StreamListItem as StreamListItemType } from '../types/api';
+import type { Account, BrandKit, EffectiveLimits, PlatformConnection, StreamListItem as StreamListItemType, StreamPreset } from '../types/api';
 
 export function DashboardPage() {
   const [account, setAccount] = useState<Account | null>(null);
@@ -19,6 +23,20 @@ export function DashboardPage() {
   const [streams, setStreams] = useState<StreamListItemType[] | null>(null);
   const [upcoming, setUpcoming] = useState<StreamListItemType[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Presets are a convenience: if any of these three fail the dashboard still works without the section.
+  const [presets, setPresets] = useState<StreamPreset[] | null>(null);
+  const [kits, setKits] = useState<BrandKit[]>([]);
+  const [limits, setLimits] = useState<EffectiveLimits | null>(null);
+
+  useEffect(() => {
+    Promise.all([listPresets(), listBrandKits().catch(() => [] as BrandKit[]), getMyLimits().catch(() => null)])
+      .then(([p, k, l]) => {
+        setPresets(p);
+        setKits(k);
+        setLimits(l);
+      })
+      .catch(() => setPresets(null));
+  }, []);
 
   useEffect(() => {
     Promise.all([getMyAccount(), listConnections(), listStreams(10, 0), listStreams(10, 0, 'upcoming')])
@@ -59,6 +77,8 @@ export function DashboardPage() {
           <Radio size={16} /> Go live
         </Link>
       </div>
+
+      {hasConnections && presets && <PresetsSection connections={connections} kits={kits} limits={limits} presets={presets} onChange={setPresets} />}
 
       <section>
         <div className="section-header">

@@ -39,7 +39,7 @@ import { getStream, getStreamStatus, startStream } from '../api/streams';
 import { listConnections } from '../api/connections';
 import { mintHostToken, createInvite, updateLayout, getTurnCredentials } from '../api/studio';
 import { ApiError } from '../api/client';
-import type { BrandKit, PlatformConnection, Stream, StreamStatusDestination } from '../types/api';
+import type { BrandKit, PlatformConnection, PresetConfig, Stream, StreamStatusDestination } from '../types/api';
 import {
   BRANDING_RANGES,
   DEFAULT_THEME_ID,
@@ -349,6 +349,21 @@ function savePersisted(streamId: string, patch: Partial<PersistedStudioState>) {
   } catch {
     // Storage full/blocked (private mode) -- persistence is best-effort.
   }
+}
+
+/**
+ * Starting a stream from a preset: the quality, ticker and brand kit are studio settings that live in this browser
+ * (see PersistedStudioState), so they are written for the new stream before its studio opens. `cfg` is the preset's
+ * `effectiveConfig` (already checked against the plan by the server). Omitted keys leave the studio's own defaults.
+ */
+export function seedStudioFromPreset(streamId: string, cfg: PresetConfig): void {
+  const patch: Partial<PersistedStudioState> = {};
+  if (cfg.quality && cfg.quality in RESOLUTIONS) patch.resolution = cfg.quality;
+  if (cfg.tickerEnabled !== undefined || cfg.tickerText !== undefined) {
+    patch.branding = { ...DEFAULT_BRANDING, newsText: cfg.tickerEnabled === false ? '' : (cfg.tickerText ?? '') };
+  }
+  if (cfg.brandKitId !== undefined) patch.brandKitId = cfg.brandKitId;
+  if (Object.keys(patch).length > 0) savePersisted(streamId, patch);
 }
 
 // The wallpaper lives under its own key: it can be large, and a full storage quota must not
