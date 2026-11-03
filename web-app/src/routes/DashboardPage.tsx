@@ -139,6 +139,11 @@ export function DashboardPage() {
             </p>
           </Card>
         </div>
+
+        <div className="ha-usage-row">
+          <UsageMeter account={account} />
+          <UpgradeNudge account={account} />
+        </div>
       </div>
     );
   }
