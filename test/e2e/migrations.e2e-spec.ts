@@ -360,4 +360,48 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0030 adds accounts.deleted_at (null for every existing account), is re-runnable, and a tombstoned account keeps its payments', async () => {
+    const live = `e2e_migrate_deleted_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0029', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0030: a paying account with a user, and a free one.
+      const paid = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('paid-acct', 'hpaid', 'pro', 30) RETURNING id`)).rows[0].id;
+      const free = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('free-acct', 'hfree', 'free', 2) RETURNING id`)).rows[0].id;
+      await db.query(`INSERT INTO users (email, account_id) VALUES ('paid-user@e2e.test', $1)`, [paid]);
+      await db.query(
+        `INSERT INTO payments (account_id, plan_key, kind, amount_paise, status, razorpay_order_id, receipt) VALUES ($1, 'pro', 'plan', 199900, 'paid', 'order_del_mig', 'rcpt_1')`,
+        [paid],
+      );
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0030%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: IF NOT EXISTS keeps it fine
+
+      // Nobody existing is marked deleted.
+      expect((await db.query(`SELECT count(*)::int AS n FROM accounts WHERE deleted_at IS NOT NULL`)).rows[0].n).toBe(0);
+
+      // The deletion shape: users go, the payment stays on an anonymous shell of the account.
+      await db.query(`DELETE FROM users WHERE account_id = $1`, [paid]);
+      await db.query(`UPDATE accounts SET name = 'Deleted account', api_key_hash = 'x', deleted_at = now() WHERE id = $1`, [paid]);
+      expect((await db.query(`SELECT count(*)::int AS n FROM payments WHERE account_id = $1`, [paid])).rows[0].n).toBe(1);
+      // An account with no payments is removed outright.
+      await db.query(`DELETE FROM accounts WHERE id = $1`, [free]);
+      expect((await db.query(`SELECT count(*)::int AS n FROM accounts`)).rows[0].n).toBe(1);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

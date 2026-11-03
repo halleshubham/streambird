@@ -39,7 +39,7 @@ export class AccountDeletionController {
 
   @Delete()
   @HttpCode(204)
-  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async delete(@Req() req: AccountRequest, @Body() dto: DeleteAccountDto, @Res({ passthrough: true }) res: Response): Promise<void> {
     const { user, account } = this.person(req);
     await this.deletion.delete(user, account, dto);

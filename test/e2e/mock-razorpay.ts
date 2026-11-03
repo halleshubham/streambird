@@ -26,6 +26,8 @@ export class MockRazorpay {
   private subs = 0;
   private subscriptions: Record<string, any> = {};
   calls: MockCall[] = [];
+  /** While true, cancelling a subscription fails with a 500 (to test that account deletion aborts). */
+  failCancels = false;
   url = '';
 
   async start(): Promise<void> {
@@ -57,6 +59,7 @@ export class MockRazorpay {
           const s = this.subscriptions[m[1]];
           if (!s) return out(404, { error: { description: 'not found' } });
           if (m[2] && req.method === 'POST') {
+            if (this.failCancels) return out(500, { error: { description: 'upstream is down' } });
             s.status = 'cancelled';
             return out(200, s);
           }
