@@ -2036,6 +2036,7 @@ test.describe('admin console', () => {
     await acceptConfirm(page);
     await expect(row.getByText('Suspended')).toBeVisible();
     await row.getByRole('button', { name: 'Reactivate' }).click();
+    await acceptConfirm(page); // reactivating a user now confirms too
     await expect(row.getByText('Suspended')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1 }).getByText('Active')).toBeVisible();
   });
