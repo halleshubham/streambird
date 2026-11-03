@@ -13,7 +13,7 @@ npm ci && npm ci --prefix web-app                                    # once
 export E2E_DATABASE_URL="$(.claude/skills/streambird-test/local-postgres.sh start)"
 export PW_CHROMIUM=/opt/pw-browsers/chromium                         # cloud sandbox only
 npm run typecheck && npm test
-(cd web-app && npx tsc -b && npx vite build)                         # UI tests serve dist-web/
+npm run build --prefix web-app                         # UI tests serve dist-web/
 npm run test:e2e
 npm run test:ui
 ```

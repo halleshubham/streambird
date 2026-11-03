@@ -39,7 +39,7 @@ export function BirdLoader({ loading, label, compact = false }: { loading: boole
 
   return (
     <div className={`bird-loader${compact ? ' bird-loader--compact' : ''}`}>
-      <img src="/logo.png" alt="" className={`bird-loader-bird bird-loader-bird--${phase}`} />
+      <img src="/logo-256.png" alt="" className={`bird-loader-bird bird-loader-bird--${phase}`} />
       {label && phase === 'flying' && <p className="bird-loader-label">{label}</p>}
     </div>
   );

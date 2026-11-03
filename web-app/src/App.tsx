@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ComponentType } from 'react';
 import { Navigate, Routes, Route } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -5,36 +6,45 @@ import { SuperadminRoute } from './components/SuperadminRoute';
 import { HomeRoute } from './components/HomeRoute';
 import { LoginPage } from './routes/LoginPage';
 import { SignupCompanyPage } from './routes/SignupCompanyPage';
-import { DashboardPage } from './routes/DashboardPage';
-import { ConnectionsPage } from './routes/ConnectionsPage';
-import { CreateStreamPage } from './routes/CreateStreamPage';
-import { StreamDetailPage } from './routes/StreamDetailPage';
-import { UpcomingStreamsPage } from './routes/UpcomingStreamsPage';
-import { TeamPage } from './routes/TeamPage';
-import { HostStudioPage } from './routes/studio/HostStudioPage';
-import { GuestJoinPage } from './routes/studio/GuestJoinPage';
-import { AdminShell } from './components/AdminShell';
 import { AdminLoginPage } from './routes/admin/AdminLoginPage';
-import { AdminDashboardPage } from './routes/admin/AdminDashboardPage';
-import { AdminAuditLogPage } from './routes/admin/AdminAuditLogPage';
-import { AdminAnalyticsPage } from './routes/admin/AdminAnalyticsPage';
-import { AdminAccountsPage } from './routes/admin/AdminAccountsPage';
-import { AdminAccountDetailPage } from './routes/admin/AdminAccountDetailPage';
-import { AdminPlansPage } from './routes/admin/AdminPlansPage';
-import { AdminBillingPage } from './routes/admin/AdminBillingPage';
-import { BillingPage } from './routes/BillingPage';
-import { BrandPage } from './routes/BrandPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
-import { AccountPage } from './routes/AccountPage';
 import { DeleteAccountInfoPage } from './routes/DeleteAccountInfoPage';
 import { AccountDeletedPage } from './routes/AccountDeletedPage';
 import { CookieBanner } from './components/CookieBanner';
+import { RouteHead } from './components/RouteHead';
+import { BirdLoader } from './components/BirdLoader';
+
+/** Signed-in, guest and admin screens load on demand so the public pages (landing, login, legal) ship a much smaller script. */
+function lazyPage<T extends Record<string, ComponentType>>(load: () => Promise<T>, name: keyof T & string) {
+  return lazy(async () => ({ default: (await load())[name] }));
+}
+const DashboardPage = lazyPage(() => import('./routes/DashboardPage'), 'DashboardPage');
+const ConnectionsPage = lazyPage(() => import('./routes/ConnectionsPage'), 'ConnectionsPage');
+const CreateStreamPage = lazyPage(() => import('./routes/CreateStreamPage'), 'CreateStreamPage');
+const StreamDetailPage = lazyPage(() => import('./routes/StreamDetailPage'), 'StreamDetailPage');
+const UpcomingStreamsPage = lazyPage(() => import('./routes/UpcomingStreamsPage'), 'UpcomingStreamsPage');
+const TeamPage = lazyPage(() => import('./routes/TeamPage'), 'TeamPage');
+const HostStudioPage = lazyPage(() => import('./routes/studio/HostStudioPage'), 'HostStudioPage');
+const GuestJoinPage = lazyPage(() => import('./routes/studio/GuestJoinPage'), 'GuestJoinPage');
+const AdminShell = lazyPage(() => import('./components/AdminShell'), 'AdminShell');
+const AdminDashboardPage = lazyPage(() => import('./routes/admin/AdminDashboardPage'), 'AdminDashboardPage');
+const AdminAuditLogPage = lazyPage(() => import('./routes/admin/AdminAuditLogPage'), 'AdminAuditLogPage');
+const AdminAnalyticsPage = lazyPage(() => import('./routes/admin/AdminAnalyticsPage'), 'AdminAnalyticsPage');
+const AdminAccountsPage = lazyPage(() => import('./routes/admin/AdminAccountsPage'), 'AdminAccountsPage');
+const AdminAccountDetailPage = lazyPage(() => import('./routes/admin/AdminAccountDetailPage'), 'AdminAccountDetailPage');
+const AdminPlansPage = lazyPage(() => import('./routes/admin/AdminPlansPage'), 'AdminPlansPage');
+const AdminBillingPage = lazyPage(() => import('./routes/admin/AdminBillingPage'), 'AdminBillingPage');
+const BillingPage = lazyPage(() => import('./routes/BillingPage'), 'BillingPage');
+const BrandPage = lazyPage(() => import('./routes/BrandPage'), 'BrandPage');
+const AccountPage = lazyPage(() => import('./routes/AccountPage'), 'AccountPage');
 
 export function App() {
   return (
     <>
+    <RouteHead />
+    <Suspense fallback={<div className="page-loading"><BirdLoader loading compact /></div>}>
     <Routes>
       {/* Anonymous -> public marketing page; logged in -> straight to
           /dashboard. See HomeRoute. */}
@@ -95,6 +105,7 @@ export function App() {
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+    </Suspense>
     <CookieBanner />
     </>
   );

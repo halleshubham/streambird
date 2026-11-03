@@ -572,7 +572,7 @@ export function HostStudioPage() {
     <div className={`studio-page studio-shell${customizeOpen ? ' studio-shell--drawer' : ''}${isLive ? ' studio-shell--live' : ''}`}>
       <div className="studio-topbar" role="toolbar" aria-label="Studio controls">
         <h1 className="studio-brand">
-          <img src="/logo.png" alt="" className="brand-logo" />
+          <img src="/logo-256.png" alt="" className="brand-logo" />
           <span className="ui-sr-only">StreamBird studio host</span>
           <span className="studio-title">{stream.title}</span>
         </h1>

@@ -3,7 +3,7 @@ import { PlansModule } from './plans/plans.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { join } from 'path';
+import { join, sep } from 'path';
 import configuration from './config/configuration';
 import { DatabaseModule } from './config/database.module';
 import { CommonModule } from './common/common.module';
@@ -38,7 +38,13 @@ import { AccountDeletionModule } from './account-deletion/account-deletion.modul
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'dist-web'),
       exclude: ['/api/(.*)', '/health', '/stream/(.*)'],
-      serveStaticOptions: { maxAge: 0 },
+      serveStaticOptions: {
+        maxAge: 0,
+        // Vite's /assets/ files have a content hash in the name: safe to cache for a year. Everything else revalidates.
+        setHeaders: (res, filePath) => {
+          if (filePath.includes(`${sep}assets${sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        },
+      },
     }),
     DatabaseModule,
     AssetsModule,

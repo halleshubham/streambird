@@ -7,10 +7,13 @@ import { AuthProvider } from './context/AuthProvider.tsx';
 import { BusyOverlay } from './components/BusyOverlay.tsx';
 import { ConfirmProvider, ToastProvider } from './components/ui';
 import { initConsent } from './lib/consent.ts';
+import { capturePrerendered } from './lib/prerender.ts';
 
 void initConsent(); // loads Google Analytics, or waits for consent, as the server's COOKIE_CONSENT_BANNER says
 
-createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root')!;
+capturePrerendered(rootEl, window.location.pathname);
+createRoot(rootEl).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>

@@ -37,7 +37,7 @@ export function AppShell() {
     <div className="app-shell">
       <header className="app-header">
         <Link to="/dashboard" className="brand">
-          <img src="/logo.png" alt="" className="brand-logo" />
+          <img src="/logo-256.png" alt="" className="brand-logo" />
           StreamBird
         </Link>
         <nav aria-label="Main" className="app-nav">

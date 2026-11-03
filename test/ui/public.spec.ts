@@ -83,6 +83,32 @@ for (const vp of VIEWPORTS) {
       expect(await noSideScroll(page)).toBe(true);
     });
 
+    test('#cookies anchor: stays in view when the layout shifts after load (late font, image) and gives way once the reader scrolls', async ({ page }) => {
+      await page.goto('/privacy#cookies');
+      await expect(page.getByRole('heading', { name: /Cookies, analytics/ })).toBeInViewport();
+      // Simulate a late font swap / image: content above the anchor changes height after the first scroll.
+      await page.evaluate(() => {
+        // Chrome normally compensates content that appears above the reader (scroll anchoring); CI showed it does not always
+        // (the real web font re-flowed the text above the anchor and the section ended up above the viewport). Switch it off.
+        document.documentElement.style.overflowAnchor = 'none';
+        document.body.style.overflowAnchor = 'none';
+        const spacer = document.createElement('div');
+        spacer.id = 'test-spacer';
+        spacer.style.height = '1400px';
+        document.body.prepend(spacer);
+      });
+      await expect(page.getByRole('heading', { name: /Cookies, analytics/ })).toBeInViewport();
+      // The reader takes over: after they scroll, later shifts must not yank the page back.
+      await page.mouse.wheel(0, 1500);
+      await page.waitForTimeout(300);
+      const y = await page.evaluate(() => window.scrollY);
+      await page.evaluate(() => {
+        document.getElementById('test-spacer')!.style.height = '1700px';
+      });
+      await page.waitForTimeout(500);
+      expect(Math.abs((await page.evaluate(() => window.scrollY)) - y)).toBeLessThan(400);
+    });
+
     test('404: friendly page with a way home', async ({ page }) => {
       await page.goto('/no-such-page');
       await expect(page.getByRole('heading', { level: 1, name: 'This page flew away' })).toBeVisible();

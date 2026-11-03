@@ -7,11 +7,29 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#7c3aed" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" />
+    <!-- Not render-blocking: loads as print, then switches to all (display=swap keeps text visible meanwhile). -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" /></noscript>
     <title>StreamBird</title>
+    <!--seo:head-->
+    <!-- Defaults for every page that is not prerendered (app, guest links, 404): enough for a link preview. The public
+         pages get their own block from scripts/prerender.mjs; the real values live in src/seo/routes.ts. -->
+    <meta name="description" content="StreamBird is a browser-based live-streaming studio: go live once and stream to YouTube, Facebook and Twitch at the same time." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="StreamBird" />
+    <meta property="og:title" content="StreamBird" />
+    <meta property="og:description" content="Go live once and stream everywhere, from your browser." />
+    <meta property="og:image" content="__SB_ORIGIN__/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="__SB_ORIGIN__/og-image.png" />
+    <!--/seo:head-->
   </head>
   <body>
     <div id="root"></div>

@@ -10,7 +10,7 @@ export function NotFoundPage() {
       </header>
       <main className="pub-notfound">
         <div className="pub-notfound-icon" aria-hidden="true">
-          <img src="/logo.png" alt="" />
+          <img src="/logo-256.png" alt="" />
         </div>
         <p className="pub-eyebrow">Error 404</p>
         <h1>This page flew away</h1>

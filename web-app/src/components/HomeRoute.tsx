@@ -2,6 +2,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LandingPage } from '../routes/LandingPage';
 import { BirdLoader } from './BirdLoader';
+import { prerenderedHtml } from '../lib/prerender';
 
 /**
  * "/" is the one route whose content depends on who's looking: an
@@ -15,6 +16,9 @@ export function HomeRoute() {
   const { status } = useAuth();
 
   if (status === 'loading') {
+    // The served HTML already contains the landing page: keep showing it while the session is checked.
+    const kept = prerenderedHtml();
+    if (kept) return <div dangerouslySetInnerHTML={{ __html: kept }} />;
     return <div className="page-loading">
         <BirdLoader loading compact />
       </div>;

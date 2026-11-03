@@ -96,7 +96,13 @@ describeE2E('POST /auth/google/mobile: native Google sign-in with an ID token', 
       idToken({ email: newEmail, email_verified: false }),
       idToken({}), // no email
       idToken({ email: newEmail, sub: undefined }),
-      idToken({ email: newEmail }).replace(/.$/, (ch) => (ch === 'A' ? 'B' : 'A')), // tampered signature
+      // Tampered signature: change a character in the MIDDLE of the signature. (The last base64 character of a 256-byte signature carries only
+      // 2 real bits, so swapping it can change nothing but padding and leave the signature valid: a flaky test.)
+      (() => {
+        const [head, body, sig] = idToken({ email: newEmail }).split('.');
+        const i = Math.floor(sig.length / 2);
+        return [head, body, sig.slice(0, i) + (sig[i] === 'A' ? 'B' : 'A') + sig.slice(i + 1)].join('.');
+      })(),
     ];
     for (const t of bad) {
       const res = await post(c, { idToken: t });

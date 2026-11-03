@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import cookieParser from 'cookie-parser';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { legacyHostRedirect } from './common/legacy-hosts';
+import { join } from 'path';
+import { seoMiddleware } from './seo/seo';
 
 /**
  * Everything main.ts layers onto the Nest app besides creating it. Shared so
@@ -16,6 +18,8 @@ export function configureApp(app: INestApplication): void {
   // After a domain move, send page visits on the old host to the new one (no-op unless LEGACY_HOSTS is set).
   const config = app.get(ConfigService);
   app.use(legacyHostRedirect(config.get<string[]>('legacyHosts') ?? [], config.get<string>('publicBaseUrl') ?? ''));
+  // robots.txt, sitemap.xml, prerendered public pages, noindex on the app and real 404s for unknown pages (src/seo/seo.ts).
+  app.use(seoMiddleware({ publicBaseUrl: config.get<string>('publicBaseUrl') ?? '', webRoot: join(__dirname, '..', 'dist-web') }));
   // '/health' is Coolify's configured health-check path and must not move.
   // '/' itself needs no exclude: it's served by ServeStaticModule's
   // dist-web/ middleware now, which sits outside Nest's controller

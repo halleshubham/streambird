@@ -36,7 +36,7 @@ export function GuestJoinPage() {
     <div className={`studio-page guest-page${inCall ? ' guest-page--call' : mode === 'ready-to-join' ? ' guest-page--join' : ' guest-page--card'}`}>
       <header className="guest-head">
         <h1 className="brand-heading guest-brand">
-          <img src="/logo.png" alt="" className="brand-logo" /> {inCall ? <span className="ui-sr-only">Join as a guest</span> : 'Join as a guest'}
+          <img src="/logo-256.png" alt="" className="brand-logo" /> {inCall ? <span className="ui-sr-only">Join as a guest</span> : 'Join as a guest'}
           {inCall && <span aria-hidden="true">StreamBird</span>}
         </h1>
         {inCall && (

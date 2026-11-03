@@ -18,7 +18,7 @@ export function BirdBusy({ overlay = true }: { overlay?: boolean }) {
     busyStart();
     return busyEnd;
   }, [overlay]);
-  return <img src="/logo.png" alt="" aria-hidden="true" className="bird-busy" />;
+  return <img src="/logo-256.png" alt="" aria-hidden="true" className="bird-busy" />;
 }
 
 /** A status message that ends in an ellipsis is a "still working" message ("Starting publish…"). */

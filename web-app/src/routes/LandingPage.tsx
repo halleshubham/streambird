@@ -125,6 +125,8 @@ const TIERS: {
 ];
 
 function detectDefaultCurrency(): Currency {
+  // Prerender (Node): always the same markup, whatever timezone the build machine is in.
+  if (typeof window === 'undefined') return 'USD';
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
     const locale = navigator.language ?? '';
@@ -210,12 +212,14 @@ export function LandingPage() {
           <a href="#features">Features</a>
           <a href="#pricing">Pricing</a>
           <a href="#faq">FAQ</a>
+          <a href={docsUrl()} target="_blank" rel="noopener">Guides</a>
         </nav>
         <Link to="/login" className={buttonClass('secondary', 'sm')}>
           Log in
         </Link>
       </header>
 
+      <main>
       <section className="pub-hero" id="top">
         <div className="pub-hero-copy">
           <Badge tone="scheduled" className="pub-hero-pill">
@@ -291,6 +295,12 @@ export function LandingPage() {
               </li>
             ))}
           </ol>
+          <p className="pub-section-sub">
+            New here? Read{' '}
+            <a href={docsUrl('getting-started')} target="_blank" rel="noopener">getting started</a>, how to{' '}
+            <a href={docsUrl('connect-platforms')} target="_blank" rel="noopener">connect YouTube, Facebook and Twitch</a>, or how to{' '}
+            <a href={docsUrl('schedule-and-invite')} target="_blank" rel="noopener">schedule a stream and invite guests</a>.
+          </p>
         </div>
       </section>
 
@@ -388,6 +398,8 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      </main>
 
       <footer className="pub-footer">
         <div className="pub-wrap pub-footer-inner">

@@ -1,0 +1,35 @@
+# StreamBird
+
+> StreamBird is a browser-based live-streaming studio and multistreaming service from ShackyApps. A host goes live once from the browser and StreamBird sends the broadcast to YouTube, Facebook and Twitch at the same time, with remote guests, layouts and branding. Nothing to install. There is a free plan, and pricing is available in USD and INR.
+
+Facts you can rely on:
+- Runs in the browser (WebRTC). The host studio and the guest join page need no app or plugin.
+- Destinations: YouTube, Facebook (Pages) and Twitch, plus custom RTMP addresses. More platforms are not promised.
+- Guests join from a single invite link without a StreamBird account; a password on the invite is optional.
+- Guests hear everyone except themselves (mix-minus audio).
+- Studio: grid and spotlight layouts, your own logo and a scrolling ticker, screen share, saved scenes and presets, slides, brand kits, and vertical (9:16) or landscape (16:9) streams chosen when a stream is created.
+- Operated by ShackyApps (https://shackyapps.in). Support: support@shackyapps.in.
+
+## Product
+
+- [Home: features, how it works, pricing, FAQ](https://streambird.app/): the overview and current plans.
+- [Log in or create an account](https://streambird.app/login)
+
+## Documentation
+
+- [What is StreamBird?](https://shackyapps.in/docs/streambird/): overview of the product and the docs.
+- [Getting started](https://shackyapps.in/docs/streambird/getting-started)
+- [Connect your platforms](https://shackyapps.in/docs/streambird/connect-platforms): YouTube, Facebook and Twitch.
+- [Go live](https://shackyapps.in/docs/streambird/go-live)
+- [Schedule a stream and invite guests](https://shackyapps.in/docs/streambird/schedule-and-invite)
+- [Plans and pricing](https://shackyapps.in/docs/streambird/plans-and-pricing)
+
+## Legal
+
+- [Privacy Policy](https://streambird.app/privacy)
+- [Terms of Service](https://streambird.app/terms)
+- [Delete your account and data](https://streambird.app/delete-account)
+
+## Source
+
+- [github.com/halleshubham/streambird](https://github.com/halleshubham/streambird): AGPL-3.0.

@@ -20,7 +20,7 @@ npm ci && npm ci --prefix web-app
 export E2E_DATABASE_URL="$(.claude/skills/streambird-test/local-postgres.sh start)"   # throwaway Postgres on :5544
 export PW_CHROMIUM=/opt/pw-browsers/chromium      # only if Playwright's own browser is not installed (cloud sandbox)
 npm run typecheck && npm test
-(cd web-app && npx tsc -b && npx vite build)        # REQUIRED before test:ui — it serves dist-web/
+(cd web-app && npm run build)                       # REQUIRED before test:ui (tsc + vite build + prerender) — it serves dist-web/
 npm run test:e2e
 npm run test:ui                                      # one test: npx playwright test -c test/ui/playwright.config.ts -g "part of title"
 ```
@@ -64,6 +64,7 @@ Rules of thumb:
 
 - `fixture-server.ts` (Playwright `webServer`) boots the real app on `:4310` with the built SPA, plus a control server on `:4311`: `GET /code?email=` (the emailed code) and `POST /approve?email=[&superadmin=1]`.
 - `smoke.spec.ts` helpers: `signIn(context)` (cookies land in the browser context), `newStream(...)` (creates a manual Twitch destination then a stream through the API), `addSolidSlides`, `addWallpaper`, `pixel(page,x,y)` (reads the studio `<canvas>` — assert on drawn pixels, not just DOM).
+- `seo.spec.ts` is the crawler view: a JS-disabled context asserts the served HTML (h1, pricing, FAQ, head tags, JSON-LD), plus head tags per route, noindex headers, the 404 status and the sitemap; it needs the prerender, i.e. build the web app with `npm run build --prefix web-app` (the older `npx vite build` alone skips `scripts/prerender.mjs` and the `_prerender/` pages would be missing or stale).
 - `compose.spec.ts` is pure geometry (`computeLayout`) with no browser page.
 - Prefer **API setup + UI assertion**: create data over `context.request`, then visit the page.
 - **Generate passwords/secrets in tests** (`crypto.randomBytes(6).toString('hex')`). Literal passwords in test files trip GitGuardian ("Generic Password"), which fails the PR check and cannot be cleared without rewriting the commit.
