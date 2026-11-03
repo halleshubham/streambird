@@ -4,10 +4,11 @@ import { useSearchParams } from 'react-router-dom';
 import * as billingApi from '../api/billing';
 import { getMyLimits, getPublicPlans } from '../api/plans';
 import { ApiError } from '../api/client';
-import { BirdBusy } from '../components/BirdBusy';
+import { getMyAccount } from '../api/accounts';
+import { Notice, PageHeader } from '../components/host/HostKit';
 import { BirdLoader } from '../components/BirdLoader';
-import type { BillingConfig, CheckoutOrder, EffectiveLimits, MyPayment, MySubscription, PublicPlan, SubscriptionCheckout } from '../types/api';
-import { confirm } from '../components/ui';
+import type { Account, BillingConfig, CheckoutOrder, EffectiveLimits, MyPayment, MySubscription, PublicPlan, SubscriptionCheckout } from '../types/api';
+import { Button, Card, EmptyState, confirm } from '../components/ui';
 
 interface RazorpaySuccess {
   razorpay_order_id: string;
@@ -69,6 +70,7 @@ export function BillingPage() {
   const [limits, setLimits] = useState<EffectiveLimits | null>(null);
   const [payments, setPayments] = useState<MyPayment[]>([]);
   const [autopay, setAutopay] = useState<MySubscription | null>(null);
+  const [account, setAccount] = useState<Account | null>(null);
   const [busyPlan, setBusyPlan] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
@@ -81,6 +83,7 @@ export function BillingPage() {
       billingApi.getMySubscription(),
     ]);
     setAutopay(sub);
+    getMyAccount().then(setAccount).catch(() => {}); // only for the hours meter; the page works without it
     setConfig(c);
     setPlans(pl.filter((p) => (p.priceInr ?? 0) > 0));
     setLimits(l);
@@ -210,131 +213,191 @@ export function BillingPage() {
     });
   }
 
-  if (!config || !limits) return message?.isError ? <p className="error">{message.text}</p> : <BirdLoader loading compact label="Loading billing…" />;
+  if (!config || !limits) {
+    return message?.isError ? (
+      <div className="ha-page">
+        <EmptyState tone="error" title="We couldn't load billing">
+          {message.text}
+        </EmptyState>
+      </div>
+    ) : (
+      <BirdLoader loading compact label="Loading billing…" />
+    );
+  }
+
+  const isFree = limits.planKey === 'free' || limits.planExpired;
+  const used = account ? Number(account.streamHourUsageCurrentPeriod) : null;
+  const included = limits.includedHours;
+  const pct = used !== null && included !== null && included > 0 ? Math.min(100, (used / included) * 100) : 0;
+  const meterTone = pct >= 100 ? ' ha-meter--bad' : pct >= 80 ? ' ha-meter--warn' : '';
+  const fmt = (n: number) => String(Math.round(n * 10) / 10);
+  const autopayActive = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status) && !autopay.cancelAtCycleEnd;
 
   return (
-    <div className="billing-page">
-      <h1>Billing</h1>
+    <div className="ha-page billing-page">
+      <PageHeader title="Billing" subtitle="Your plan, payments and receipts." />
 
-      <div className="panel billing-current">
-        <h2>
-          Your plan: {limits.planName}
-          {limits.planExpired && <span className="badge badge-danger"> expired</span>}
-        </h2>
-        <p>
-          {limits.includedHours === null ? 'Unlimited hours' : `${limits.includedHours} stream-hours`} · up to {limits.maxDestinations} destination
-          {limits.maxDestinations === 1 ? '' : 's'} · {limits.maxGuests} guests
-        </p>
-        {limits.planExpiresAt && !limits.planExpired && <p>Active until {when(limits.planExpiresAt)}.</p>}
-        {limits.planExpired && <p className="error">Your paid plan ended, so you're on Free limits. Renew below to get it back.</p>}
-        {limits.dayPass && <p>Day pass active until {new Date(limits.dayPass.expiresAt).toLocaleString()}.</p>}
-      </div>
+      {message && (
+        <Notice tone={message.isError ? 'error' : 'success'} onDismiss={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      )}
 
-      {autopay && (
-        <div className="panel billing-current">
-          <h2>Autopay</h2>
-          {autopay.status === 'halted' ? (
-            <p className="error">
-              Autopay stopped because a renewal couldn't be charged. Your plan stays active for a few days; subscribe again below to keep it.
-            </p>
-          ) : autopay.cancelAtCycleEnd || autopay.status === 'cancelled' ? (
-            <p>
-              Autopay is cancelled.{autopay.currentEnd ? ` Your plan stays active until ${when(autopay.currentEnd)}.` : ''} Subscribe again below any time.
-            </p>
-          ) : (
+      <div className={autopay ? 'ha-dash-grid ha-dash-grid--pair' : undefined}>
+        <Card as="section" className="billing-current" aria-labelledby="cp-title">
+          <div className="ha-row">
+            <h2 id="cp-title">{isFree && !limits.planExpired ? `You are on the ${limits.planName} plan` : `Your plan: ${limits.planName}`}</h2>
+            <span className="ha-sp" />
+            {limits.planExpired ? <span className="ha-tag ha-tag--bad badge-danger">Expired</span> : <span className="ha-tag">{isFree ? 'Free' : 'Active'}</span>}
+          </div>
+          <p className="ha-muted ha-sm" style={{ marginTop: 6 }}>
+            {limits.includedHours === null ? 'Unlimited hours' : `${limits.includedHours} stream-hours`} · up to {limits.maxDestinations} destination
+            {limits.maxDestinations === 1 ? '' : 's'} · {limits.maxGuests} guests
+          </p>
+          {limits.planExpiresAt && !limits.planExpired && <p className="ha-muted ha-sm">Active until {when(limits.planExpiresAt)}.</p>}
+          {limits.planExpired && <p className="ha-error" style={{ marginTop: 8 }}>Your paid plan ended, so you're on Free limits. Renew below to get it back.</p>}
+          {limits.dayPass && <p className="ha-muted ha-sm">Day pass active until {new Date(limits.dayPass.expiresAt).toLocaleString()}.</p>}
+          {used !== null && included !== null && (
             <>
-              <p>
-                {rupees(autopay.amountInr)} is charged every month
-                {autopay.currentEnd ? `; next renewal around ${when(autopay.currentEnd)}` : ''}.
-                {autopay.status === 'pending' && ' The last renewal is being retried.'}
+              <p className="ha-muted ha-sm" style={{ margin: '18px 0 8px' }}>
+                {fmt(used)} h of {fmt(included)} h streaming hours used this month
               </p>
-              <button type="button" className="link-button" onClick={() => void cancelAutopay()}>
-                Cancel autopay
-              </button>
+              <div className={`ha-meter${meterTone}`} role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label="Hours used" style={{ maxWidth: 420 }}>
+                <i style={{ width: `${pct}%` }} />
+              </div>
             </>
           )}
-        </div>
-      )}
+        </Card>
 
-      {message && <p className={message.isError ? 'error' : 'status'}>{message.text}</p>}
+        {autopay && (
+          <Card as="section" className="billing-current" aria-labelledby="ap-title">
+            <h2 id="ap-title">Autopay</h2>
+            {autopay.status === 'halted' ? (
+              <p className="ha-error" style={{ marginTop: 8 }}>
+                Autopay stopped because a renewal couldn't be charged. Your plan stays active for a few days; subscribe again below to keep it.
+              </p>
+            ) : autopay.cancelAtCycleEnd || autopay.status === 'cancelled' ? (
+              <p className="ha-muted" style={{ marginTop: 8 }}>
+                Autopay is cancelled.{autopay.currentEnd ? ` Your plan stays active until ${when(autopay.currentEnd)}.` : ''} Subscribe again below any time.
+              </p>
+            ) : (
+              <>
+                <p className="ha-muted" style={{ marginTop: 8 }}>
+                  {rupees(autopay.amountInr)} is charged every month
+                  {autopay.currentEnd ? `; next renewal around ${when(autopay.currentEnd)}` : ''}.
+                  {autopay.status === 'pending' && ' The last renewal is being retried.'}
+                </p>
+                <div className="ha-row" style={{ marginTop: 16 }}>
+                  <span className="ha-sp" />
+                  <button type="button" className="ha-quiet ha-quiet--danger" onClick={() => void cancelAutopay()}>
+                    Cancel autopay
+                  </button>
+                </div>
+              </>
+            )}
+          </Card>
+        )}
+      </div>
 
       {!config.enabled && (
-        <p className="docs-hint">
+        <Notice tone="info">
           Online payments aren't switched on yet. To upgrade or for customised pricing, email{' '}
           <a href="mailto:support@shackyapps.in?subject=StreamBird%20upgrade">support@shackyapps.in</a>.
-        </p>
+        </Notice>
       )}
 
-      <h2>Plans</h2>
-      <div className="billing-plans">
-        {plans.map((p) => {
-          const isCurrent = !limits.planExpired && limits.planKey === p.key;
-          return (
-            <div key={p.key} className={`panel billing-plan${highlight === p.key ? ' billing-plan--highlight' : ''}`}>
-              <h3>{p.name}</h3>
-              <p className="billing-price">
-                {rupees(p.priceInr ?? 0)}
-                <span>{p.kind === 'day_pass' ? ' / day' : ' / month'}</span>
-              </p>
-              <ul>
-                {describePlan(p).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-              {config.enabled && p.kind === 'monthly' && (() => {
-                const onAutopay = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status) && !autopay.cancelAtCycleEnd && autopay.planKey === p.key;
-                const hasLiveAutopay = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status);
-                return onAutopay ? (
-                  <p className="docs-hint">Autopay is on for this plan</p>
-                ) : (
-                  <>
-                    <button type="button" disabled={busyPlan !== null} onClick={() => void subscribe(p)}>
-                      {busyPlan === p.key && <BirdBusy />} Subscribe -- autopay
-                    </button>
-                    {!hasLiveAutopay && (
-                      <p>
-                        <button type="button" className="link-button" disabled={busyPlan !== null} onClick={() => void buy(p)}>
-                          {isCurrent ? 'Renew once for 30 days' : 'Or pay once for 30 days'}
-                        </button>
-                      </p>
-                    )}
-                  </>
-                );
-              })()}
-              {config.enabled && p.kind === 'day_pass' && (
-                <button type="button" disabled={busyPlan !== null} onClick={() => void buy(p)}>
-                  {busyPlan === p.key && <BirdBusy />} Buy
-                </button>
-              )}
-              {isCurrent && <p className="docs-hint">Your current plan</p>}
-            </div>
-          );
-        })}
-      </div>
-      <p className="docs-hint">Prices in INR. Need a GST invoice or something custom? Email support@shackyapps.in.</p>
-
-      <h2>Payment history</h2>
-      {payments.length === 0 ? (
-        <p className="empty-state">No payments yet.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {payments.map((p) => (
-                <tr key={p.id}>
-                  <td>{when(p.paidAt ?? p.createdAt)}</td>
-                  <td>{plans.find((x) => x.key === p.planKey)?.name ?? p.planKey}</td>
-                  <td>{rupees(p.amountInr)}</td>
-                  <td>{p.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section aria-labelledby="plans-title">
+        <h2 id="plans-title" style={{ marginBottom: 16 }}>
+          {isFree ? 'Upgrade when you are ready' : 'Plans'}
+        </h2>
+        <div className="ha-plans billing-plans">
+          {plans.map((p) => {
+            const isCurrent = !limits.planExpired && limits.planKey === p.key;
+            return (
+              <Card
+                key={p.key}
+                as="div"
+                className={`ha-plan billing-plan${isCurrent ? ' ha-plan--current' : ''}${highlight === p.key ? ' billing-plan--highlight' : ''}`}
+              >
+                <div className="ha-row">
+                  <h3 style={{ fontSize: 17 }}>{p.name}</h3>
+                  {isCurrent && <span className="ha-tag">Current</span>}
+                </div>
+                <p className="billing-price">
+                  {rupees(p.priceInr ?? 0)}
+                  <span>{p.kind === 'day_pass' ? ' / day' : ' / month'}</span>
+                </p>
+                <ul>
+                  {describePlan(p).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <div className="ha-plan-foot">
+                  {config.enabled && p.kind === 'monthly' && (() => {
+                    const onAutopay = autopayActive && autopay!.planKey === p.key;
+                    const hasLiveAutopay = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status);
+                    return onAutopay ? (
+                      <p className="ha-sm">Autopay is on for this plan</p>
+                    ) : (
+                      <>
+                        <Button className={isCurrent ? 'ha-plan-btn-inv' : undefined} busy={busyPlan === p.key} disabled={busyPlan !== null} onClick={() => void subscribe(p)}>
+                          Subscribe -- autopay
+                        </Button>
+                        {!hasLiveAutopay && (
+                          <button type="button" className="ha-quiet" style={{ paddingLeft: 0, color: isCurrent ? '#fff' : undefined }} disabled={busyPlan !== null} onClick={() => void buy(p)}>
+                            {isCurrent ? 'Renew once for 30 days' : 'Or pay once for 30 days'}
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {config.enabled && p.kind === 'day_pass' && (
+                    <Button busy={busyPlan === p.key} disabled={busyPlan !== null} onClick={() => void buy(p)}>
+                      Buy
+                    </Button>
+                  )}
+                  {isCurrent && !config.enabled && <p className="ha-sm">Your current plan</p>}
+                </div>
+              </Card>
+            );
+          })}
         </div>
-      )}
+        <p className="ha-hint">Prices in INR. Need a GST invoice or something custom? Email support@shackyapps.in.</p>
+      </section>
+
+      <Card as="section" aria-labelledby="ph-title">
+        <h2 id="ph-title">Payment history</h2>
+        {payments.length === 0 ? (
+          <p className="ha-muted" style={{ marginTop: 6 }}>
+            No payments yet. Receipts will appear here after your first payment.
+          </p>
+        ) : (
+          <div className="ha-table-wrap table-scroll" style={{ marginTop: 12 }}>
+            <table className="ha-table data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Plan</th>
+                  <th scope="col">Amount</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id}>
+                    <td>{when(p.paidAt ?? p.createdAt)}</td>
+                    <td>{plans.find((x) => x.key === p.planKey)?.name ?? p.planKey}</td>
+                    <td>{rupees(p.amountInr)}</td>
+                    <td>
+                      <span className={`ha-tag ${p.status === 'paid' ? 'ha-tag--ok' : p.status === 'failed' ? 'ha-tag--bad' : 'ha-tag--warn'}`}>{p.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
