@@ -100,6 +100,7 @@ describe('SuperadminAccountsService', () => {
       const result = await service.list(50, 0);
 
       expect(accountsRepo.findAndCount).toHaveBeenCalledWith({
+        where: { deletedAt: expect.anything() }, // the anonymous shells of deleted accounts are skipped
         order: { createdAt: 'DESC' },
         take: 50,
         skip: 0,
