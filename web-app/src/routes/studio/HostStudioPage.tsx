@@ -62,6 +62,7 @@ import { createPreset } from '../../api/presets';
 import { ApiError } from '../../api/client';
 import type { PresetConfig } from '../../types/api';
 import { confirm } from '../../components/ui';
+import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
@@ -75,6 +76,20 @@ function goLiveNames(destinations: StreamStatusDestination[], byId: Map<string, 
 
 type SideTabId = 'people' | 'look' | 'titles' | 'scenes' | 'ads';
 const SIDE_TAB_KEY = 'streambird:studio:sidetab:v1';
+const DRAWER_KEY = 'streambird:studio:drawer:v1';
+const PHONE_QUERY = '(max-width: 720px)';
+
+/** True on a phone-width screen; the studio moves a few controls between the top bar and the bottom dock. */
+function useIsPhone(): boolean {
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
+}
 const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
   { id: 'people', label: 'People', icon: Users },
   { id: 'look', label: 'Look', icon: Palette },
@@ -166,7 +181,26 @@ export function HostStudioPage() {
   const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
   const localMuted = participants.find((p) => p.id === 'local')?.audioEnabled === false;
   // On a phone the side panels sit behind one "Customize" button (a sheet above the bar); on wide screens they stay beside the picture.
-  const [customizeOpen, setCustomizeOpen] = useState(false);
+  // Desktop: the Customize drawer starts open (remembered once the host closes it). Phone: a sheet, closed until asked for.
+  const isPhone = useIsPhone();
+  const [customizeOpen, setCustomizeOpenRaw] = useState(() => {
+    try {
+      return !window.matchMedia(PHONE_QUERY).matches && localStorage.getItem(DRAWER_KEY) !== 'closed';
+    } catch {
+      return !window.matchMedia(PHONE_QUERY).matches;
+    }
+  });
+  const setCustomizeOpen = (open: boolean | ((o: boolean) => boolean)) => {
+    setCustomizeOpenRaw((cur) => {
+      const next = typeof open === 'function' ? open(cur) : open;
+      try {
+        if (!window.matchMedia(PHONE_QUERY).matches) localStorage.setItem(DRAWER_KEY, next ? 'open' : 'closed');
+      } catch {
+        // best-effort
+      }
+      return next;
+    });
+  };
 
   // "Go live now" on a preset card opens the studio with the camera already on (the host still presses Go live to publish).
   const location = useLocation();
@@ -297,9 +331,220 @@ export function HostStudioPage() {
     }
   }
 
+  const layoutToggle = (
+          <button
+            type="button"
+            className="tb-btn"
+            aria-label="Toggle layout"
+            title={`Toggle layout (now ${layoutMode})`}
+            onClick={actions.toggleLayout}
+          >
+            {layoutMode === 'grid' ? <LayoutGrid size={18} /> : <Focus size={18} />} <span className="tb-label tb-label--wide">Layout</span>
+          </button>
+  );
+  const recordControl = (
+          <RecordButton
+            canRecord={canRecord}
+            since={recordingSince}
+            onStart={() => void actions.startRecording()}
+            onStop={() => void actions.stopRecording()}
+          />
+  );
+  const devicesControl = (
+        <div className={`studio-topbar-group studio-devices-group${isPhone ? '' : ' studio-devices-group--dock'}`}>
+          {cameraStarted && isTouchDevice() && cameraDevices.filter((c) => c.id).length > 1 && (
+            <button
+              type="button"
+              className="tb-btn tb-btn--icon"
+              aria-label="Flip camera"
+              title="Switch between the front and back camera"
+              disabled={switchingDevice}
+              onClick={() => void actions.flipCamera()}
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="tb-btn tb-btn--icon"
+            aria-label="Choose camera and microphone"
+            aria-expanded={devicesOpen}
+            title={`Camera: ${cameraDevices.find((c) => c.id === cameraId)?.label ?? 'default'} / Microphone: ${micDevices.find((m) => m.id === micId)?.label ?? 'default'}`}
+            onClick={() => setDevicesOpen((o) => !o)}
+          >
+            <Settings2 size={16} />
+          </button>
+          {devicesOpen && (
+            <div className="studio-popover" role="dialog" aria-label="Camera and microphone">
+              {cameraDevices.some((c) => c.id) ? (
+                <>
+                  <label className="studio-device-row">
+                    <span>Camera</span>
+                    <select
+                      id="cameraSelect"
+                      aria-label="Camera"
+                      value={cameraId ?? ''}
+                      disabled={switchingDevice}
+                      onChange={(e) => void actions.selectCamera(e.target.value)}
+                    >
+                      {!cameraId && <option value="">{cameraStarted ? 'Default camera' : 'Choose a camera…'}</option>}
+                      {cameraDevices.filter((c) => c.id).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="studio-device-row">
+                    <span>Microphone</span>
+                    <select
+                      id="micSelect"
+                      aria-label="Microphone"
+                      value={micId ?? ''}
+                      disabled={switchingDevice}
+                      onChange={(e) => void actions.selectMic(e.target.value)}
+                    >
+                      {!micId && <option value="">Default microphone</option>}
+                      {micDevices.filter((m) => m.id).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="studio-popover-note">
+                    {cameraStarted ? 'Switching keeps your stream running.' : 'Picking a camera turns it on.'} Your choice is remembered on this computer.
+                  </p>
+                </>
+              ) : (
+                <p className="studio-popover-note">Turn your camera on first. Your browser then shows the cameras and microphones you can choose from.</p>
+              )}
+            </div>
+          )}
+        </div>
+  );
+  const inviteControls = (
+        <div className="studio-topbar-group studio-invite-group">
+          <button type="button" className="tb-btn" data-tour="invite" aria-label="Create guest invite" title="Create a guest invite link and copy it" onClick={createInvite}>
+            <Copy size={18} /> <span className="tb-label">Invite</span>
+          </button>
+          <button
+            type="button"
+            className={`tb-btn tb-btn--icon${requireInvitePassword && savedInvitePassword ? ' tb-btn--on' : ''}`}
+            aria-label="Invite password options"
+            aria-expanded={inviteOptionsOpen}
+            title={requireInvitePassword && savedInvitePassword ? 'Invite links need a password' : 'Set a password for invite links'}
+            onClick={() => setInviteOptionsOpen((o) => !o)}
+          >
+            <Lock size={16} />
+          </button>
+          {inviteOptionsOpen && (
+            <div className="studio-popover" role="dialog" aria-label="Invite link settings">
+              <label className="checkbox-row">
+                <input type="checkbox" checked={requireInvitePassword} onChange={(e) => toggleInvitePassword(e.target.checked)} />
+                Require a password to join
+              </label>
+              {requireInvitePassword && (
+                <>
+                  <div className="studio-password-row">
+                    <input
+                      type="text"
+                      aria-label="Invite password"
+                      placeholder="Invite password"
+                      autoComplete="off"
+                      value={invitePassword}
+                      onChange={(e) => {
+                        setInvitePassword(e.target.value);
+                        setInviteOptionsNote(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveInvitePassword();
+                      }}
+                    />
+                    <button type="button" className="icon-btn" disabled={!invitePassword.trim() || !passwordUnsaved} onClick={saveInvitePassword}>
+                      <Save size={16} /> Save
+                    </button>
+                  </div>
+                  {savedInvitePassword && !passwordUnsaved ? (
+                    <p className="studio-popover-note studio-popover-note--ok">
+                      <Check size={14} /> Password saved. Every new guest invite asks for it.
+                    </p>
+                  ) : (
+                    <p className="studio-popover-note">Press Save (or Enter) to use this password. Nothing changes until you do.</p>
+                  )}
+                </>
+              )}
+              {inviteOptionsNote && <p className="studio-popover-note studio-popover-note--warn">{inviteOptionsNote}</p>}
+              <p className="studio-popover-note">
+                {requireInvitePassword ? 'Invite links you already copied keep the setting they were made with.' : 'Guests can join with the link alone.'}
+              </p>
+            </div>
+          )}
+        </div>
+  );
+  const selectControls = (
+        <div className="studio-topbar-group studio-topbar-selects">
+          <label className="studio-resolution-select" title={isLive ? 'Locked while live -- end the stream to change it' : 'Stream quality'}>
+            <Gauge size={16} />
+            <select
+              aria-label="Stream quality"
+              value={resolution}
+              disabled={isLive || recordingSince !== null}
+              onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
+            >
+              {Object.entries(RESOLUTIONS)
+                .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
+                .map(([value, r]) => {
+                  const dims = canvasSizeFor(r, orientation);
+                  return (
+                    <option key={value} value={value}>
+                      {orientation === 'portrait' ? `${r.label.replace(/\s*\(.*\)/, '')} vertical (${dims.width}x${dims.height})` : r.label}
+                    </option>
+                  );
+                })}
+            </select>
+          </label>
+          <label className="tb-select" title="Layout">
+            <LayoutGrid size={16} />
+            <select id="layoutSelect" aria-label="Layout" value={layoutMode} onChange={(e) => actions.setLayout(e.target.value as LayoutMode)}>
+              {[...new Set(LAYOUTS.map((l) => l.group))].map((group) => (
+                <optgroup key={group} label={group}>
+                  {LAYOUTS.filter((l) => l.group === group).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label
+            className="tb-select"
+            title={
+              getTheme(themeId).id === 'vanilla'
+                ? 'Canvas style. Vanilla is the original plain look; styles show around the tiles of the framed layouts.'
+                : 'Canvas style, shown around the tiles of the framed layouts (Grid and Spotlight fill the whole frame).'
+            }
+          >
+            <Palette size={16} />
+            <select id="themeSelect" aria-label="Canvas style" value={themeId} onChange={(e) => actions.setTheme(e.target.value)}>
+              {[...new Set(THEMES.map((t) => t.group))].map((group) => (
+                <optgroup key={group} label={group}>
+                  {THEMES.filter((t) => t.group === group).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        </div>
+  );
+
   if (needsLogin) {
     return (
-      <div className="studio-page">
+      <div className="studio-page studio-shell">
         <p>
           You need to be logged in. <a href="/login">Log in</a>
         </p>
@@ -309,7 +554,7 @@ export function HostStudioPage() {
 
   if (loading) {
     return (
-      <div className="studio-page">
+      <div className="studio-page studio-shell">
         <BirdLoader loading compact />
       </div>
     );
@@ -317,18 +562,48 @@ export function HostStudioPage() {
 
   if (loadError || !stream) {
     return (
-      <div className="studio-page">
+      <div className="studio-page studio-shell">
         <p className="error">{loadError ?? 'Could not load this stream.'}</p>
       </div>
     );
   }
 
   return (
-    <div className="studio-page">
-      <h1 className="brand-heading">
-        <img src="/logo.png" alt="" className="brand-logo" /> StreamBird studio host
+    <div className={`studio-page studio-shell${customizeOpen ? ' studio-shell--drawer' : ''}${isLive ? ' studio-shell--live' : ''}`}>
+      <div className="studio-topbar" role="toolbar" aria-label="Studio controls">
+        <h1 className="studio-brand">
+          <img src="/logo.png" alt="" className="brand-logo" />
+          <span className="ui-sr-only">StreamBird studio host</span>
+          <span className="studio-title">{stream.title}</span>
+        </h1>
+        {isLive && (
+          <span className="studio-live-pill">
+            <span className="studio-live-dot" aria-hidden="true" /> On air
+          </span>
+        )}
         <DocsLink page="host-studio" className="studio-docs-link">Studio guide</DocsLink>
-      </h1>
+        <span className="studio-topbar-spacer" />
+        {inviteControls}
+        {selectControls}
+        {isPhone && (
+          <div className="studio-topbar-group studio-topbar-extras">
+            {layoutToggle}
+            {recordControl}
+            {devicesControl}
+          </div>
+        )}
+        <button
+          type="button"
+          className={`tb-btn studio-customize-chip${customizeOpen ? ' tb-btn--on' : ''}`}
+          aria-label="Customize"
+          aria-expanded={customizeOpen}
+          aria-controls="studio-side-panels"
+          title="People, look, titles, scenes and ads"
+          onClick={() => setCustomizeOpen((o) => !o)}
+        >
+          <SlidersHorizontal size={16} aria-hidden="true" /> <span>Customize</span>
+        </button>
+      </div>
 
       {stream?.status === 'scheduled' && (
         <div className="panel studio-resume-banner" role="status">
@@ -449,215 +724,6 @@ export function HostStudioPage() {
         </div>
       )}
 
-      <div className="studio-topbar" role="toolbar" aria-label="Studio controls">
-        <div className="studio-topbar-group">
-          <button
-            type="button"
-            className="tb-btn"
-            aria-label="Toggle layout"
-            title={`Toggle layout (now ${layoutMode})`}
-            onClick={actions.toggleLayout}
-          >
-            {layoutMode === 'grid' ? <LayoutGrid size={18} /> : <Focus size={18} />} <span className="tb-label tb-label--wide">Layout</span>
-          </button>
-          <RecordButton
-            canRecord={canRecord}
-            since={recordingSince}
-            onStart={() => void actions.startRecording()}
-            onStop={() => void actions.stopRecording()}
-          />
-        </div>
-
-        <div className="studio-topbar-group studio-devices-group">
-          {cameraStarted && isTouchDevice() && cameraDevices.filter((c) => c.id).length > 1 && (
-            <button
-              type="button"
-              className="tb-btn tb-btn--icon"
-              aria-label="Flip camera"
-              title="Switch between the front and back camera"
-              disabled={switchingDevice}
-              onClick={() => void actions.flipCamera()}
-            >
-              <RefreshCw size={16} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="tb-btn tb-btn--icon"
-            aria-label="Choose camera and microphone"
-            aria-expanded={devicesOpen}
-            title={`Camera: ${cameraDevices.find((c) => c.id === cameraId)?.label ?? 'default'} / Microphone: ${micDevices.find((m) => m.id === micId)?.label ?? 'default'}`}
-            onClick={() => setDevicesOpen((o) => !o)}
-          >
-            <Settings2 size={16} />
-          </button>
-          {devicesOpen && (
-            <div className="studio-popover" role="dialog" aria-label="Camera and microphone">
-              {cameraDevices.some((c) => c.id) ? (
-                <>
-                  <label className="studio-device-row">
-                    <span>Camera</span>
-                    <select
-                      id="cameraSelect"
-                      aria-label="Camera"
-                      value={cameraId ?? ''}
-                      disabled={switchingDevice}
-                      onChange={(e) => void actions.selectCamera(e.target.value)}
-                    >
-                      {!cameraId && <option value="">{cameraStarted ? 'Default camera' : 'Choose a camera…'}</option>}
-                      {cameraDevices.filter((c) => c.id).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="studio-device-row">
-                    <span>Microphone</span>
-                    <select
-                      id="micSelect"
-                      aria-label="Microphone"
-                      value={micId ?? ''}
-                      disabled={switchingDevice}
-                      onChange={(e) => void actions.selectMic(e.target.value)}
-                    >
-                      {!micId && <option value="">Default microphone</option>}
-                      {micDevices.filter((m) => m.id).map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="studio-popover-note">
-                    {cameraStarted ? 'Switching keeps your stream running.' : 'Picking a camera turns it on.'} Your choice is remembered on this computer.
-                  </p>
-                </>
-              ) : (
-                <p className="studio-popover-note">Turn your camera on first. Your browser then shows the cameras and microphones you can choose from.</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="studio-topbar-group studio-invite-group">
-          <button type="button" className="tb-btn" data-tour="invite" aria-label="Create guest invite" title="Create a guest invite link and copy it" onClick={createInvite}>
-            <Copy size={18} /> <span className="tb-label">Invite</span>
-          </button>
-          <button
-            type="button"
-            className={`tb-btn tb-btn--icon${requireInvitePassword && savedInvitePassword ? ' tb-btn--on' : ''}`}
-            aria-label="Invite password options"
-            aria-expanded={inviteOptionsOpen}
-            title={requireInvitePassword && savedInvitePassword ? 'Invite links need a password' : 'Set a password for invite links'}
-            onClick={() => setInviteOptionsOpen((o) => !o)}
-          >
-            <Lock size={16} />
-          </button>
-          {inviteOptionsOpen && (
-            <div className="studio-popover" role="dialog" aria-label="Invite link settings">
-              <label className="checkbox-row">
-                <input type="checkbox" checked={requireInvitePassword} onChange={(e) => toggleInvitePassword(e.target.checked)} />
-                Require a password to join
-              </label>
-              {requireInvitePassword && (
-                <>
-                  <div className="studio-password-row">
-                    <input
-                      type="text"
-                      aria-label="Invite password"
-                      placeholder="Invite password"
-                      autoComplete="off"
-                      value={invitePassword}
-                      onChange={(e) => {
-                        setInvitePassword(e.target.value);
-                        setInviteOptionsNote(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveInvitePassword();
-                      }}
-                    />
-                    <button type="button" className="icon-btn" disabled={!invitePassword.trim() || !passwordUnsaved} onClick={saveInvitePassword}>
-                      <Save size={16} /> Save
-                    </button>
-                  </div>
-                  {savedInvitePassword && !passwordUnsaved ? (
-                    <p className="studio-popover-note studio-popover-note--ok">
-                      <Check size={14} /> Password saved. Every new guest invite asks for it.
-                    </p>
-                  ) : (
-                    <p className="studio-popover-note">Press Save (or Enter) to use this password. Nothing changes until you do.</p>
-                  )}
-                </>
-              )}
-              {inviteOptionsNote && <p className="studio-popover-note studio-popover-note--warn">{inviteOptionsNote}</p>}
-              <p className="studio-popover-note">
-                {requireInvitePassword ? 'Invite links you already copied keep the setting they were made with.' : 'Guests can join with the link alone.'}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="studio-topbar-group studio-topbar-selects">
-          <label className="studio-resolution-select" title={isLive ? 'Locked while live -- end the stream to change it' : 'Stream quality'}>
-            <Gauge size={16} />
-            <select
-              aria-label="Stream quality"
-              value={resolution}
-              disabled={isLive || recordingSince !== null}
-              onChange={(e) => actions.setResolution(e.target.value as StreamResolution)}
-            >
-              {Object.entries(RESOLUTIONS)
-                .filter(([value]) => RESOLUTION_ORDER.indexOf(value as StreamResolution) <= RESOLUTION_ORDER.indexOf(maxResolution))
-                .map(([value, r]) => {
-                  const dims = canvasSizeFor(r, orientation);
-                  return (
-                    <option key={value} value={value}>
-                      {orientation === 'portrait' ? `${r.label.replace(/\s*\(.*\)/, '')} vertical (${dims.width}x${dims.height})` : r.label}
-                    </option>
-                  );
-                })}
-            </select>
-          </label>
-          <label className="tb-select" title="Layout">
-            <LayoutGrid size={16} />
-            <select id="layoutSelect" aria-label="Layout" value={layoutMode} onChange={(e) => actions.setLayout(e.target.value as LayoutMode)}>
-              {[...new Set(LAYOUTS.map((l) => l.group))].map((group) => (
-                <optgroup key={group} label={group}>
-                  {LAYOUTS.filter((l) => l.group === group).map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          <label
-            className="tb-select"
-            title={
-              getTheme(themeId).id === 'vanilla'
-                ? 'Canvas style. Vanilla is the original plain look; styles show around the tiles of the framed layouts.'
-                : 'Canvas style, shown around the tiles of the framed layouts (Grid and Spotlight fill the whole frame).'
-            }
-          >
-            <Palette size={16} />
-            <select id="themeSelect" aria-label="Canvas style" value={themeId} onChange={(e) => actions.setTheme(e.target.value)}>
-              {[...new Set(THEMES.map((t) => t.group))].map((group) => (
-                <optgroup key={group} label={group}>
-                  {THEMES.filter((t) => t.group === group).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-        </div>
-
-      </div>
-
       <div className="studio-main" style={{ '--studio-top': `${topbarOffset}px` } as CSSProperties}>
         <div className="studio-main-video">
           <div className="studio-video-wrap">
@@ -682,9 +748,9 @@ export function HostStudioPage() {
 
         <aside id="studio-side-panels" className={`studio-side panel${customizeOpen ? ' studio-side--open' : ''}`} aria-label="Studio panels">
           <div className="studio-side-head">
-            <strong>Customize</strong>
-            <button type="button" className="icon-btn icon-btn--small" aria-label="Close customize" onClick={() => setCustomizeOpen(false)}>
-              <X size={14} /> Close
+            <h2>Customize</h2>
+            <button type="button" className="studio-side-close" aria-label="Close customize" onClick={() => setCustomizeOpen(false)}>
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
           <div className="studio-tabs" role="tablist" aria-label="Studio panels" onKeyDown={onSideTabKey}>
@@ -1095,6 +1161,7 @@ export function HostStudioPage() {
         >
           <Camera size={20} /> <span className="dock-label">{cameraStarted ? 'Camera on' : 'Camera'}</span>
         </button>
+        {!isPhone && devicesControl}
         <button
           type="button"
           className={`dock-btn${screenSharing ? ' dock-btn--on' : ''}`}
@@ -1104,6 +1171,8 @@ export function HostStudioPage() {
         >
           {screenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />} <span className="dock-label">{screenSharing ? 'Stop' : 'Share'}</span>
         </button>
+        {!isPhone && recordControl}
+        {!isPhone && layoutToggle}
         <button
           type="button"
           className={`dock-btn dock-customize${customizeOpen ? ' dock-btn--on' : ''}`}
@@ -1145,6 +1214,15 @@ export function HostStudioPage() {
           <PhoneOff size={20} /> <span className="dock-label">End</span>
         </button>
       </div>
+      {ending && status && !status.isError && /^Stream ended/.test(status.text) && (
+        <div className="studio-ended" role="status" data-testid="stream-ended">
+          <div className="studio-ended-card">
+            <h2>Stream ended</h2>
+            <p>Your broadcast has stopped on every destination. Taking you back to your dashboard.</p>
+            <a className="ui-btn ui-btn--primary" href="/">Back to dashboard</a>
+          </div>
+        </div>
+      )}
       <StudioTour open={tourOpen} platforms={goLiveNames(destinations, connectionById).replace(/^Your platforms$/, 'your platforms')} onClose={closeTour} />
     </div>
   );

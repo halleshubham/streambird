@@ -123,6 +123,11 @@ export function StudioTour({ open, platforms, onClose }: { open: boolean; platfo
         <p className="studio-tour-count">{index + 1} of {steps.length}</p>
         <h2>{step.title}</h2>
         <p>{step.body}</p>
+        <div className="studio-tour-dots" aria-hidden="true">
+          {steps.map((_, i) => (
+            <i key={i} className={i === index ? 'on' : ''} />
+          ))}
+        </div>
         <div className="studio-tour-actions">
           <button type="button" className="link-button link-button--inline" onClick={onClose}>
             Skip tour
