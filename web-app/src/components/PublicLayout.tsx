@@ -6,7 +6,7 @@ import '../styles/public.css';
 export function BrandLink({ small }: { small?: boolean }) {
   return (
     <Link to="/" className={`pub-brand${small ? ' pub-brand--sm' : ''}`}>
-      <img src="/logo.png" alt="" className="pub-brand-logo" />
+      <img src="/logo-256.png" alt="" className="pub-brand-logo" />
       StreamBird
     </Link>
   );

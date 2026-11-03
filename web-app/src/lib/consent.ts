@@ -79,7 +79,7 @@ function subscribe(cb: () => void): () => void {
 
 /** True only when the server runs the opt-in banner mode. */
 export function useConsentBannerEnabled(): boolean {
-  return useSyncExternalStore(subscribe, () => bannerEnabled === true);
+  return useSyncExternalStore(subscribe, () => bannerEnabled === true, () => false);
 }
 
 /** "Cookie settings" links call this to bring the banner back so the choice can be changed. */

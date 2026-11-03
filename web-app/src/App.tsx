@@ -31,10 +31,12 @@ import { AccountPage } from './routes/AccountPage';
 import { DeleteAccountInfoPage } from './routes/DeleteAccountInfoPage';
 import { AccountDeletedPage } from './routes/AccountDeletedPage';
 import { CookieBanner } from './components/CookieBanner';
+import { RouteHead } from './components/RouteHead';
 
 export function App() {
   return (
     <>
+    <RouteHead />
     <Routes>
       {/* Anonymous -> public marketing page; logged in -> straight to
           /dashboard. See HomeRoute. */}

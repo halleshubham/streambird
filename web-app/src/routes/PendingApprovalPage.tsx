@@ -52,7 +52,7 @@ export function PendingApprovalPage() {
           <span className="pending-glow" />
           <span className="pending-ring pending-ring--1" />
           <span className="pending-ring pending-ring--2" />
-          <img src="/logo.png" alt="" className="pending-bird" />
+          <img src="/logo-256.png" alt="" className="pending-bird" />
           <span className="pending-spark pending-spark--1" />
           <span className="pending-spark pending-spark--2" />
           <span className="pending-spark pending-spark--3" />

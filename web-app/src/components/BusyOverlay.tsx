@@ -34,7 +34,7 @@ export function BusyOverlay() {
   return (
     <div className="busy-overlay" role="status" aria-live="polite">
       <div className="busy-overlay-card">
-        <img src="/logo.png" alt="" className="busy-overlay-bird" />
+        <img src="/logo-256.png" alt="" className="busy-overlay-bird" />
         <span>Working on it…</span>
       </div>
     </div>

@@ -52,7 +52,7 @@ export function AdminShell() {
     <div className="app-shell admin-shell">
       <header className="app-header admin-header">
         <Link to="/admin" className="brand">
-          <img src="/logo.png" alt="" className="brand-logo" />
+          <img src="/logo-256.png" alt="" className="brand-logo" />
           StreamBird <span className="admin-badge">ADMIN</span>
         </Link>
         <nav aria-label="Admin">
