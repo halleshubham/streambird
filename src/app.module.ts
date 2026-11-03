@@ -15,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
 import { TeamModule } from './team/team.module';
 import { SuperadminModule } from './superadmin/superadmin.module';
 import { AppController } from './app.controller';
+import { PresetsModule } from './presets/presets.module';
 import { AssetsModule } from './assets/assets.module';
 
 @Module({
@@ -46,6 +47,7 @@ import { AssetsModule } from './assets/assets.module';
     BillingModule,
     PlatformConnectionsModule,
     StreamsModule,
+    PresetsModule,
     StudioModule,
     AuthModule,
     TeamModule,
