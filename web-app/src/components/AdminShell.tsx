@@ -3,6 +3,7 @@ import { Outlet, Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { listPendingApprovals } from '../api/superadmin';
 import { PENDING_CHANGED_EVENT } from '../lib/adminEvents';
+import { Button } from './ui';
 
 const NAV: { to: string; label: string; end?: boolean; count?: boolean }[] = [
   { to: '/admin', label: 'Approvals', end: true, count: true },
@@ -68,9 +69,9 @@ export function AdminShell() {
         </nav>
         <div className="app-header-right">
           {user && <span className="user-email">{user.email}</span>}
-          <button type="button" className="icon-btn btn-sm" onClick={() => void logout()}>
+          <Button variant="secondary" size="sm" onClick={() => void logout()}>
             Log out
-          </button>
+          </Button>
         </div>
       </header>
       <main className="app-main">

@@ -5,8 +5,8 @@ import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
 import type { AnalyticsOverview, LiveStreamRow, UsageAlert } from '../../types/api';
-import { BirdBusy } from '../../components/BirdBusy';
-import { Badge, DataTable, Empty, PageHeader, Section, planLabel } from '../../components/admin/adminKit';
+import { Badge, DataTable, Empty, Notice, PageHeader, Section, planLabel } from '../../components/admin/adminKit';
+import { Button, confirm } from '../../components/ui';
 
 const TOP_ROWS = 10;
 
@@ -68,13 +68,15 @@ export function AdminAnalyticsPage() {
   }, []);
 
   async function handleForceEnd(stream: LiveStreamRow) {
-    if (
-      !window.confirm(
-        `Force-end "${stream.title}" (${stream.accountName})? Only do this if you've confirmed it's actually a hung stream, not a real broadcast still in progress.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Force end this live stream?',
+      details: `${stream.title} · ${stream.accountName}`,
+      body: "The stream stops on every destination immediately. Only do this if you've confirmed it's actually a hung stream, not a real broadcast still in progress.",
+      confirmLabel: 'Force end',
+      cancelLabel: 'Keep streaming',
+      destructive: true,
+    });
+    if (!ok) return;
     setEndingId(stream.id);
     setActionNote(null);
     try {
@@ -92,7 +94,7 @@ export function AdminAnalyticsPage() {
   }
 
   if (error) {
-    return <p className="error">{error}</p>;
+    return <Notice tone="error">{error}</Notice>;
   }
 
   if (!overview || !alerts || !liveStreams) {
@@ -113,9 +115,9 @@ export function AdminAnalyticsPage() {
         title="Analytics"
         subtitle="What is live right now, who is close to their hours, and how destinations are doing."
         actions={
-          <button type="button" className="btn-sm btn-ghost" disabled={refreshing} onClick={() => void refresh()}>
-            {refreshing && <BirdBusy />} Refresh
-          </button>
+          <Button variant="secondary" size="sm" busy={refreshing} onClick={() => void refresh()}>
+            Refresh
+          </Button>
         }
       />
 
@@ -128,9 +130,9 @@ export function AdminAnalyticsPage() {
 
       <Section title="Live streams">
         {actionNote && (
-          <p className={actionNote.isError ? 'error' : 'success'} role={actionNote.isError ? 'alert' : 'status'} data-testid="force-end-note">
+          <Notice tone={actionNote.isError ? 'error' : 'success'} testId="force-end-note" onDismiss={() => setActionNote(null)}>
             {actionNote.text}
-          </p>
+          </Notice>
         )}
         {liveStreams.length === 0 ? (
           <Empty>Nothing is currently live.</Empty>
@@ -154,7 +156,7 @@ export function AdminAnalyticsPage() {
                       <td><Link to={`/admin/accounts/${s.accountId}`} className="admin-link">{s.accountName}</Link></td>
                       <td>{s.title}</td>
                       <td className="nowrap">
-                        {formatLiveDuration(s.startedAt, now)}
+                        <span className="admin-live">{formatLiveDuration(s.startedAt, now)}</span>
                         {likelyStuck && (
                           <>
                             {' '}
@@ -163,15 +165,17 @@ export function AdminAnalyticsPage() {
                         )}
                       </td>
                       <td className="actions">
-                        <button
-                          type="button"
-                          className="btn-sm danger-button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="admin-reject"
+                          busy={endingId === s.id}
                           disabled={endingId !== null}
                           aria-label={`Force end ${s.title}`}
                           onClick={() => void handleForceEnd(s)}
                         >
-                          {endingId === s.id ? <BirdBusy /> : null} {endingId === s.id ? 'Ending…' : 'Force end'}
-                        </button>
+                          {endingId === s.id ? 'Ending…' : 'Force end'}
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -186,11 +190,22 @@ export function AdminAnalyticsPage() {
         {alerts.length === 0 ? (
           <Empty>No accounts are near or over their included hours.</Empty>
         ) : (
-          <div className="usage-alert-list">
-            {alerts.map((a) => (
-              <UsageAlertRow key={a.accountId} alert={a} />
-            ))}
-          </div>
+          <DataTable caption="Usage alerts">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col" className="hide-sm">Plan</th>
+                <th scope="col">Used</th>
+                <th scope="col" className="num hide-sm">Hours</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map((a) => (
+                <UsageAlertRow key={a.accountId} alert={a} />
+              ))}
+            </tbody>
+          </DataTable>
         )}
       </Section>
 
@@ -201,6 +216,7 @@ export function AdminAnalyticsPage() {
           <DataTable caption="Top accounts by usage">
             <thead>
               <tr>
+                <th scope="col">#</th>
                 <th scope="col">Company</th>
                 <th scope="col">Plan</th>
                 <th scope="col" className="num">Hours used</th>
@@ -208,10 +224,11 @@ export function AdminAnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {overview.topAccountsByUsage.slice(0, TOP_ROWS).map((a) => {
+              {overview.topAccountsByUsage.slice(0, TOP_ROWS).map((a, idx) => {
                 const included = Number(a.includedHoursPerMonth);
                 return (
                   <tr key={a.accountId}>
+                    <td>{idx + 1}</td>
                     <td><Link to={`/admin/accounts/${a.accountId}`} className="admin-link">{a.accountName}</Link></td>
                     <td>{planLabel(a.currentTier)}</td>
                     <td className="num">{Number(a.streamHourUsageCurrentPeriod).toFixed(1)}</td>
@@ -242,16 +259,19 @@ function UsageAlertRow({ alert }: { alert: UsageAlert }) {
   const isOverLimit = alert.bucket === 'over_limit';
 
   return (
-    <div className="usage-alert-row">
-      <div className="usage-alert-row-header">
-        <Link to={`/admin/accounts/${alert.accountId}`} className="usage-alert-account admin-link">
-          {alert.accountName} <span className="usage-alert-tier">({planLabel(alert.currentTier)})</span>
-        </Link>
+    <tr>
+      <td>
+        <Link to={`/admin/accounts/${alert.accountId}`} className="admin-link">{alert.accountName}</Link>
+        <span className="admin-cell-sub show-sm">{planLabel(alert.currentTier)}</span>
+      </td>
+      <td className="hide-sm">{planLabel(alert.currentTier)}</td>
+      <td><UsageBar compact used={used} included={included} /></td>
+      <td className="num nowrap hide-sm">{used.toFixed(1)} / {included.toFixed(1)}</td>
+      <td>
         <Badge tone={isOverLimit ? 'danger' : 'warning'}>
           {isOverLimit ? 'Over limit' : 'Near limit'} · {(alert.ratio * 100).toFixed(0)}%
         </Badge>
-      </div>
-      <UsageBar used={used} included={included} />
-    </div>
+      </td>
+    </tr>
   );
 }

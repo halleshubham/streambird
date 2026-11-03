@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { solidGif } from '../gif';
 import { computeLayout } from '../../web-app/src/studio/compose';
 import type {} from '../../web-app/src/studio/personSegmenter'; // brings in the window.__SB_TEST_SEGMENTER__ type
+import { acceptConfirm, cancelConfirm, confirmDialog } from './helpers';
 
 const CONTROL = `http://127.0.0.1:${process.env.UI_CONTROL_PORT ?? 4311}`;
 const APP = `http://127.0.0.1:${process.env.UI_APP_PORT ?? 4310}`;
@@ -106,7 +107,7 @@ test.describe('cookie consent', () => {
 test.describe('public pages', () => {
   test('login offers email, Google and Facebook sign-in', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'StreamBird' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
     await expect(page.getByRole('link', { name: /Sign in with Google/ })).toHaveAttribute('href', '/api/auth/google');
     await expect(page.getByRole('link', { name: /Continue with Facebook/ })).toHaveAttribute('href', '/api/auth/facebook');
     await expect(page.getByRole('button', { name: /Send login code/ })).toBeDisabled(); // nothing typed yet
@@ -116,7 +117,7 @@ test.describe('public pages', () => {
     await page.goto('/');
     const pricing = page.locator('#pricing');
     for (const name of ['Free', 'Lite', 'Starter', 'Pro', 'Business', 'Day Pass']) {
-      await expect(pricing.getByRole('heading', { name })).toBeVisible();
+      await expect(pricing.getByRole('heading', { name, exact: true })).toBeVisible();
     }
     await expect(pricing.getByRole('link', { name: 'Buy' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /support@shackyapps\.in/ }).first()).toHaveAttribute('href', /mailto:support@shackyapps\.in/);
@@ -286,14 +287,14 @@ test.describe('admin', () => {
     await expect(guests).toHaveValue('4');
     await guests.fill('5');
     await page.getByRole('button', { name: 'Save plan' }).click();
-    await expect(page.getByText('Saved Starter.')).toBeVisible();
+    await expect(page.getByText('Saved Starter.').first()).toBeVisible();
     await expect(page.getByRole('row', { name: /Starter/ })).toContainText('5');
 
     // put it back
     await page.getByRole('row', { name: /Starter/ }).getByRole('button', { name: 'Edit' }).click();
     await page.getByLabel('Max guests (at once)').fill('4');
     await page.getByRole('button', { name: 'Save plan' }).click();
-    await expect(page.getByText('Saved Starter.')).toBeVisible();
+    await expect(page.getByText('Saved Starter.').first()).toBeVisible();
   });
 
   test('Dashboard: "Heavy usage this month" lists accounts, highlights >= 80%, and has an empty state', async ({ page, context }) => {
@@ -319,7 +320,7 @@ test.describe('admin', () => {
   test('Billing page: payments switch and setup status', async ({ page, context }) => {
     await signIn(context, { superadmin: true });
     await page.goto('/admin/billing');
-    await expect(page.getByRole('heading', { name: /Online payments: OFF/ })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Online payments' })).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByText(/test mode/)).toBeVisible();
     await expect(page.getByText('subscription.charged', { exact: false })).toBeVisible();
   });
@@ -575,7 +576,7 @@ test.describe('host studio', () => {
 
     const sent = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
     await page.getByLabel(/Form Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     expect((await sent).postDataJSON().visibility).toBe('public');
   });
 
@@ -601,7 +602,7 @@ test.describe('host studio', () => {
 
     const upload = page.waitForRequest((r) => /\/api\/streams\/[^/]+\/thumbnail$/.test(r.url()) && r.method() === 'PUT');
     await page.getByLabel(/Thumb Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     await upload;
     await expect(page).toHaveURL(/\/studio$/);
   });
@@ -628,7 +629,7 @@ test.describe('host studio', () => {
     png.writeUInt32BE(720, 20);
     await page.locator('.thumbnail-picker input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
     await page.getByLabel(/Refuse Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     const notice = page.getByTestId('thumbnail-notice');
     await expect(notice).toContainText('Thumbnail not applied');
     await expect(notice).toContainText('verified channel');
@@ -810,7 +811,7 @@ test.describe('brand library and kits', () => {
       await expect(englishCard).toContainText('Used by English channel');
       await expect(englishCard).not.toContainText('Account default');
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
-      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
+      const card = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete main-logo' }) });
       await expect(card).toContainText('Logo');
       await expect(card).toContainText('used by Hindi, English');
 
@@ -829,17 +830,20 @@ test.describe('brand library and kits', () => {
       await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Save kit' })).toBeDisabled(); // nothing changed since
 
       // A file in use is refused; once the kits are gone it can be deleted.
-      page.on('dialog', (d) => void d.accept());
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('alert')).toContainText('used by the brand kits');
       await page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Delete kit' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('heading', { name: /^Hindi/ })).toHaveCount(0);
       await page.getByRole('button', { name: 'Edit English' }).click();
       await page.getByRole('form', { name: 'Brand kit English' }).getByRole('button', { name: 'Delete kit' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('heading', { name: /^English/ })).toHaveCount(0);
       await expect(page.getByText('No brand kits yet')).toBeVisible();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await acceptConfirm(page);
       await expect(page.getByText('No files yet')).toBeVisible();
     });
 
@@ -1808,7 +1812,7 @@ test.describe('animated GIF logo', () => {
       await expect(slot).toContainText('spin');
       await expect.poll(() => slot.locator('.brand-drop-preview').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
-      await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of spin') })).toContainText('Logo');
+      await expect(page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete spin' }) })).toContainText('Logo');
 
       await form.getByLabel('Wallpaper file').setInputFiles({ name: 'wall.gif', mimeType: 'image/gif', buffer: GIF });
       await expect(page.getByRole('alert')).toContainText('GIF images can only be used as a logo');
@@ -1892,14 +1896,14 @@ test.describe('admin console', () => {
       const waitingEmail = await pendingSignup(await browser.newContext());
       await signIn(context, { superadmin: true });
       await page.goto('/admin');
-      const section = page.getByRole('heading', { name: /Registration: paused/ });
+      const section = page.getByRole('heading', { name: /^Registration\s+Paused/ });
       await expect(section).toBeVisible();
       await expect(page.getByRole('button', { name: 'Manual review' })).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('registration-history')).toContainText('waiting for approval now');
 
       // Open: a brand-new signup is approved the moment it signs in.
       await page.getByRole('button', { name: 'Auto-approve' }).click();
-      await expect(page.getByRole('heading', { name: /Registration: open/ })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Registration\s+Open/ })).toBeVisible();
       await expect(page.getByRole('status').filter({ hasText: 'Auto-approve is on' })).toBeVisible();
       const openCtx = await browser.newContext();
       const openEmail = await pendingSignup(openCtx);
@@ -1912,18 +1916,19 @@ test.describe('admin console', () => {
       await page.getByRole('button', { name: 'Manual review' }).click();
       await expect(page.getByRole('status').filter({ hasText: 'Registrations paused' })).toBeVisible();
       await page.reload();
-      await expect(page.getByRole('heading', { name: /Registration: paused/ })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Registration\s+Paused/ })).toBeVisible();
       const pausedEmail = await pendingSignup(await browser.newContext());
       await page.reload();
       await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toBeVisible();
       await expect(page.getByRole('row', { name: new RegExp(waitingEmail) })).toBeVisible();
 
       // Approve everyone waiting in one go.
-      page.on('dialog', (d) => void d.accept());
-      await page.getByRole('button', { name: /Approve all waiting/ }).click();
-      await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup/ })).toBeVisible();
+      await page.getByRole('button', { name: /Approve all \(\d+\)/ }).click();
+      await expect(confirmDialog(page)).toContainText(/Approve all \d+ signup/);
+      await acceptConfirm(page);
+      await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup.*emailed/ })).toBeVisible();
       await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: /Approve all waiting/ })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Approve all \(\d+\)/ })).toHaveCount(0);
     });
   });
 
@@ -2022,19 +2027,16 @@ test.describe('admin console', () => {
     const row = page.getByRole('row', { name: new RegExp(email) });
     await expect(row.getByText('Approved')).toBeVisible();
 
-    let asked = '';
-    page.once('dialog', (d) => {
-      asked = d.message();
-      void d.dismiss();
-    });
     await row.getByRole('button', { name: 'Suspend' }).click();
-    await expect.poll(() => asked).toContain(email);
+    await expect(confirmDialog(page)).toContainText(email);
+    await cancelConfirm(page);
     await expect(row.getByText('Suspended')).toHaveCount(0); // cancelled: nothing changed
 
-    page.once('dialog', (d) => void d.accept());
     await row.getByRole('button', { name: 'Suspend' }).click();
+    await acceptConfirm(page);
     await expect(row.getByText('Suspended')).toBeVisible();
     await row.getByRole('button', { name: 'Reactivate' }).click();
+    await acceptConfirm(page); // reactivating a user now confirms too
     await expect(row.getByText('Suspended')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1 }).getByText('Active')).toBeVisible();
   });
@@ -2119,7 +2121,7 @@ test.describe('recording to this computer (Pro)', () => {
 });
 
 test.describe('UI polish', () => {
-  test('the currency switch is a proper segmented control and "See pricing" is a chip', async ({ page }) => {
+  test('the currency switch is a proper segmented control', async ({ page }) => {
     await page.goto('/');
     const group = page.getByRole('group', { name: 'Currency' });
     const usd = group.getByRole('button', { name: 'USD' });
@@ -2135,22 +2137,11 @@ test.describe('UI polish', () => {
       expect(box.width).toBeGreaterThan(60);
     }
     expect(await inr.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-
-    const chip = page.getByRole('link', { name: /See pricing/ });
-    await expect(chip).toHaveClass(/chip-link/);
-    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThan(20);
-    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth))).toBeGreaterThan(0);
   });
 
-  test('home hero: animated headline cycling the platforms, a studio miniature, and no motion when reduced', async ({ page, browser }) => {
+  test('home hero: headline, a studio miniature, and no motion when reduced', async ({ page, browser }) => {
     await page.goto('/');
-    // Screen readers get one plain sentence; the animated copy is decoration.
-    await expect(page.getByRole('heading', { level: 1, name: 'Go live on YouTube, Facebook and Twitch from one browser tab.' })).toBeAttached();
-    const words = page.locator('.hero-word');
-    await expect(words).toHaveCount(3);
-    const timing = await words.evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, dur: getComputedStyle(e).animationDuration, delay: getComputedStyle(e).animationDelay })));
-    expect(timing.every((t) => t.name === 'hero-word' && t.dur === '9s')).toBe(true);
-    expect(timing.map((t) => t.delay)).toEqual(['0s', '3s', '6s']); // one platform at a time, in turn
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Go live once.');
 
     const studio = page.locator('.hero-studio');
     await expect(studio).toBeVisible();
@@ -2161,12 +2152,10 @@ test.describe('UI polish', () => {
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-    // prefers-reduced-motion: nothing animates and the first platform stays on screen.
+    // prefers-reduced-motion: nothing animates.
     const calm = await browser.newContext({ reducedMotion: 'reduce' });
     const still = await calm.newPage();
     await still.goto(`${APP}/`);
-    await expect(still.locator('.hero-word').first()).toHaveCSS('opacity', '1');
-    expect(await still.locator('.hero-word').first().evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     expect(await still.locator('.hero-studio').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     await calm.close();
   });
@@ -2222,8 +2211,12 @@ test.describe('UI polish', () => {
     await calm.close();
   });
 
-  test('dashboard: Go live has space between icon and text; Manage is a chip', async ({ page, context }) => {
-    await signIn(context);
+  test('dashboard: the New stream button keeps space between icon and text; Manage and Connect are quiet links', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Dash Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
     await page.goto('/dashboard');
     const cta = page.locator('a.go-live-cta');
     await expect(cta).toBeVisible();
@@ -2235,11 +2228,8 @@ test.describe('UI polish', () => {
       return [svg.right, range.getBoundingClientRect().left];
     });
     expect(textLeft - svgRight).toBeGreaterThanOrEqual(8);
-    const manage = page.getByRole('link', { name: /Manage/ });
-    await expect(manage).toHaveClass(/chip-link/);
-    expect(await manage.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-    const schedule = page.getByRole('link', { name: /Connect one/ });
-    await expect(schedule).toHaveClass(/chip-link/);
+    await expect(page.getByRole('link', { name: /^Manage/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Connect YouTube' })).toHaveAttribute('href', '/connections');
   });
 
   test('a button that is working puts a big bird in the middle of the screen', async ({ page }) => {
@@ -2404,7 +2394,6 @@ test.describe('admin analytics: Force end', () => {
     const title = `Stuck show ${crypto.randomBytes(4).toString('hex')}`;
     const { id, ctx } = await liveStreamAs(browser, title);
     await signIn(context, { superadmin: true });
-    page.on('dialog', (d) => void d.accept());
 
     await page.goto('/admin/analytics');
     const row = page.getByRole('row', { name: new RegExp(title) });
@@ -2418,6 +2407,8 @@ test.describe('admin analytics: Force end', () => {
       else await route.continue();
     });
     await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await expect(confirmDialog(page)).toContainText(title);
+    await acceptConfirm(page);
     await expect(page.getByTestId('force-end-note')).toContainText(`Could not end "${title}"`);
     await expect(page.getByRole('heading', { name: 'Analytics' })).toBeVisible();
     await expect(row).toBeVisible();
@@ -2425,6 +2416,7 @@ test.describe('admin analytics: Force end', () => {
 
     // Retry works: the row goes, the note says what happened, and the stream really ended.
     await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await acceptConfirm(page);
     await expect(page.getByTestId('force-end-note')).toContainText(`Ended "${title}"`);
     await expect(page.getByRole('row', { name: new RegExp(title) })).toHaveCount(0);
     const status = await (await ctx.request.get(`${APP}/api/streams/${id}`)).json();

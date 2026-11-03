@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Account, EffectiveLimits, PublicPlan } from '../types/api';
 import { getMyLimits, getPublicPlans } from '../api/plans';
 import { monthlyHoursLabel } from '../lib/planCopy';
+import { buttonClass } from './ui';
 
 /** Share of the included hours at which the nudge appears. */
 export const NUDGE_FROM = 0.8;
@@ -34,12 +35,16 @@ export function UpgradeNudge({ account }: { account: Account }) {
   if (!next) return null;
   const fmt = (n: number) => String(Math.round(n * 10) / 10);
   return (
-    <div className="upgrade-nudge" role="status" aria-label="Upgrade suggestion" data-testid="upgrade-nudge">
-      <span>
-        You've used {fmt(used)} of {fmt(included)} hours this month. {next.name} (₹{next.priceInr}/mo) gives you{' '}
-        {monthlyHoursLabel(next, 'hours')}.
-      </span>
-      <Link to="/billing" className="upgrade-nudge-link">Upgrade</Link>
+    <div className="ha-nudge upgrade-nudge" role="status" aria-label="Upgrade suggestion" data-testid="upgrade-nudge">
+      <div>
+        <h3>Running out of hours?</h3>
+        <p>
+          You've used {fmt(used)} of {fmt(included)} hours this month. {next.name} (₹{next.priceInr}/mo) gives you{' '}
+          {monthlyHoursLabel(next, 'hours')}.
+        </p>
+      </div>
+      <span className="ha-sp" />
+      <Link to="/billing" className={buttonClass('primary')}>Upgrade</Link>
     </div>
   );
 }

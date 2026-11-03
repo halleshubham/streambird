@@ -4,6 +4,7 @@ import { BRANDING_RANGES, newsBarHeight } from '../../web-app/src/studio/compose
 import { adRect, fitAd, type AdPlacement } from '../../web-app/src/studio/ads';
 import {
   APP,
+  acceptConfirm,
   apiHeaders,
   canvasPixel,
   canvasSize,
@@ -451,10 +452,10 @@ test.describe('brand kit ads', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Saved "Sponsors"' })).toBeVisible();
 
     // The file in use cannot be deleted from the library.
-    page.on('dialog', (d) => void d.accept());
     await page.locator('summary', { hasText: 'Uploaded files' }).click();
-    await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of sponsor') })).toContainText('Ad');
+    await expect(page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete sponsor' }) })).toContainText('Ad');
     await page.getByRole('button', { name: 'Delete sponsor' }).click();
+    await acceptConfirm(page);
     await expect(page.getByRole('alert')).toContainText('used by the brand kit');
 
     // The studio opens with the account default kit applied: the Ads card is filled from the kit.

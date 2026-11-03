@@ -37,20 +37,27 @@ export function UsageMeter({ account }: { account: Account }) {
   const used = Number(account.streamHourUsageCurrentPeriod);
   const unlimited = limits ? limits.includedHours === null : false;
   const included = limits && limits.includedHours !== null ? limits.includedHours : Number(account.includedHoursPerMonth);
-  const pct = included > 0 ? Math.min(100, (used / included) * 100) : 0;
+  const pct = unlimited ? 0 : included > 0 ? Math.min(100, (used / included) * 100) : 0;
+  const tone = pct >= 100 ? ' ha-meter--bad' : pct >= 80 ? ' ha-meter--warn' : '';
+  const amount = unlimited ? `${used.toFixed(1)} hrs · unlimited` : `${used.toFixed(1)} / ${included.toFixed(1)} hrs`;
 
   return (
-    <div className="usage-meter">
-      <div className="usage-meter-header">
-        <span>Stream hours this period</span>
-        <span>
-          {unlimited ? `${used.toFixed(1)} hrs · unlimited` : `${used.toFixed(1)} / ${included.toFixed(1)} hrs`}
-        </span>
+    <section className="ui-card ha-usage" aria-labelledby="usage-title">
+      <h2 id="usage-title">Usage this month</h2>
+      <p>
+        <span>Stream hours this period</span>: <strong>{amount}</strong>
+      </p>
+      <div
+        className={`ha-meter${tone}`}
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Streaming hours used"
+      >
+        <i style={{ width: `${pct}%` }} />
       </div>
-      <div className="usage-meter-track">
-        <div className="usage-meter-fill" style={{ width: `${unlimited ? 0 : pct}%` }} />
-      </div>
-      <p className="usage-meter-tier">
+      <p className="ha-hint">
         {limits ? limits.planName : account.currentTier} plan
         {limits && (
           <>
@@ -60,6 +67,6 @@ export function UsageMeter({ account }: { account: Account }) {
           </>
         )}
       </p>
-    </div>
+    </section>
   );
 }

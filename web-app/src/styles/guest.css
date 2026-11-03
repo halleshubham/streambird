@@ -1,0 +1,443 @@
+/* ==========================================================================
+   Guest join + in-call (redesign). Join/invalid/checking follow the page colour scheme (light by default);
+   the call itself is always dark, like the host studio.
+   ========================================================================== */
+
+.guest-page {
+  max-width: 1180px;
+  padding: 24px 32px 48px;
+  min-height: 100svh;
+}
+.guest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.guest-page .guest-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.guest-page .brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+/* ---- Join: preview left, form right ---- */
+.guest-join {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+  padding-top: 24px;
+}
+.guest-preview-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #2b2540, #14121f 70%, #0b0a12);
+  aspect-ratio: 4 / 3;
+}
+.guest-preview-frame .studio-local-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 0;
+}
+.guest-preview-frame .bird-loader {
+  border-radius: var(--radius-lg);
+}
+.guest-ready-chip {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  background: rgba(11, 10, 18, 0.6);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.guest-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  flex: none;
+}
+.guest-preview-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+.guest-page .guest-round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 48px;
+  height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.guest-page .guest-round:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+}
+.guest-page .guest-round[aria-pressed='true'] {
+  background: rgba(229, 72, 77, 0.45);
+}
+.guest-perm {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: #14121f;
+  color: #fff;
+}
+.guest-perm h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+}
+.guest-perm .error {
+  margin: 0;
+  max-width: 440px;
+  color: #c9c4de;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.guest-perm-icon,
+.guest-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(229, 72, 77, 0.18);
+  color: #ff8a8e;
+}
+.guest-card-icon {
+  background: var(--soft);
+  color: var(--brand-text);
+}
+.guest-page .guest-primary {
+  min-height: 52px;
+  padding: 0 32px;
+  border: 0;
+  border-radius: 26px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+.guest-page .guest-primary:hover:not(:disabled) {
+  background: #6d28d9;
+}
+.guest-page .guest-primary:disabled {
+  background: var(--line-strong);
+  color: var(--muted);
+  opacity: 1;
+}
+.guest-form {
+  min-width: 0;
+}
+.guest-form-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.guest-form-sub {
+  margin: 0 0 28px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.guest-form label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.guest-form input {
+  height: 48px;
+  margin-bottom: 18px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.guest-form input.guest-invalid {
+  border: 2px solid #e5484d;
+}
+.guest-error {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: -8px 0 18px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--danger-text);
+}
+.guest-error svg {
+  flex: none;
+  margin-top: 2px;
+}
+.guest-join-btn {
+  width: 100%;
+  min-height: 56px;
+  font-size: 17px;
+  font-weight: 800;
+  border-radius: 28px;
+}
+.guest-fine {
+  margin: 16px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---- Invalid invite card ---- */
+.guest-card {
+  width: min(460px, 100%);
+  margin: 48px auto 0;
+  padding: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.guest-card h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.guest-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.guest-card p.error {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* ---- In call: always dark ---- */
+.guest-page--call {
+  --ink: #f3f1fb;
+  --muted: #c9c4de;
+  --bg: #0e0c16;
+  --surface: #14121f;
+  --line: #2b2740;
+  --soft: #231f38;
+  --accent: #a78bfa;
+  --text: var(--muted);
+  --text-h: var(--ink);
+  --card-bg: var(--surface);
+  --border: var(--line);
+  color-scheme: dark;
+  color: var(--muted);
+  background: #0e0c16;
+  max-width: none;
+  width: 100%;
+  padding: 0 32px;
+  display: flex;
+  flex-direction: column;
+}
+.guest-page--call .guest-head {
+  min-height: 72px;
+  margin: 0;
+}
+.guest-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.guest-status--good {
+  background: rgba(52, 211, 153, 0.16);
+  color: #6ee7b7;
+}
+.guest-status--warn {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fcd34d;
+}
+.guest-status--bad,
+.guest-status.error {
+  background: rgba(229, 72, 77, 0.2);
+  color: #ffb3b6;
+}
+.guest-call {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 120px;
+}
+.guest-page--call .meeting-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin: 0;
+}
+.guest-page--call .meeting-tile {
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #2b2540, #14121f 75%);
+}
+.guest-page--call .meeting-tile--self {
+  outline: 2px solid #a78bfa;
+}
+.guest-call-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 44px;
+  background: rgba(20, 18, 31, 0.94);
+  max-width: calc(100vw - 16px);
+}
+.guest-call-bar .guest-round {
+  height: 56px;
+  min-width: 56px;
+}
+.guest-page .guest-leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 28px;
+  background: #d93a3f;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+}
+.guest-page .guest-leave:hover:not(:disabled) {
+  background: #b4232a;
+}
+
+/* ---- Phone ---- */
+@media (max-width: 720px) {
+  .guest-page {
+    padding: 16px 16px 32px;
+  }
+  .guest-head {
+    margin-bottom: 12px;
+  }
+  .guest-join {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding-top: 0;
+  }
+  .guest-preview-frame {
+    aspect-ratio: auto;
+    height: 300px;
+  }
+  .guest-preview-controls .guest-round span,
+  .guest-call-bar .guest-round span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .guest-preview-controls .guest-round {
+    width: 48px;
+    padding: 0;
+  }
+  .guest-form-title {
+    font-size: 22px;
+  }
+  .guest-form-sub {
+    margin-bottom: 16px;
+  }
+  .guest-form input {
+    height: 52px;
+    font-size: 16px;
+  }
+  .guest-card {
+    padding: 28px 20px;
+    margin-top: 16px;
+  }
+  .guest-page--call {
+    padding: 0 12px;
+  }
+  .guest-page--call .guest-head {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 12px 0;
+  }
+  .guest-page--call .meeting-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .guest-call-bar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    padding: 16px 20px 24px;
+    justify-content: center;
+    background: linear-gradient(180deg, transparent, #0e0c16 35%);
+  }
+  .guest-call-bar .guest-round {
+    width: 56px;
+    padding: 0;
+  }
+  .guest-call-bar .guest-leave {
+    flex: 1;
+  }
+}

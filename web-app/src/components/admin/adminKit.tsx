@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { CheckCircle2 } from 'lucide-react';
 import type { Resolution, UserRole } from '../../types/api';
+import { Button, Card, EmptyState } from '../ui';
+import '../../styles/admin.css';
 
 /**
  * Small building blocks shared by every Superadmin page, so a page is just
@@ -36,18 +39,18 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
 /** A titled card; use `danger` for the destructive actions of a page. */
 export function Section({ title, hint, children, danger = false }: { title?: ReactNode; hint?: ReactNode; children: ReactNode; danger?: boolean }) {
   return (
-    <section className={`panel admin-section${danger ? ' admin-section--danger' : ''}`}>
+    <Card className={`admin-section${danger ? ' admin-section--danger' : ''}`}>
       {title && <h2>{title}</h2>}
       {hint && <p className="admin-hint">{hint}</p>}
       {children}
-    </section>
+    </Card>
   );
 }
 
 /** Horizontally scrollable table with the shared look. `tall` caps long lists at about a screen and scrolls inside, header pinned. */
-export function DataTable({ children, caption, tall = false }: { children: ReactNode; caption?: string; tall?: boolean }) {
+export function DataTable({ children, caption, tall = false, cards = false }: { children: ReactNode; caption?: string; tall?: boolean; cards?: boolean }) {
   return (
-    <div className={`table-scroll admin-table-wrap${tall ? ' admin-table-wrap--tall' : ''}`}>
+    <div className={`table-scroll admin-table-wrap${tall ? ' admin-table-wrap--tall' : ''}${cards ? ' admin-table-wrap--cards' : ''}`}>
       <table className="data-table admin-table">
         {caption && <caption className="visually-hidden">{caption}</caption>}
         {children}
@@ -56,17 +59,39 @@ export function DataTable({ children, caption, tall = false }: { children: React
   );
 }
 
-export const Empty = ({ children }: { children: ReactNode }) => <p className="empty-state admin-empty">{children}</p>;
+/** Plain muted line inside a card; pass `title` for the designed empty state (icon + heading) on its own. */
+export function Empty({ children, title, icon }: { children: ReactNode; title?: string; icon?: ReactNode }) {
+  if (!title) return <p className="admin-empty">{children}</p>;
+  return (
+    <EmptyState title={title} icon={icon ?? <CheckCircle2 size={40} />}>
+      {children}
+    </EmptyState>
+  );
+}
+
+/** Inline message under the page title; stays until dismissed. Errors are announced as alerts. */
+export function Notice({ tone = 'success', children, onDismiss, testId }: { tone?: 'success' | 'error' | 'warning'; children: ReactNode; onDismiss?: () => void; testId?: string }) {
+  return (
+    <div className={`admin-notice admin-notice--${tone}`} role={tone === 'error' ? 'alert' : 'status'} data-testid={testId}>
+      <span>{children}</span>
+      {onDismiss && (
+        <button type="button" onClick={onDismiss}>
+          Dismiss
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** "Showing 25 of 140" with a button that reveals more. */
 export function ShowMore({ shown, total, step, onMore }: { shown: number; total: number; step: number; onMore: () => void }) {
   if (total <= shown) return null;
   return (
     <p className="admin-showmore">
-      Showing {shown} of {total}.{' '}
-      <button type="button" className="btn-sm btn-ghost" onClick={onMore}>
+      <span>Showing {shown} of {total}</span>
+      <Button variant="secondary" size="sm" onClick={onMore}>
         Show {Math.min(step, total - shown)} more
-      </button>
+      </Button>
     </p>
   );
 }

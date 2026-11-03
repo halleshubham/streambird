@@ -1,7 +1,6 @@
 import { monthlyHoursLabel } from '../lib/planCopy';
 import { useEffect, useState } from 'react';
 import { CookieSettingsLink } from '../components/CookieSettingsLink';
-import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Radio,
@@ -13,24 +12,17 @@ import {
   Link2,
   ShieldCheck,
   CheckCircle2,
-  ArrowRight,
 } from 'lucide-react';
 import * as authApi from '../api/auth';
 import { docsUrl } from '../docs';
 import { getPublicPlans } from '../api/plans';
 import { getBillingConfig } from '../api/billing';
-import type { Platform, PublicPlan } from '../types/api';
+import type { PublicPlan } from '../types/api';
 import { FacebookLogo, GoogleLogo } from '../components/AuthLogos';
 import { PlatformBadge } from '../components/PlatformBadge';
-import { PlatformLogo } from '../components/PlatformLogo';
+import { BrandLink } from '../components/PublicLayout';
+import { Badge, buttonClass } from '../components/ui';
 import { HeroShowcase } from '../components/HeroShowcase';
-
-/** The platforms the hero headline cycles through (CSS keyframes, no JS timer). */
-const HERO_WORDS: { platform: Platform; label: string; color: string }[] = [
-  { platform: 'youtube', label: 'YouTube', color: '#ff0033' },
-  { platform: 'facebook', label: 'Facebook', color: '#1877f2' },
-  { platform: 'twitch', label: 'Twitch', color: '#9146ff' },
-];
 
 const FEATURES = [
   {
@@ -60,8 +52,8 @@ const FEATURES = [
   },
   {
     icon: Link2,
-    title: "Real status, not guesswork",
-    body: "See each destination's actual platform-reported status -- not just \"we configured it\" -- plus a direct watch link you can copy and share.",
+    title: 'Schedule ahead, vertical or landscape',
+    body: "Plan a stream ahead of time and pick 9:16 or 16:9 when you create it. Once live, see each destination's real platform-reported status, with a watch link you can copy.",
   },
 ];
 
@@ -211,197 +203,207 @@ export function LandingPage() {
   const tiers: Tier[] = livePlans && livePlans.length > 0 ? livePlans.map(planToTier) : TIERS;
 
   return (
-    <div className="landing-page">
-      <header className="landing-nav">
-        <div className="landing-nav-inner">
-          <Link to="/" className="brand">
-            <img src="/logo.png" alt="" className="brand-logo" />
-            StreamBird
-          </Link>
-          <nav className="landing-nav-links">
-            <a href="#features">Features</a>
-            <a href="#pricing">Pricing</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <Link to="/login" className="icon-btn icon-btn--small">
-            Log in
-          </Link>
-        </div>
+    <div className="pub-page landing-page">
+      <header className="pub-header pub-landing-nav">
+        <BrandLink />
+        <nav className="pub-landing-links" aria-label="Sections">
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <Link to="/login" className={buttonClass('secondary', 'sm')}>
+          Log in
+        </Link>
       </header>
 
-      <div className="landing-hero-wrap">
-      <div className="hero-glow" aria-hidden="true">
-        <span className="hero-glow-a" />
-        <span className="hero-glow-b" />
-      </div>
-      <section className="landing-hero">
-        <p className="hero-pill">
-          <span className="hero-live-dot" aria-hidden="true" /> Live from your browser &middot; nothing to install
-        </p>
-        <h1 className="hero-title">
-          <span className="visually-hidden">Go live on YouTube, Facebook and Twitch from one browser tab.</span>
-          <span aria-hidden="true">
-            Go live on{' '}
-            <span className="hero-rotator">
-              {HERO_WORDS.map((w, i) => (
-                <span key={w.platform} className="hero-word" style={{ '--c': w.color, '--i': i } as CSSProperties}>
-                  <PlatformLogo platform={w.platform} size={34} /> {w.label}
-                </span>
-              ))}
-            </span>{' '}
-            from one browser tab.
-          </span>
-        </h1>
-        <p className="landing-subhead">
-          StreamBird broadcasts to YouTube, Facebook, Twitch, and more -- simultaneously -- with a built-in
-          multi-guest studio, mix-minus audio, and live branding overlays. No app to install, no
-          managed-cloud markup.
-        </p>
-        <div className="landing-cta-row">
-          <Link to="/login" className="go-live-cta">
-            Start free
-          </Link>
-          <span className="auth-chip-row">
-            <a href={authApi.googleLoginUrl()} className="button-like auth-chip" aria-label="Sign in with Google">
+      <section className="pub-hero" id="top">
+        <div className="pub-hero-copy">
+          <Badge tone="scheduled" className="pub-hero-pill">
+            Live from your browser &middot; nothing to install
+          </Badge>
+          <h1>
+            Go live once.
+            <br />
+            Be everywhere.
+          </h1>
+          <p className="pub-hero-lead">
+            Stream from your browser to YouTube, Facebook and Twitch at the same time, with a built-in multi-guest studio,
+            mix-minus audio and your own branding. No app to install, no managed-cloud markup.
+          </p>
+          <div className="pub-hero-actions">
+            <Link to="/login" className={buttonClass('primary', 'lg')}>
+              Go live free
+            </Link>
+            <a href="#how" className={buttonClass('ghost', 'lg')}>
+              See how it works
+            </a>
+          </div>
+          <div className="pub-hero-social">
+            <a href={authApi.googleLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Sign in with Google">
               <GoogleLogo /> Google
             </a>
-            <a href={authApi.facebookLoginUrl()} className="button-like auth-chip" aria-label="Continue with Facebook">
+            <a href={authApi.facebookLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Continue with Facebook">
               <FacebookLogo /> Facebook
             </a>
-          </span>
-          <a href="#pricing" className="chip-link chip-link--lg">
-            See pricing <ArrowRight size={16} />
-          </a>
+          </div>
+          <p className="pub-trust">
+            <ShieldCheck size={14} aria-hidden="true" /> No credit card to start &middot; Free tier included &middot; Self-hosted
+            relay, no vendor lock-in
+          </p>
         </div>
-        <p className="landing-trust-line">
-          <ShieldCheck size={14} /> No credit card to start &middot; Free tier included &middot;
-          Self-hosted relay, no vendor lock-in
-        </p>
-        <HeroShowcase />
-      </section>
-      </div>
-
-      <section id="features" className="landing-section">
-        <h2>Everything a live production needs, built in</h2>
-        <div className="landing-feature-grid">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="landing-feature-card">
-              <f.icon size={22} />
-              <h3>{f.title}</h3>
-              <p>{f.body}</p>
-            </div>
-          ))}
+        <div className="pub-hero-visual">
+          <HeroShowcase />
         </div>
       </section>
 
-      <section className="landing-section landing-section--alt">
-        <h2>How it works</h2>
-        <div className="landing-steps">
-          {STEPS.map((s, i) => (
-            <div key={s.title} className="landing-step">
-              <span className="landing-step-number">{i + 1}</span>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </div>
-          ))}
+      <section id="features" className="pub-section pub-section--white">
+        <div className="pub-wrap">
+          <p className="pub-eyebrow">Features</p>
+          <h2>Everything a live production needs, built in</h2>
+          <div className="pub-grid pub-grid--features">
+            {FEATURES.map((f) => (
+              <div key={f.title} className="pub-card pub-feature">
+                <span className="pub-feature-icon">
+                  <f.icon size={20} aria-hidden="true" />
+                </span>
+                <h3>{f.title}</h3>
+                <p>{f.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="landing-section">
-        <h2>Platforms</h2>
-        <div className="landing-platforms">
-          <PlatformBadge platform="youtube" />
-          <PlatformBadge platform="facebook" />
-          <PlatformBadge platform="twitch" />
-          <span className="badge">LinkedIn -- coming soon</span>
+      <section id="how" className="pub-section">
+        <div className="pub-wrap">
+          <p className="pub-eyebrow">How it works</p>
+          <h2>Three steps. Then you are live.</h2>
+          <ol className="pub-grid pub-grid--steps">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="pub-card pub-step">
+                <span className="pub-step-number" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <div>
+                  <h3>{s.title}</h3>
+                  <p>{s.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      <section id="pricing" className="landing-section landing-section--alt">
-        <h2>Pricing</h2>
-        <p className="landing-section-sub">
-          {paymentsOn
-            ? 'Pay online by UPI, card or netbanking. Monthly plans renew by autopay and you can cancel any time.'
-            : 'Billing is handled outside StreamBird for now -- these are the plans, reach out to get set up.'}
-        </p>
-        <div className="landing-currency-toggle">
-          <div className="segmented" role="group" aria-label="Currency">
+      <section className="pub-section pub-section--white pub-section--tight">
+        <div className="pub-wrap pub-platforms">
+          <h2>Stream to the places your audience already is</h2>
+          <div className="landing-platforms">
+            <PlatformBadge platform="youtube" />
+            <PlatformBadge platform="facebook" />
+            <PlatformBadge platform="twitch" />
+            <span className="badge">LinkedIn -- coming soon</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="pub-section">
+        <div className="pub-wrap">
+          <p className="pub-eyebrow">Pricing</p>
+          <h2>Start free. Pay when you grow.</h2>
+          <p className="pub-section-sub">
+            {paymentsOn
+              ? 'Pay online by UPI, card or netbanking. Monthly plans renew by autopay and you can cancel any time.'
+              : 'Billing is handled outside StreamBird for now -- these are the plans, reach out to get set up.'}
+          </p>
+          <div className="pub-seg" role="group" aria-label="Currency">
             <button type="button" className={currency === 'USD' ? 'active' : ''} aria-pressed={currency === 'USD'} onClick={() => setCurrency('USD')}>
               USD
             </button>
             <button type="button" className={currency === 'INR' ? 'active' : ''} aria-pressed={currency === 'INR'} onClick={() => setCurrency('INR')}>
-              INR <span className="segmented-sub">India pricing</span>
+              INR <span>India pricing</span>
             </button>
           </div>
+          <div className="pub-grid pub-grid--plans">
+            {tiers.map((t) => (
+              <div key={t.name} className={`pub-card pub-plan${t.highlight ? ' pub-plan--highlight' : ''}`}>
+                <h3>{t.name}</h3>
+                <p className="pub-price">
+                  {t.price[currency]}
+                  <span>{t.perDay ? '/day' : '/mo'}</span>
+                </p>
+                <ul>
+                  <li><CheckCircle2 size={16} aria-hidden="true" /> {t.hours}</li>
+                  <li><CheckCircle2 size={16} aria-hidden="true" /> {t.destinations}</li>
+                  <li><CheckCircle2 size={16} aria-hidden="true" /> {t.guests}</li>
+                  <li><CheckCircle2 size={16} aria-hidden="true" /> Branding, mix-minus audio & compositing included</li>
+                </ul>
+                {paymentsOn && t.payable && t.key && (
+                  <Link to={`/billing?plan=${t.key}`} className={buttonClass(t.highlight ? 'primary' : 'secondary', 'md', 'ui-btn--block')}>
+                    Buy
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="landing-custom-pricing pub-custom">
+            Need more guests, a team or enterprise set-up, or a different mix? <strong>Custom / enterprise pricing</strong> is available -- email{' '}
+            <a href="mailto:support@shackyapps.in?subject=StreamBird%20customised%20pricing&body=Hi%2C%20I%27d%20like%20a%20quote%20for%20StreamBird.%0A%0AHow%20many%20hours%20a%20month%3A%20%0AGuests%20at%20once%3A%20%0ADestinations%3A%20%0AAnything%20else%3A%20">
+              support@shackyapps.in
+            </a>{' '}
+            with roughly how you stream and we'll reply with a quote.
+          </p>
         </div>
-        <div className="landing-pricing-grid">
-          {tiers.map((t) => (
-            <div key={t.name} className={`landing-price-card${t.highlight ? ' landing-price-card--highlight' : ''}`}>
-              <h3>{t.name}</h3>
-              <p className="landing-price">
-                {t.price[currency]}
-                <span>{t.perDay ? '/day' : '/mo'}</span>
-              </p>
-              <ul>
-                <li><CheckCircle2 size={14} /> {t.hours}</li>
-                <li><CheckCircle2 size={14} /> {t.destinations}</li>
-                <li><CheckCircle2 size={14} /> {t.guests}</li>
-                <li><CheckCircle2 size={14} /> Branding, mix-minus audio & compositing included</li>
-              </ul>
-              {paymentsOn && t.payable && t.key && (
-                <Link to={`/billing?plan=${t.key}`} className="icon-btn icon-btn--small">
-                  Buy
-                </Link>
-              )}
+      </section>
+
+      <section id="faq" className="pub-section pub-section--white">
+        <div className="pub-wrap pub-wrap--narrow">
+          <h2>Questions, answered</h2>
+          <div className="pub-faq">
+            {FAQ.map((item, i) => (
+              <details key={item.q} open={i === 0}>
+                <summary>
+                  {item.q}
+                  <span aria-hidden="true" className="pub-faq-mark" />
+                </summary>
+                <p>{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="pub-section">
+        <div className="pub-wrap">
+          <div className="pub-cta">
+            <h2>Ready when you are.</h2>
+            <p>Set up your company in a minute and go live today.</p>
+            <div className="pub-cta-actions">
+              <Link to="/signup-company" className="pub-cta-primary">
+                Create company
+              </Link>
+              <Link to="/login" className="pub-cta-secondary">
+                Log in
+              </Link>
             </div>
-          ))}
-        </div>
-        <p className="landing-custom-pricing">
-          Need more guests, a team or enterprise set-up, or a different mix? <strong>Custom / enterprise pricing</strong> is available -- email{' '}
-          <a href="mailto:support@shackyapps.in?subject=StreamBird%20customised%20pricing&body=Hi%2C%20I%27d%20like%20a%20quote%20for%20StreamBird.%0A%0AHow%20many%20hours%20a%20month%3A%20%0AGuests%20at%20once%3A%20%0ADestinations%3A%20%0AAnything%20else%3A%20">
-            support@shackyapps.in
-          </a>{' '}
-          with roughly how you stream and we'll reply with a quote.
-        </p>
-      </section>
-
-      <section id="faq" className="landing-section">
-        <h2>Frequently asked questions</h2>
-        <div className="landing-faq">
-          {FAQ.map((item) => (
-            <div key={item.q} className="landing-faq-item">
-              <h3>{item.q}</h3>
-              <p>{item.a}</p>
-            </div>
-          ))}
+          </div>
         </div>
       </section>
 
-      <section className="landing-section landing-section--cta">
-        <h2>Ready to put the right tool to work?</h2>
-        <div className="landing-cta-row">
-          <Link to="/login" className="go-live-cta">
-            Start free
-          </Link>
-          <Link to="/signup-company" className="button-like">
-            Create a company account
-          </Link>
+      <footer className="pub-footer">
+        <div className="pub-wrap pub-footer-inner">
+          <span>
+            <Clapperboard size={14} aria-hidden="true" /> StreamBird is part of{' '}
+            <a href="https://shackyapps.in" target="_blank" rel="noopener">
+              ShackyApps
+            </a>
+          </span>
+          <span>
+            <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
+          </span>
+          <span>
+            <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>
+          </span>
         </div>
-      </section>
-
-      <footer className="landing-footer">
-        <span>
-          <Clapperboard size={14} /> StreamBird is part of{' '}
-          <a href="https://shackyapps.in" target="_blank" rel="noopener">
-            ShackyApps
-          </a>
-        </span>
-        <span>
-          <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
-        </span>
-        <span>
-          <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>
-        </span>
       </footer>
     </div>
   );

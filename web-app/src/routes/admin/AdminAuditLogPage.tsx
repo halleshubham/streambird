@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ScrollText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import * as superadminApi from '../../api/superadmin';
 import { BirdLoader } from '../../components/BirdLoader';
-import { BirdBusy } from '../../components/BirdBusy';
-import { DataTable, Empty, PageHeader, When, humanize, shortId } from '../../components/admin/adminKit';
+import { Button, Card, Spinner } from '../../components/ui';
+import { DataTable, Empty, Notice, PageHeader, When, humanize, shortId } from '../../components/admin/adminKit';
 import { ApiError } from '../../api/client';
 import type { AuditLogEntry } from '../../types/api';
 
@@ -46,26 +47,32 @@ export function AdminAuditLogPage() {
 
   return (
     <>
-      <PageHeader title="Audit log" subtitle="Everything a superadmin changed, newest first." />
-      {error && <p className="error" role="alert">{error}</p>}
+      <PageHeader title="Audit log" subtitle="Every admin action, newest first." />
+      {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
       {entries === null ? (
         <BirdLoader loading compact label="Loading audit log…" />
       ) : entries.length === 0 ? (
-        <Empty>No superadmin actions recorded yet.</Empty>
+        <Empty title="Nothing recorded yet" icon={<ScrollText size={40} />}>Superadmin actions (approvals, suspensions, plan and subscription edits) will be listed here.</Empty>
       ) : (
         <>
           <div className="admin-toolbar">
-            <select aria-label="Filter by action" value={action} onChange={(e) => setAction(e.target.value)}>
+            <select className="ui-input ui-select" aria-label="Filter by action" value={action} onChange={(e) => setAction(e.target.value)}>
               <option value="">All actions</option>
               {actions.map((a) => (
                 <option key={a} value={a}>{humanize(a)}</option>
               ))}
             </select>
+            {action && (
+              <Button variant="secondary" size="sm" onClick={() => setAction('')}>
+                Clear
+              </Button>
+            )}
             <span className="admin-toolbar-count">{shown.length} shown</span>
           </div>
           {shown.length === 0 ? (
             <Empty>No loaded entries for that action.</Empty>
           ) : (
+            <Card className="admin-section">
             <DataTable caption="Audit log">
               <thead>
                 <tr>
@@ -79,7 +86,7 @@ export function AdminAuditLogPage() {
                 {shown.map((e) => (
                   <tr key={e.id}>
                     <td className="nowrap"><When iso={e.createdAt} /></td>
-                    <td><span className="admin-cell-main">{humanize(e.action)}</span></td>
+                    <td><span className="admin-action-tag">{humanize(e.action)}</span></td>
                     <td>
                       <span className="admin-cell-sub">{humanize(e.targetType)}</span>
                       {e.targetId &&
@@ -92,7 +99,7 @@ export function AdminAuditLogPage() {
                     <td>
                       {e.metadata && Object.keys(e.metadata).length > 0 ? (
                         <details className="admin-details">
-                          <summary>View</summary>
+                          <summary>Show details</summary>
                           <pre className="audit-log-metadata">{JSON.stringify(e.metadata, null, 2)}</pre>
                         </details>
                       ) : (
@@ -103,15 +110,16 @@ export function AdminAuditLogPage() {
                 ))}
               </tbody>
             </DataTable>
+            </Card>
           )}
           {more && (
             <p className="admin-showmore">
               {loadingMore ? (
-                <BirdBusy />
+                <Spinner size="sm" />
               ) : (
-                <button type="button" className="btn-sm btn-ghost" onClick={() => void loadMore()}>
+                <Button variant="secondary" size="sm" onClick={() => void loadMore()}>
                   Load older entries
-                </button>
+                </Button>
               )}
             </p>
           )}

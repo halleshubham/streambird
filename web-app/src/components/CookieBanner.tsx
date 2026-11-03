@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import '../styles/public.css';
+import { Button } from './ui';
 import { CONSENT_EVENTS, getConsent, setConsent, useConsentBannerEnabled } from '../lib/consent';
 
 /** The studio and the guest page are working screens: no banner over the controls (no answer = no analytics). */
@@ -30,18 +32,18 @@ export function CookieBanner() {
   };
 
   return (
-    <section className="cookie-banner" role="region" aria-label="Cookie consent">
+    <section className="pub-cookie" role="region" aria-label="Cookie consent">
       <p>
         We use essential cookies to keep you signed in. With your OK we also use Google Analytics to see which pages are
         used, so we can improve StreamBird. <Link to="/privacy#cookies">Read how we use cookies</Link>.
       </p>
-      <div className="cookie-banner-actions">
-        <button type="button" className="cookie-btn" onClick={() => choose('denied')}>
+      <div className="pub-cookie-actions">
+        <Button variant="secondary" onClick={() => choose('denied')}>
           Reject
-        </button>
-        <button type="button" className="cookie-btn" onClick={() => choose('granted')}>
+        </Button>
+        <Button variant="secondary" onClick={() => choose('granted')}>
           Accept
-        </button>
+        </Button>
       </div>
     </section>
   );

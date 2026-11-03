@@ -5,10 +5,10 @@ import { createPreset, deletePreset, listPresets, startPreset, updatePreset } fr
 import { createStream } from '../api/streams';
 import { ApiError } from '../api/client';
 import { PresetForm } from './PresetForm';
-import { BirdBusy } from './BirdBusy';
-import { presetSummary } from '../lib/presets';
+import { destinationList, presetOptionsLine } from '../lib/presets';
 import { seedStudioFromPreset } from '../studio/useHostStudio';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, StreamPreset } from '../types/api';
+import { Badge, Button, confirm, toast } from './ui';
 
 /** Same ceiling as the server (src/presets: MAX_PRESETS_PER_ACCOUNT). */
 export const MAX_PRESETS = 20;
@@ -86,6 +86,7 @@ export function PresetsSection({
       }
       onChange(await listPresets()); // the server's order (last used first) is the one to show
       setEditing(null);
+      toast.success(`Preset "${name}" saved`);
     } catch (e) {
       fail(e, 'Could not save the preset.');
     } finally {
@@ -94,11 +95,19 @@ export function PresetsSection({
   }
 
   async function remove(preset: StreamPreset) {
-    if (!window.confirm(`Delete the preset "${preset.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete the preset "${preset.name}"?`,
+      body: 'Its card disappears from your dashboard. Streams you already made from it are not affected.',
+      confirmLabel: 'Delete preset',
+      cancelLabel: 'Keep preset',
+      destructive: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await deletePreset(preset.id);
       onChange(presets.filter((p) => p.id !== preset.id));
+      toast.success(`Preset "${preset.name}" deleted`);
     } catch (e) {
       fail(e, 'Could not delete the preset.');
     }
@@ -126,43 +135,64 @@ export function PresetsSection({
 
   const busyAny = starting !== null;
 
+  const chips = (config: PresetConfig) => (
+    <div className="ha-chip-row">
+      {destinationList(config.destinationIds, connections).map((n) => (
+        <Badge key={n}>{n}</Badge>
+      ))}
+      {config.orientation === 'portrait' && <Badge>9:16</Badge>}
+    </div>
+  );
+
   return (
-    <section className="presets" aria-labelledby="presets-title">
-      <div className="section-header">
+    <section className="presets ha-presets" aria-labelledby="presets-title">
+      <div className="ha-section-head">
         <h2 id="presets-title">Ready when you are</h2>
       </div>
       <div className="preset-grid">
         {presets.length === 0 && editing?.kind !== 'new' && (
-          <article className="preset-card preset-card--default" aria-label="Go live">
+          <article className="preset-card preset-card--default preset-card--hero" aria-label="Go live">
             <h3 className="preset-name">Go live</h3>
-            <p className="preset-summary">{presetSummary(defaultConfig, connections, kits)}</p>
-            <button type="button" className="preset-golive" disabled={busyAny} onClick={() => void goLiveWithDefaults()}>
-              {starting === 'default' ? <BirdBusy /> : <Radio size={18} />} Go live now
-            </button>
-            <button type="button" className="link-button preset-save-link" onClick={() => setEditing({ kind: 'new', config: defaultConfig })}>
-              <Save size={14} /> Save as preset
-            </button>
+            {chips(defaultConfig)}
+            <p className="preset-summary">{presetOptionsLine(defaultConfig, kits)}</p>
+            <Button className="preset-golive" size="lg" busy={starting === 'default'} disabled={busyAny} icon={<Radio size={18} aria-hidden="true" />} onClick={() => void goLiveWithDefaults()}>
+              Go live now
+            </Button>
+            <div className="ha-preset-tools">
+              <button type="button" className="ha-quiet" onClick={() => setEditing({ kind: 'new', config: defaultConfig })}>
+                <Save size={14} aria-hidden="true" /> Save as preset
+              </button>
+            </div>
           </article>
         )}
 
-        {presets.map((p) =>
+        {presets.map((p, i) =>
           editing?.kind === 'edit' && editing.id === p.id ? (
             <div key={p.id} className="preset-card--wide">
               {form(p.name, p.config, 'Save changes')}
             </div>
           ) : (
-            <article key={p.id} className="preset-card" aria-label={p.name}>
+            <article key={p.id} className={`preset-card${i === 0 ? ' preset-card--hero' : ''}`} aria-label={p.name}>
               <h3 className="preset-name">{p.name}</h3>
-              <p className="preset-summary">{presetSummary(p.config, connections, kits)}</p>
-              <button type="button" className="preset-golive" aria-label={`Go live now with ${p.name}`} disabled={busyAny} onClick={() => void goLive(p)}>
-                {starting === p.id ? <BirdBusy /> : <Radio size={18} />} Go live now
-              </button>
-              <div className="preset-tools">
-                <button type="button" className="icon-btn icon-btn--small" aria-label={`Edit preset ${p.name}`} onClick={() => setEditing({ kind: 'edit', id: p.id })}>
-                  <Pencil size={14} /> Edit
+              {chips(p.config)}
+              <p className="preset-summary">{presetOptionsLine(p.config, kits)}</p>
+              <Button
+                className="preset-golive"
+                size="lg"
+                aria-label={`Go live now with ${p.name}`}
+                busy={starting === p.id}
+                disabled={busyAny}
+                icon={<Radio size={18} aria-hidden="true" />}
+                onClick={() => void goLive(p)}
+              >
+                Go live now
+              </Button>
+              <div className="ha-preset-tools">
+                <button type="button" className="ha-quiet" aria-label={`Edit preset ${p.name}`} onClick={() => setEditing({ kind: 'edit', id: p.id })}>
+                  <Pencil size={14} aria-hidden="true" /> Edit
                 </button>
-                <button type="button" className="icon-btn icon-btn--small icon-btn--danger" aria-label={`Delete preset ${p.name}`} onClick={() => void remove(p)}>
-                  <Trash2 size={14} /> Delete
+                <button type="button" className="ha-quiet ha-quiet--danger" aria-label={`Delete preset ${p.name}`} onClick={() => void remove(p)}>
+                  <Trash2 size={14} aria-hidden="true" /> Delete
                 </button>
               </div>
             </article>
@@ -174,13 +204,18 @@ export function PresetsSection({
         ) : (
           presets.length < MAX_PRESETS && (
             <button type="button" className="preset-card preset-card--new" onClick={() => setEditing({ kind: 'new' })}>
-              <Plus size={22} aria-hidden="true" />
+              <Plus size={28} aria-hidden="true" />
               <span>New preset</span>
+              <small>Save title, destinations and look</small>
             </button>
           )
         )}
       </div>
-      {error && editing === null && <p className="error">{error}</p>}
+      {error && editing === null && (
+        <p className="ha-error" role="alert" style={{ marginTop: 12 }}>
+          {error}
+        </p>
+      )}
     </section>
   );
 }

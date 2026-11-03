@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { APP, apiHeaders, patchFreePlan, signIn } from './helpers';
+import { APP, acceptConfirm, apiHeaders, cancelConfirm, patchFreePlan, signIn } from './helpers';
 
 // Presets on the dashboard ("Ready when you are"), the setup form's "More options", and the studio's bottom bar.
 
@@ -68,7 +68,8 @@ test.describe('dashboard presets', () => {
     await page.getByRole('button', { name: 'Save preset' }).click();
 
     const card = page.getByRole('article', { name: 'Tall show' });
-    await expect(card).toContainText('Twitch · Default look · 360p · ticker on · vertical');
+    await expect(card).toContainText('Twitch');
+    await expect(card).toContainText('Default look · 360p · ticker on · vertical');
     // The server holds exactly what the form had.
     const saved = (await (await api.get(`${APP}/api/presets`)).json())[0];
     expect(saved.config).toMatchObject({ orientation: 'portrait', quality: 'sd', tickerEnabled: true, tickerText: 'Breaking: it works' });
@@ -114,11 +115,12 @@ test.describe('dashboard presets', () => {
     expect(await names()).toEqual(['Second show', 'First']);
 
     // Delete asks first.
-    page.once('dialog', (d) => d.dismiss());
     await page.getByRole('button', { name: 'Delete preset First' }).click();
+    await expect(page.getByRole('alertdialog', { name: 'Delete the preset "First"?' })).toBeVisible();
+    await cancelConfirm(page);
     await expect(page.getByRole('article', { name: 'First' })).toBeVisible();
-    page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Delete preset First' }).click();
+    await acceptConfirm(page);
     await expect(page.getByRole('article', { name: 'First' })).toHaveCount(0);
     expect(await names()).toEqual(['Second show']);
   });
@@ -192,7 +194,7 @@ test.describe('setup form', () => {
       await page.locator('#brandKit').selectOption(kit.id);
       await expect(page.getByTestId('more-options-summary')).toHaveText('Acme brand · 720p · ticker off');
       await page.getByLabel(/Kit Twitch/).check();
-      await page.getByRole('button', { name: /Create and open studio/ }).click();
+      await page.getByRole('button', { name: /Go live now/ }).click();
       await expect(page).toHaveURL(/\/studio$/);
       const id = page.url().split('/streams/')[1].split('/')[0];
       const persisted = await page.evaluate((sid) => JSON.parse(localStorage.getItem(`streambird:studio:${sid}:v1`) ?? '{}'), id);
@@ -226,7 +228,7 @@ test.describe('setup form', () => {
     await addTwitch(api, 'Offer Twitch');
     await page.goto('/streams/new');
     await page.getByLabel(/Offer Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     const offer = page.getByTestId('save-preset-offer');
     await expect(offer).toBeVisible();
     await offer.getByRole('button', { name: 'Save preset' }).click();

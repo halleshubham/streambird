@@ -4,7 +4,8 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import * as authApi from '../../api/auth';
 import { ApiError } from '../../api/client';
-import { BirdBusy } from '../../components/BirdBusy';
+import { AuthHeading, AuthLayout } from '../../components/PublicLayout';
+import { Button, Input } from '../../components/ui';
 
 /** Superadmin login: password, then a code emailed after it checks out -- see
  * AuthController.superadminLogin / superadminVerify. Completely separate from
@@ -45,46 +46,47 @@ export function AdminLoginPage() {
   }
 
   return (
-    <div className="auth-page admin-auth">
-      <div className="auth-card admin-auth-card">
-        <div className="admin-auth-brand">
-          <img src="/logo.png" alt="" className="admin-auth-logo" />
-          <span className="admin-auth-name">StreamBird</span>
+    <AuthLayout className="admin-auth">
+      <div className="pub-auth-col">
+        <AuthHeading
+          title={codeSent ? 'Check your email' : 'Sign in'}
+          lead={
+            codeSent
+              ? `Step 2 of 2: enter the 6-digit code we sent to ${email.trim()}.`
+              : 'Step 1 of 2: your admin email and password. A code is emailed next.'
+          }
+        />
+        <div className="pub-auth-card admin-auth-card">
           <span className="admin-badge">ADMIN</span>
-        </div>
-        <h1>{codeSent ? 'Check your email' : 'Sign in'}</h1>
-        <p className="admin-subtitle">
-          {codeSent ? `Step 2 of 2: enter the 6-digit code we sent to ${email.trim()}.` : 'Step 1 of 2: your admin email and password. A code is emailed next.'}
-        </p>
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="username"
-            autoFocus
-            required
-            value={email}
-            disabled={codeSent}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            disabled={codeSent}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {codeSent && (
-            <>
-              <label htmlFor="code">Code</label>
-              <input
+          <form onSubmit={handleSubmit} className="pub-form">
+            <Input
+              id="email"
+              label="Email"
+              type="email"
+              autoComplete="username"
+              autoFocus
+              required
+              value={email}
+              disabled={codeSent}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <Input
+              id="password"
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              disabled={codeSent}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {codeSent && (
+              <Input
                 id="code"
+                label="Code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
+                className="pub-code-input"
                 autoFocus
                 required
                 maxLength={6}
@@ -92,20 +94,37 @@ export function AdminLoginPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
               />
-            </>
-          )}
-          {error && <p className="error" role="alert">{error}</p>}
-          <button type="submit" className="admin-auth-submit" disabled={busy || !email.trim() || !password || (codeSent && code.trim().length !== 6)}>
-            {busy && <BirdBusy />} {codeSent ? 'Verify and log in' : 'Continue'}
-          </button>
-          {codeSent && (
-            <button type="button" className="link-button" onClick={() => { setCodeSent(false); setCode(''); setError(null); }}>
-              Start over
-            </button>
-          )}
-        </form>
-        <p className="admin-auth-note">Restricted area. Every admin action is recorded in the audit log.</p>
+            )}
+            {error && (
+              <p className="pub-form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <Button
+              type="submit"
+              size="lg"
+              block
+              busy={busy}
+              disabled={!email.trim() || !password || (codeSent && code.trim().length !== 6)}
+            >
+              {codeSent ? 'Verify and log in' : 'Continue'}
+            </Button>
+            {codeSent && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setCodeSent(false);
+                  setCode('');
+                  setError(null);
+                }}
+              >
+                Start over
+              </Button>
+            )}
+          </form>
+        </div>
+        <p className="pub-fine">Restricted area. Every admin action is recorded in the audit log.</p>
       </div>
-    </div>
+    </AuthLayout>
   );
 }
