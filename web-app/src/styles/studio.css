@@ -1,0 +1,839 @@
+/* ==========================================================================
+   Host studio chrome (redesign). App chrome only: the broadcast canvas is untouched.
+   The studio is always dark: `.studio-shell` re-points the colour tokens at their dark values, so every
+   legacy panel (Look/Titles/Ads/Slides...) turns dark without its own CSS changing.
+   Layout: top bar (title, chips) / picture / bottom dock / right Customize drawer (desktop) or bottom sheet (phone).
+   ========================================================================== */
+
+.studio-shell {
+  --ink: #f3f1fb;
+  --muted: #c9c4de;
+  --bg: #0e0c16;
+  --surface: #14121f;
+  --line: #2b2740;
+  --line-strong: #3d3858;
+  --soft: #231f38;
+  --brand-text: #c4b5fd;
+  --live-soft: #3a1a1e;
+  --danger-text: #f58a8d;
+  --danger-soft: #3a1a1e;
+  --success-text: #34d399;
+  --warning-text: #fbbf24;
+  --accent: #a78bfa;
+  --accent-hover: #c4b5fd;
+  --warning: #fbbf24;
+  --text: var(--muted);
+  --text-h: var(--ink);
+  --card-bg: var(--surface);
+  --border: var(--line);
+  --error: var(--danger-text);
+  --drawer-w: 440px;
+  --dock-h: 88px;
+  color-scheme: dark;
+  color: var(--muted);
+  background: var(--bg);
+  min-height: 100svh;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0 24px calc(var(--dock-h) + 24px);
+  transition: padding-right 0.18s ease;
+}
+.studio-shell button:not(.ui-btn) {
+  background: var(--soft);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.studio-shell button:hover:not(:disabled):not(.ui-btn) {
+  background: color-mix(in srgb, var(--soft) 70%, var(--brand));
+  border-color: var(--line-strong);
+}
+.studio-shell .icon-btn--accent,
+.studio-shell .icon-btn--accent:hover:not(:disabled) {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+.studio-shell .icon-btn--danger,
+.studio-shell .icon-btn--danger:hover:not(:disabled) {
+  background: transparent;
+  border-color: color-mix(in srgb, #e5484d 55%, transparent);
+  color: #ff8a8e;
+}
+.studio-shell .icon-btn--danger:hover:not(:disabled) {
+  background: #c9302f;
+  color: #fff;
+}
+.studio-shell .link-button,
+.studio-shell .link-button:hover:not(:disabled) {
+  background: none;
+  border: 0;
+  color: var(--ink);
+  text-decoration: underline;
+  font-weight: 700;
+}
+.studio-shell input,
+.studio-shell select,
+.studio-shell textarea {
+  background: #0e0c16;
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.studio-shell input[type='checkbox'] {
+  accent-color: #7c3aed;
+}
+.studio-shell input[type='range'] {
+  accent-color: #a78bfa;
+}
+.studio-shell a {
+  color: #c4b5fd;
+}
+.studio-shell .panel {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
+  border-radius: var(--radius-lg);
+}
+.studio-shell .docs-hint {
+  color: var(--muted);
+}
+.studio-shell .badge {
+  background: rgba(52, 211, 153, 0.18);
+  color: #6ee7b7;
+  border-radius: 11px;
+}
+.studio-shell .badge.badge-warning {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+}
+.studio-shell .badge.badge-accent {
+  background: rgba(124, 58, 237, 0.4);
+  color: #ede9fe;
+}
+.studio-shell .segmented {
+  background: rgba(255, 255, 255, 0.1);
+  border: 0;
+  border-radius: 18px;
+  padding: 3px;
+}
+.studio-shell .segmented button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+.studio-shell .segmented button.active,
+.studio-shell .segmented button.active:hover:not(:disabled) {
+  background: #7c3aed;
+  color: #fff;
+}
+
+/* ---- Top bar ---- */
+.studio-shell .studio-topbar {
+  position: relative;
+  top: auto;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-height: 72px;
+  margin: 0 0 8px;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.studio-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  min-width: 0;
+}
+.studio-brand .brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex: none;
+}
+.studio-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 34ch;
+}
+.studio-topbar-spacer {
+  flex: 1;
+}
+.studio-shell .studio-docs-link {
+  margin-left: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.studio-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  background: #d93a3f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+.studio-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: studio-pulse 1.4s ease-in-out infinite;
+}
+@keyframes studio-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.studio-shell .tb-btn,
+.studio-shell .studio-resolution-select,
+.studio-shell .tb-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.studio-shell .tb-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+.studio-shell .tb-btn--on,
+.studio-shell .tb-btn--on:hover:not(:disabled) {
+  background: #7c3aed;
+  color: #fff;
+}
+.studio-shell .tb-btn--icon {
+  width: 40px;
+  padding: 0;
+  justify-content: center;
+}
+.studio-shell .tb-select select,
+.studio-shell .studio-resolution-select select {
+  width: auto;
+  max-width: 130px;
+  margin: 0;
+  padding: 6px 4px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.studio-shell .tb-select select option,
+.studio-shell .studio-resolution-select select option,
+.studio-shell .tb-select select optgroup {
+  background: #14121f;
+  color: #fff;
+}
+.studio-shell .studio-topbar-selects {
+  gap: 8px;
+}
+.studio-shell .studio-topbar-group {
+  flex-wrap: nowrap;
+}
+.studio-shell .studio-customize-chip {
+  margin-left: 0;
+}
+.studio-shell .tb-label {
+  display: inline;
+}
+.studio-shell .tb-label--wide {
+  display: none;
+}
+
+/* ---- Popovers (invite under the top bar; camera/mic above the dock) ---- */
+.studio-shell .studio-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  left: auto;
+  z-index: 60;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-lg);
+  background: #14121f;
+  color: var(--ink);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.studio-shell .studio-invite-group .studio-popover {
+  right: 0;
+}
+.studio-shell .studio-device-row {
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.studio-shell .studio-device-row select {
+  height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.studio-shell .studio-popover-note {
+  color: var(--muted);
+}
+.studio-shell .studio-popover-note--ok {
+  color: #34d399;
+}
+.studio-shell .studio-popover-note--warn {
+  color: #fbbf24;
+}
+/* The camera/mic chooser opens upward from the dock so the dock never clips it. */
+.studio-shell .studio-devices-group--dock {
+  position: relative;
+}
+.studio-shell .studio-devices-group--dock .studio-popover {
+  top: auto;
+  bottom: calc(100% + 18px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(400px, calc(100vw - 32px));
+}
+
+/* ---- Banners and notices ---- */
+.studio-shell .studio-resume-banner,
+.studio-shell .studio-preview-banner,
+.studio-shell .studio-golive-notice {
+  margin: 0 0 12px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(20, 18, 31, 0.94);
+  color: var(--ink);
+}
+.studio-shell .studio-resume-banner {
+  border-color: #d97706;
+  background: #451a03;
+  color: #fde68a;
+}
+.studio-shell .studio-preview-banner {
+  border-color: rgba(167, 139, 250, 0.5);
+}
+.studio-shell .studio-preview-icon,
+.studio-shell .studio-golive-notice-icon {
+  color: #a78bfa;
+}
+.studio-shell .studio-send-quality {
+  display: inline-flex;
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-lg);
+  background: rgba(20, 18, 31, 0.94);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.studio-shell .studio-send-quality svg {
+  color: #34d399;
+}
+.studio-shell .studio-send-quality--limited {
+  background: #451a03;
+  border-color: #d97706;
+  color: #fde68a;
+}
+.studio-shell .studio-send-quality--limited svg {
+  color: #fbbf24;
+}
+.studio-shell .studio-status-toast p {
+  background: #fff;
+  color: #1c1830;
+  border: 0;
+  border-radius: 24px;
+  padding: 12px 20px;
+  font-weight: 700;
+}
+.studio-shell .studio-status-toast p.error {
+  background: #451a03;
+  color: #fde68a;
+}
+
+/* ---- Picture area ---- */
+.studio-shell .studio-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'video' 'below';
+  gap: 16px;
+}
+.studio-shell .studio-canvas {
+  border-radius: var(--radius-lg);
+}
+.studio-shell .studio-layout-note {
+  color: var(--muted);
+}
+.studio-shell .studio-main-below {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.studio-shell .studio-main-below > .panel {
+  margin: 0;
+}
+.studio-shell .destination-detail-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 0;
+}
+.studio-shell .destination-detail-row:first-child {
+  border-top: 0;
+}
+
+/* ---- Bottom dock ---- */
+.studio-shell .studio-dock,
+.studio-dock {
+  bottom: 24px;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 40px;
+  background: rgba(20, 18, 31, 0.94);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+.studio-dock .dock-btn,
+.studio-dock .tb-btn {
+  position: relative;
+  min-width: 52px;
+  height: 52px;
+  padding: 0 14px;
+  justify-content: center;
+  border: 0;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.studio-dock .dock-btn:hover:not(:disabled),
+.studio-dock .tb-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.studio-dock .dock-btn--on,
+.studio-dock .dock-btn--on:hover:not(:disabled) {
+  background: #7c3aed;
+  color: #fff;
+}
+.studio-dock .dock-btn--off,
+.studio-dock .dock-btn--off:hover:not(:disabled) {
+  background: rgba(229, 72, 77, 0.28);
+  color: #ffb3b6;
+}
+.studio-dock .dock-btn--end,
+.studio-dock .dock-btn--end:hover:not(:disabled) {
+  border: 2px solid #e5484d;
+  background: transparent;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+  padding: 0 24px;
+  margin-left: 4px;
+}
+.studio-dock .dock-btn--end:hover:not(:disabled) {
+  background: #c9302f;
+}
+.studio-dock .dock-btn--end .dock-label {
+  display: inline;
+}
+.studio-dock .tb-label {
+  display: none;
+}
+.studio-dock .tb-btn--recording .tb-label {
+  display: inline;
+}
+.studio-dock .tb-btn--danger {
+  background: rgba(229, 72, 77, 0.28);
+  color: #ffb3b6;
+}
+.studio-dock .go-live-button--dock {
+  height: 52px;
+  padding: 0 32px;
+  margin-left: 4px;
+  border-radius: 26px;
+  background: #d93a3f;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+}
+.studio-dock .go-live-button--dock:hover:not(:disabled) {
+  background: #b4232a;
+}
+.studio-dock .go-live-button--live {
+  background: #d93a3f;
+  opacity: 0.9;
+}
+.studio-dock .dock-customize {
+  display: none;
+}
+.studio-dock .tb-rec-dot {
+  color: #ff8a8e;
+}
+.studio-shell .studio-dock-wrap {
+  display: contents;
+}
+
+/* ---- Customize drawer / sheet ---- */
+.studio-shell .studio-side {
+  display: none;
+  grid-area: unset;
+}
+.studio-shell .studio-side.studio-side--open {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  z-index: 40;
+  width: var(--drawer-w);
+  max-width: 100vw;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+  background: #14121f;
+  box-shadow: none;
+}
+.studio-shell .studio-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 8px 24px;
+}
+.studio-shell .studio-side-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.studio-shell .studio-side-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.studio-shell .studio-tabs {
+  padding: 0 12px;
+  gap: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-x: auto;
+  flex: none;
+}
+.studio-shell .studio-tab,
+.studio-shell .studio-tab:hover:not(:disabled) {
+  flex: 1 0 auto;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 14px;
+}
+.studio-shell .studio-tab.active,
+.studio-shell .studio-tab.active:hover:not(:disabled) {
+  color: #fff;
+  border-bottom-color: #a78bfa;
+}
+.studio-shell .studio-tab-count {
+  background: #7c3aed;
+  color: #fff;
+}
+.studio-shell .studio-side [role='tabpanel'] {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+}
+.studio-shell .studio-side [role='tabpanel'][hidden] {
+  display: none;
+}
+.studio-shell .studio-side .panel {
+  background: none;
+  border: 0;
+  margin: 0 0 22px;
+  padding: 0;
+}
+.studio-shell .studio-section-label {
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.studio-shell .studio-side label {
+  color: var(--ink);
+}
+.studio-shell .studio-side .studio-section-label {
+  color: var(--muted);
+}
+/* People: one card per person */
+.studio-shell .participant-list {
+  gap: 12px;
+}
+.studio-shell .participant-item {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 14px;
+}
+.studio-shell .participant-row {
+  background: none;
+  border: 0;
+  padding: 0;
+  gap: 8px;
+}
+.studio-shell .participant-row-name {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.studio-shell .participant-row .icon-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--ink);
+  font-weight: 600;
+}
+.studio-shell .participant-row .icon-btn--accent {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+.studio-shell .participant-row .icon-btn--danger {
+  color: #ff8a8e;
+  border-color: rgba(229, 72, 77, 0.5);
+}
+.studio-shell .studio-side .ad-card,
+.studio-shell .kit-ad-slot {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+}
+
+/* ---- Slide controls under the picture ---- */
+.studio-shell .slide-controls {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- Stream ended ---- */
+.studio-ended {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(11, 10, 18, 0.9);
+}
+.studio-ended-card {
+  width: min(440px, 100%);
+  padding: 36px;
+  border-radius: var(--radius-lg);
+  background: #14121f;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  text-align: center;
+  color: var(--muted);
+}
+.studio-ended-card h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  color: var(--ink);
+}
+.studio-ended-card p {
+  margin: 0 0 20px;
+}
+.studio-ended-card .ui-btn {
+  text-decoration: none;
+}
+
+/* ---- Tour ---- */
+.studio-shell .studio-tour-card {
+  background: #14121f;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--muted);
+}
+.studio-shell .studio-tour-card h2 {
+  color: #fff;
+}
+.studio-tour-dots {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.studio-tour-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+.studio-tour-dots i.on {
+  background: #a78bfa;
+}
+
+/* ---- Desktop: the drawer sits beside the picture and the dock re-centres ---- */
+@media (min-width: 721px) {
+  .studio-shell.studio-shell--drawer {
+    padding-right: calc(var(--drawer-w) + 24px);
+  }
+  .studio-shell.studio-shell--drawer .studio-dock {
+    left: calc((100vw - var(--drawer-w)) / 2);
+    max-width: calc(100vw - var(--drawer-w) - 16px);
+  }
+  .studio-shell.studio-shell--drawer .studio-status-toast {
+    left: calc((100vw - var(--drawer-w)) / 2);
+  }
+  .studio-shell .studio-canvas {
+    max-height: calc(100svh - 72px - var(--dock-h) - 72px);
+  }
+}
+
+/* ---- Phone: a bottom sheet above the dock, compact top bar ---- */
+@media (max-width: 720px) {
+  .studio-shell {
+    padding: 0 12px calc(var(--dock-h) + 12px);
+    --dock-h: 84px;
+  }
+  .studio-shell .studio-topbar {
+    min-height: 0;
+    padding: 12px 0 4px;
+    gap: 8px;
+  }
+  .studio-brand {
+    flex: 1 1 60%;
+  }
+  .studio-title {
+    max-width: 22ch;
+  }
+  .studio-topbar-spacer {
+    display: none;
+  }
+  .studio-shell .studio-customize-chip {
+    display: none;
+  }
+  .studio-shell .tb-label {
+    display: inline;
+  }
+  .studio-shell .studio-topbar-group {
+    flex-wrap: wrap;
+  }
+  .studio-shell .studio-popover {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+  .studio-shell .studio-invite-group,
+  .studio-shell .studio-devices-group {
+    position: static;
+  }
+  .studio-shell .studio-topbar-selects .tb-select select,
+  .studio-shell .studio-topbar-selects .studio-resolution-select select {
+    max-width: 96px;
+  }
+  .studio-shell .studio-dock,
+  .studio-dock {
+    bottom: 12px;
+    gap: 6px;
+    padding: 8px;
+    max-width: calc(100vw - 16px);
+  }
+  .studio-dock .dock-btn,
+  .studio-dock .tb-btn {
+    min-width: 44px;
+    height: 48px;
+    padding: 0 10px;
+  }
+  .studio-dock .dock-btn--end {
+    padding: 0 12px;
+  }
+  .studio-dock .dock-btn--end .dock-label {
+    display: none;
+  }
+  .studio-dock .go-live-button--dock {
+    height: 48px;
+    padding: 0 18px;
+    font-size: 16px;
+  }
+  .studio-dock .dock-customize {
+    display: inline-flex;
+  }
+  .studio-shell .studio-side.studio-side--open {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 88px;
+    width: auto;
+    max-height: min(68svh, 560px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 20px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  }
+  .studio-shell .studio-side.studio-side--open::before {
+    content: '';
+    align-self: center;
+    flex: none;
+    width: 40px;
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.25);
+  }
+  .studio-shell .studio-side-head {
+    padding: 8px 12px 4px 20px;
+  }
+  .studio-shell .studio-side [role='tabpanel'] {
+    padding: 16px 16px 24px;
+  }
+  .studio-shell .studio-status-toast {
+    bottom: 96px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-shell {
+    transition: none;
+  }
+  .studio-live-dot {
+    animation: none;
+  }
+}
