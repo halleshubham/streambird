@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarPlus, Plug, Radio, Settings2 } from 'lucide-react';
+import { Radio } from 'lucide-react';
 import { getMyAccount } from '../api/accounts';
 import { listStreams } from '../api/streams';
 import { listConnections } from '../api/connections';
@@ -13,9 +13,14 @@ import { UsageMeter } from '../components/UsageMeter';
 import { BirdLoader } from '../components/BirdLoader';
 import { StreamListItem } from '../components/StreamListItem';
 import { UpcomingStreamItem } from '../components/UpcomingStreamItem';
+import { PageHeader } from '../components/host/HostKit';
 import { confirmAndDelete } from '../lib/deleteUpcoming';
-import { PlatformBadge } from '../components/PlatformBadge';
-import type { Account, BrandKit, EffectiveLimits, PlatformConnection, StreamListItem as StreamListItemType, StreamPreset } from '../types/api';
+import { PLATFORM_LABELS } from '../components/PlatformBadge';
+import { Card, EmptyState, buttonClass, cx } from '../components/ui';
+import type { Account, BrandKit, EffectiveLimits, Platform, PlatformConnection, StreamListItem as StreamListItemType, StreamPreset } from '../types/api';
+
+/** The platforms the Connections card offers a "Connect" row for when none is connected yet. */
+const OFFERED: Platform[] = ['youtube', 'facebook', 'twitch'];
 
 export function DashboardPage() {
   const [account, setAccount] = useState<Account | null>(null);
@@ -52,7 +57,21 @@ export function DashboardPage() {
   const loading = !account || !connections || !streams;
 
   if (error) {
-    return <p className="error">{error}</p>;
+    return (
+      <div className="ha-page">
+        <EmptyState
+          tone="error"
+          title="We couldn't load your dashboard"
+          action={
+            <button type="button" className={buttonClass('secondary')} onClick={() => window.location.reload()}>
+              Try again
+            </button>
+          }
+        >
+          {error}
+        </EmptyState>
+      </div>
+    );
   }
 
   if (loading) {
@@ -61,85 +80,165 @@ export function DashboardPage() {
 
   const hasConnections = connections.length > 0;
 
+  if (!hasConnections) {
+    return (
+      <div className="ha-page dashboard">
+        <PageHeader title="Welcome to StreamBird" subtitle="Two quick steps and you can go live to every platform at once." />
+        <section className="ha-hero" aria-labelledby="first-run-title">
+          <div className="ha-hero-main">
+            <h2 id="first-run-title">Connect where you stream</h2>
+            <p>Link YouTube, Facebook or Twitch once. After that, going live is one tap.</p>
+            <div className="ha-hero-actions">
+              <Link to="/connections" className={buttonClass('primary', 'lg')}>
+                Connect a platform
+              </Link>
+              <Link to="/connections#rtmp" className="ha-hero-link">
+                Use a custom RTMP address
+              </Link>
+            </div>
+          </div>
+          <ol className="ha-steps" aria-label="Setup steps">
+            <li>
+              <span className="ha-step-n">1</span>
+              <span>Connect a platform</span>
+            </li>
+            <li>
+              <span className="ha-step-n">2</span>
+              <span>Save your first preset</span>
+            </li>
+            <li>
+              <span className="ha-step-n">3</span>
+              <span>Go live</span>
+            </li>
+          </ol>
+        </section>
+
+        <section aria-labelledby="presets-title">
+          <h2 id="presets-title" style={{ marginBottom: 16 }}>
+            Ready when you are
+          </h2>
+          <Card>
+            <h3 style={{ fontSize: 18 }}>No presets yet</h3>
+            <p className="ha-muted" style={{ marginTop: 6 }}>
+              A preset remembers your title, destinations and look, so next time you only tap Go live now. Connect a platform first to save one.
+            </p>
+          </Card>
+        </section>
+
+        <div className="ha-dash-grid ha-dash-grid--pair">
+          <Card as="section" aria-labelledby="up-title">
+            <h3 id="up-title">Upcoming streams</h3>
+            <p className="ha-muted ha-sm" style={{ marginTop: 4 }}>
+              Nothing scheduled. Connect a platform to schedule one and share a join link with guests.
+            </p>
+          </Card>
+          <Card as="section" aria-labelledby="rc-title">
+            <h3 id="rc-title">Recent streams</h3>
+            <p className="ha-muted ha-sm" style={{ marginTop: 4 }}>
+              Your streams will show up here after you go live.
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  const missing = OFFERED.filter((p) => !connections.some((c) => c.platform === p));
+
   return (
-    <div className="dashboard">
-      <UpgradeNudge account={account} />
-      <div className="dashboard-top">
-        <UsageMeter account={account} />
-        <Link
-          to="/streams/new"
-          className={`go-live-cta ${!hasConnections ? 'disabled' : ''}`}
-          aria-disabled={!hasConnections}
-          onClick={(e) => {
-            if (!hasConnections) e.preventDefault();
-          }}
-        >
-          <Radio size={16} /> Go live
-        </Link>
+    <div className="ha-page dashboard">
+      <PageHeader
+        title="Welcome back"
+        subtitle="Pick a preset and you are live in one tap."
+        actions={
+          <Link to="/streams/new" className={cx(buttonClass('secondary'), 'go-live-cta')}>
+            <Radio size={16} aria-hidden="true" /> New stream
+          </Link>
+        }
+      />
+
+      {presets && <PresetsSection connections={connections} kits={kits} limits={limits} presets={presets} onChange={setPresets} />}
+
+      <div className="ha-dash-grid">
+        <Card as="section" aria-labelledby="up-title">
+          <div className="ha-section-head" style={{ marginBottom: 0 }}>
+            <h2 id="up-title">Upcoming streams</h2>
+            {upcoming.length > 0 && (
+              <Link to="/streams/upcoming" className="ha-quiet">
+                See all
+              </Link>
+            )}
+          </div>
+          {upcoming.length > 0 ? (
+            <ul className="ha-list" style={{ marginTop: 8 }}>
+              {upcoming.slice(0, 5).map((s) => (
+                <UpcomingStreamItem
+                  key={s.id}
+                  variant="compact"
+                  stream={s}
+                  onDelete={(x) => void confirmAndDelete(x, setError).then((ok) => ok && setUpcoming((prev) => prev.filter((u) => u.id !== x.id)))}
+                />
+              ))}
+            </ul>
+          ) : (
+            <>
+              <p className="ha-muted ha-sm" style={{ marginTop: 4 }}>
+                Nothing scheduled. Schedule a stream to share a join link with guests.
+              </p>
+              <Link to="/streams/new" className="ha-quiet" style={{ paddingLeft: 0 }}>
+                Schedule a stream
+              </Link>
+            </>
+          )}
+        </Card>
+
+        <Card as="section" aria-labelledby="cn-title">
+          <div className="ha-section-head" style={{ marginBottom: 0 }}>
+            <h2 id="cn-title">Connections</h2>
+            <Link to="/connections" className="ha-quiet">
+              Manage
+            </Link>
+          </div>
+          <ul className="ha-list connections-summary" style={{ marginTop: 8 }}>
+            {connections.map((c) => (
+              <li key={c.id}>
+                <span className="ha-dot ha-dot--ok" aria-hidden="true" />
+                <span className="ha-b ha-list-main">{PLATFORM_LABELS[c.platform] ?? c.platform}</span>
+                <span className="ha-sm ha-muted">Connected</span>
+              </li>
+            ))}
+            {missing.map((p) => (
+              <li key={p}>
+                <span className="ha-dot" aria-hidden="true" />
+                <span className="ha-b ha-list-main">{PLATFORM_LABELS[p]}</span>
+                <Link to="/connections" className="ha-quiet" aria-label={`Connect ${PLATFORM_LABELS[p]}`}>
+                  Connect
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
 
-      {hasConnections && presets && <PresetsSection connections={connections} kits={kits} limits={limits} presets={presets} onChange={setPresets} />}
-
-      <section>
-        <div className="section-header">
-          <h2>Connections</h2>
-          <Link to="/connections" className="chip-link"><Settings2 size={14} /> Manage</Link>
-        </div>
-        {hasConnections ? (
-          <div className="connections-summary">
-            {connections.map((c) => (
-              <PlatformBadge key={c.id} platform={c.platform} />
-            ))}
-          </div>
-        ) : (
-          <p className="empty-state">
-            No platforms connected yet. <Link to="/connections" className="chip-link chip-link--sm"><Plug size={14} /> Connect one</Link> before you can go
-            live.
-          </p>
-        )}
-      </section>
-
-      <section>
-        <div className="section-header">
-          <h2>Upcoming streams</h2>
-          {upcoming.length > 0 ? <Link to="/streams/upcoming" className="chip-link">View all <ArrowRight size={14} /></Link> : null}
-        </div>
-        {upcoming.length > 0 ? (
-          <div className="stream-list">
-            {upcoming.slice(0, 5).map((s) => (
-              <UpcomingStreamItem
-                key={s.id}
-                stream={s}
-                onDelete={(x) => void confirmAndDelete(x, setError).then((ok) => ok && setUpcoming((prev) => prev.filter((u) => u.id !== x.id)))}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="empty-state">
-            Nothing scheduled. {hasConnections ? <Link to="/streams/new" className="chip-link chip-link--sm"><CalendarPlus size={14} /> Schedule a stream</Link> : 'Connect a platform to schedule one.'}
-          </p>
-        )}
-      </section>
-
-      <section>
-        <h2>Recent streams</h2>
+      <Card as="section" aria-labelledby="recent-title">
+        <h2 id="recent-title">Recent streams</h2>
         {streams.length > 0 ? (
-          <div className="stream-list">
+          <ul className="ha-list stream-list" style={{ marginTop: 8 }}>
             {streams.map((s) => (
               <StreamListItem key={s.id} stream={s} />
             ))}
-          </div>
+          </ul>
         ) : (
-          <p className="empty-state">
-            No streams yet.{' '}
-            {hasConnections ? (
-              <Link to="/streams/new" className="chip-link chip-link--sm"><Radio size={14} /> Create your first stream</Link>
-            ) : (
-              'Connect a platform to get started.'
-            )}
+          <p className="ha-muted ha-sm" style={{ marginTop: 4 }}>
+            Your streams will show up here after you go live.
           </p>
         )}
-      </section>
+      </Card>
+
+      <div className="ha-usage-row">
+        <UsageMeter account={account} />
+        <UpgradeNudge account={account} />
+      </div>
     </div>
   );
 }
