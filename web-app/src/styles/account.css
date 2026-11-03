@@ -26,6 +26,9 @@
 .acct-danger h2 {
   color: var(--danger-text);
 }
+.acct-danger a {
+  color: var(--brand-text);
+}
 .acct-danger p {
   color: var(--muted);
   margin: 8px 0 16px;

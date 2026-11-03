@@ -21,8 +21,8 @@ React 19 + react-router 7 + Vite + TypeScript, no UI framework, icons from `luci
 | `public/` | `logo.png` (also the loader bird), icons, `glitch-slate*.mp4/png` (fallback slates; see `studio.md`) |
 
 ### Routes (`App.tsx`)
-- Public: `/` (`HomeRoute`: anonymous → `LandingPage`, signed in → `/dashboard`), `/login`, `/signup-company`, `/privacy`, `/terms`, `/join/:token` (guest, no account), `/admin/login`, `*` → `NotFoundPage`.
-- Signed in (`ProtectedRoute`; unapproved non-superadmin → `PendingApprovalPage`): `/dashboard`, `/connections`, `/billing`, `/streams/new`, `/streams/upcoming`, `/streams/:id`, `/team` inside `AppShell`; **`/streams/:id/studio` is deliberately outside `AppShell`** (no nav bar).
+- Public: `/` (`HomeRoute`: anonymous → `LandingPage`, signed in → `/dashboard`), `/delete-account` (how to delete an account, linked from footers, login, privacy), `/account-deleted`, `/login`, `/signup-company`, `/privacy`, `/terms`, `/join/:token` (guest, no account), `/admin/login`, `*` → `NotFoundPage`.
+- Signed in (`ProtectedRoute`; unapproved non-superadmin → `PendingApprovalPage`): `/dashboard`, `/connections`, `/billing`, `/account` (details + Delete account danger card, `DeleteAccountModal`), `/streams/new`, `/streams/upcoming`, `/streams/:id`, `/team` inside `AppShell`; **`/streams/:id/studio` is deliberately outside `AppShell`** (no nav bar).
 - Superadmin (`SuperadminRoute` → `AdminShell`): `/admin`, `/analytics`, `/users`, `/accounts`, `/accounts/:id`, `/plans`, `/billing`, `/audit-log`. Add admin pages as siblings there.
 - Real API routes always live under `/api` (the SPA fallback serves `index.html` for every other GET). Exception: the public permanent live link `/stream/<slug>` is a backend redirect, so never add an SPA route under `/stream/`. The Connections page shows it per YouTube/Facebook connection (`LiveLink` in `ConnectionsPage.tsx`: `data-testid="live-link"`, button `aria-label="Copy live link for <name>"`, text becomes "Copied"). Dev: Vite proxies `/api` and `/socket.io` to `localhost:3000`.
 

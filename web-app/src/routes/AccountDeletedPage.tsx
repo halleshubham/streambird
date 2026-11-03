@@ -6,6 +6,7 @@ import { buttonClass } from '../components/ui';
 export function AccountDeletedPage() {
   return (
     <AuthLayout>
+      <div className="pub-auth-col">
       <AuthHeading
         eyebrow="Account deleted"
         title="Your account was deleted"
@@ -19,6 +20,7 @@ export function AccountDeletedPage() {
         <Link to="/" className={buttonClass('primary', 'md', 'ui-btn--block')}>
           Back to home
         </Link>
+      </div>
       </div>
     </AuthLayout>
   );

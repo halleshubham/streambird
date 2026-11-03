@@ -29,8 +29,11 @@ function deletionWarnings(p: DeletionPreview): string[] {
   if (p.activeSubscription) {
     lines.push(`Your ${p.activeSubscription.plan} autopay is cancelled${renewalText(p.activeSubscription.nextRenewal)}. Any paid time left is lost and not refunded.`);
   }
-  lines.push(`${plural(p.connectionsCount, 'connected channel')} are disconnected and their access tokens deleted.`.replace(/^1 connected channel are/, '1 connected channel is'));
-  lines.push(`${plural(p.assetsCount, 'uploaded brand file')}, your brand kits, presets, scheduled streams, guest invites and stream history are deleted.`);
+  if (p.connectionsCount > 0) {
+    lines.push(`${plural(p.connectionsCount, 'connected channel')} ${p.connectionsCount === 1 ? 'is' : 'are'} disconnected and ${p.connectionsCount === 1 ? 'its' : 'their'} access tokens deleted.`);
+  }
+  const files = p.assetsCount > 0 ? `${plural(p.assetsCount, 'uploaded brand file')}, ` : '';
+  lines.push(`${files}your brand kits, presets, scheduled streams, guest invites and stream history are deleted.`.replace(/^your/, 'Your'));
   lines.push('Payment records are kept without your name or email, because accounting law requires it.');
   return lines;
 }
