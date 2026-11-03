@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { APP, apiHeaders, patchFreePlan, signIn } from './helpers';
+import { APP, acceptConfirm, apiHeaders, cancelConfirm, patchFreePlan, signIn } from './helpers';
 
 // Presets on the dashboard ("Ready when you are"), the setup form's "More options", and the studio's bottom bar.
 
@@ -114,11 +114,12 @@ test.describe('dashboard presets', () => {
     expect(await names()).toEqual(['Second show', 'First']);
 
     // Delete asks first.
-    page.once('dialog', (d) => d.dismiss());
     await page.getByRole('button', { name: 'Delete preset First' }).click();
+    await expect(page.getByRole('alertdialog', { name: 'Delete the preset "First"?' })).toBeVisible();
+    await cancelConfirm(page);
     await expect(page.getByRole('article', { name: 'First' })).toBeVisible();
-    page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Delete preset First' }).click();
+    await acceptConfirm(page);
     await expect(page.getByRole('article', { name: 'First' })).toHaveCount(0);
     expect(await names()).toEqual(['Second show']);
   });

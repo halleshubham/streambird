@@ -1,15 +1,52 @@
 :root {
-  --text: #4b5563;
-  --text-h: #111827;
-  --bg: #f9fafb;
-  --card-bg: #fff;
-  --border: #e5e7eb;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --error: #dc2626;
+  /* ---- StreamBird design tokens (redesign foundation; documented in .claude/docs/frontend.md) ---- */
+  --ink: #1c1830;
+  --muted: #5b5675;
+  --bg: #f7f5fc;
+  --surface: #fff;
+  --line: #e3ddf3;
+  --line-strong: #cfc6ea;
+  --soft: #ebe7f6;
+  --brand: #7c3aed;
+  --brand-hover: #6d28d9;
+  --brand-deep: #5b21b6;
+  --brand-text: #5b21b6; /* brand-coloured text on --surface / --soft */
+  --on-brand: #fff;
+  --live: #e5484d; /* the live dot / large fills; white text on it only at >=18px bold (see --live-btn) */
+  --live-btn: #d93a3f; /* fill for buttons with white text (Go live) */
+  --live-soft: #fdecec;
+  --danger-btn: #c9302f; /* destructive buttons with white text */
+  --danger-btn-hover: #b4232a;
+  --danger-text: #b4262b; /* error / destructive text on --surface */
+  --danger-soft: #fdeceb;
+  --success: #34d399;
+  --success-text: #047857;
+  --success-soft: #e3f8ef;
   --warning: #d97706;
+  --warning-text: #b45309;
+  --warning-soft: #fdf1dc;
+  --neutral-soft: #e8e6ef;
+  --scrim: rgba(28, 24, 48, 0.55);
+  --shadow-pop: 0 20px 50px rgba(28, 24, 48, 0.22);
+  --radius: 12px; /* controls, inputs, small cards */
+  --radius-lg: 14px; /* cards, dialogs */
+  --radius-pill: 999px; /* buttons, chips, badges */
+  /* dark surfaces that stay dark in both colour schemes (studio, camera, hero) */
+  --studio-bg: #0e0c16;
+  --studio-panel: #14121f;
+  --studio-text: #c9c4de;
+  --tabbar-h: 0px; /* set to the bottom tab bar height by AppShell on phones; toasts and the cookie strip sit above it */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Legacy names: every existing page still reads these, so they map onto the tokens above. */
+  --text: var(--muted);
+  --text-h: var(--ink);
+  --card-bg: var(--surface);
+  --border: var(--line);
+  --accent: var(--brand);
+  --accent-hover: var(--brand-hover);
+  --error: var(--danger-text);
+
+  --sans: 'Plus Jakarta Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
   font: 16px/145% var(--sans);
@@ -24,14 +61,27 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #111318;
-    --card-bg: #1a1c23;
-    --border: #2e303a;
+    --ink: #f3f1fb;
+    --muted: #c9c4de;
+    --bg: #0e0c16;
+    --surface: #14121f;
+    --line: #2b2740;
+    --line-strong: #3d3858;
+    --soft: #231f38;
+    --brand-text: #c4b5fd;
+    --live-soft: #3a1a1e;
+    --danger-text: #f58a8d;
+    --danger-soft: #3a1a1e;
+    --success-text: #34d399;
+    --success-soft: #12302a;
+    --warning-text: #fbbf24;
+    --warning-soft: #33250f;
+    --neutral-soft: #26233a;
+    --scrim: rgba(0, 0, 0, 0.66);
+    --shadow-pop: 0 20px 50px rgba(0, 0, 0, 0.55);
+    /* legacy link/accent text must stay readable on dark surfaces */
     --accent: #a78bfa;
     --accent-hover: #c4b5fd;
-    --error: #f87171;
     --warning: #fbbf24;
   }
 }
@@ -65,14 +115,14 @@ p {
 }
 
 .success {
-  color: #16a34a;
+  color: var(--success-text);
   font-size: 14px;
 }
 
 button {
   font: inherit;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--accent);
   background: var(--accent);
   color: #fff;
@@ -117,7 +167,7 @@ select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--card-bg);
   color: var(--text-h);
   margin-bottom: 12px;
@@ -403,24 +453,8 @@ input[type="range"] {
   background: var(--error);
 }
 
-/* ---- App shell ---- */
+/* ---- App shell: moved to components/ui/shell.css (AppShell/AdminShell). Only shared bits stay here. ---- */
 
-.app-shell {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--card-bg);
-}
-
-.app-header .brand,
 .landing-nav .brand {
   display: inline-flex;
   align-items: center;
@@ -444,85 +478,6 @@ input[type="range"] {
 .brand-heading .brand-logo {
   width: 28px;
   height: 28px;
-}
-
-.app-header nav {
-  display: flex;
-  gap: 16px;
-  flex: 1;
-}
-
-.app-header nav a {
-  color: var(--text);
-  text-decoration: none;
-  padding-bottom: 2px;
-  border-bottom: 2px solid transparent;
-}
-
-.app-header nav a:hover {
-  color: var(--text-h);
-}
-
-.app-header nav a.active {
-  color: var(--text-h);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
-}
-
-.app-header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.app-header-right button {
-  padding: 6px 12px;
-}
-
-.user-email {
-  font-size: 14px;
-}
-
-/* Visually distinct from the customer app's header -- a superadmin here
-   can suspend accounts/users and permanently delete pending signups, so
-   it should never be mistakable for the regular app at a glance. */
-.admin-header {
-  border-bottom: 3px solid var(--warning);
-}
-
-.admin-badge {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  background: var(--warning);
-  color: #1a1203;
-  padding: 2px 8px;
-  border-radius: 999px;
-  vertical-align: middle;
-}
-
-.admin-header nav a.active {
-  border-bottom-color: var(--warning);
-}
-
-.app-main {
-  flex: 1;
-  padding: 24px;
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.app-footer {
-  padding: 16px 24px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text);
-  border-top: 1px solid var(--border);
-}
-
-.app-footer a {
-  color: var(--text);
 }
 
 .page-loading {
@@ -1523,42 +1478,9 @@ a.icon-btn--danger {
   100% { transform: translate(160px, -70px) rotate(20deg); opacity: 0; }
 }
 
-/* ---- Mobile (both AppShell and AdminShell share .app-header/.app-main,
-   so this one breakpoint covers the whole logged-in app at once) ---- */
+/* ---- Mobile (shell rules live in components/ui/shell.css) ---- */
 
 @media (max-width: 640px) {
-  .app-main {
-    padding: 16px;
-  }
-
-  .app-header {
-    flex-wrap: wrap;
-    gap: 12px;
-    padding: 12px 16px;
-  }
-
-  /* Forces nav onto its own full-width row below brand + logout, rather
-     than everything fighting for space on one line -- AdminShell alone
-     has 5 links, which never fits next to a brand and a logout button on
-     a phone-width screen. Horizontal scroll (not wrapping to more lines)
-     keeps each link on one line and tappable, the standard mobile-nav
-     fallback when there's no room for a hamburger menu's own complexity. */
-  .app-header nav {
-    order: 3;
-    flex: 0 0 100%;
-    flex-wrap: nowrap;
-    gap: 16px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  /* Email address is the least essential thing in the header at this
-     width -- dropped so the logout button and brand still fit on one
-     line without wrapping onto a third row of their own. */
-  .user-email {
-    display: none;
-  }
-
   .go-live-button {
     padding: 12px 24px;
     font-size: 15px;
@@ -3129,84 +3051,7 @@ kbd {
   max-width: 1200px;
 }
 
-.admin-header {
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-
-.admin-header .brand-logo {
-  width: 36px;
-  height: 36px;
-}
-
-.admin-header nav {
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.admin-header nav a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border-bottom: none;
-}
-
-.admin-header nav a:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.admin-header nav a.active {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-  color: var(--text-h);
-}
-
-.admin-nav-count {
-  min-width: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--error);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
-}
-
-.admin-header .user-email {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (max-width: 760px) {
-  .admin-header {
-    gap: 8px 12px;
-    padding: 10px 16px;
-  }
-  .admin-header nav {
-    order: 3;
-    flex-basis: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    margin: 0 -4px;
-  }
-  .admin-header nav a {
-    white-space: nowrap;
-  }
-  .admin-header .app-header-right {
-    margin-left: auto;
-  }
-  .admin-header .user-email {
-    display: none;
-  }
-  .admin-shell .app-main {
-    padding: 16px;
-  }
-}
+/* Admin header/nav/badge/count: components/ui/shell.css */
 
 /* Page header: back link, title, one-line purpose, page-level actions. */
 .admin-page-head {
@@ -3820,7 +3665,7 @@ video.chroma-preview {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: var(--tabbar-h);
   z-index: 1000;
   display: flex;
   flex-wrap: wrap;
@@ -3828,7 +3673,7 @@ video.chroma-preview {
   justify-content: center;
   gap: 12px 20px;
   padding: 12px 16px;
-  background: var(--card-bg);
+  background: var(--surface);
   color: var(--text);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
@@ -3846,15 +3691,15 @@ video.chroma-preview {
 .cookie-btn {
   min-width: 88px;
   padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--brand);
   background: transparent;
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--brand-text);
+  font-weight: 700;
   cursor: pointer;
 }
 .cookie-btn:hover {
-  background: var(--accent);
+  background: var(--brand);
   color: #fff;
 }
 @media (prefers-color-scheme: dark) {

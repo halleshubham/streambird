@@ -7,6 +7,7 @@ import { ApiError } from '../api/client';
 import { BirdBusy } from '../components/BirdBusy';
 import { BirdLoader } from '../components/BirdLoader';
 import type { BillingConfig, CheckoutOrder, EffectiveLimits, MyPayment, MySubscription, PublicPlan, SubscriptionCheckout } from '../types/api';
+import { confirm } from '../components/ui';
 
 interface RazorpaySuccess {
   razorpay_order_id: string;
@@ -153,7 +154,14 @@ export function BillingPage() {
   }
 
   async function cancelAutopay() {
-    if (!window.confirm('Cancel autopay? Your plan keeps working until the end of the period you have paid for, then drops to Free.')) return;
+    const ok = await confirm({
+      title: 'Cancel autopay?',
+      body: 'Your plan keeps working until the end of the period you have paid for, then your account drops to Free.',
+      confirmLabel: 'Cancel autopay',
+      cancelLabel: 'Keep autopay',
+      destructive: true,
+    });
+    if (!ok) return;
     setMessage(null);
     try {
       setAutopay(await billingApi.cancelSubscription());

@@ -6,6 +6,7 @@ import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { TeamMember } from '../types/api';
 import { BirdBusy } from '../components/BirdBusy';
+import { confirm } from '../components/ui';
 
 /**
  * Company Admin's own team management -- the backend (TeamController)
@@ -62,7 +63,13 @@ export function TeamPage() {
   }
 
   async function handleRemove(userId: string, email: string) {
-    if (!window.confirm(`Remove ${email} from your team? They'll immediately lose access.`)) return;
+    const ok = await confirm({
+      title: `Remove ${email}?`,
+      body: "They lose access to your company's connections and brand kits immediately. Their own streams are kept.",
+      confirmLabel: 'Remove member',
+      destructive: true,
+    });
+    if (!ok) return;
     setRemovingId(userId);
     setError(null);
     try {

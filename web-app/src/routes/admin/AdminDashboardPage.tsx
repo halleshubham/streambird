@@ -6,6 +6,7 @@ import { PENDING_CHANGED_EVENT } from '../../lib/adminEvents';
 import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, Section, When } from '../../components/admin/adminKit';
 import { ApiError } from '../../api/client';
 import type { HeavyUsageRow, PendingApproval, RegistrationStatus } from '../../types/api';
+import { confirm } from '../../components/ui';
 
 /** Everyone waiting for approval -- a new Company Admin signup or a brand-new solo user's first login. */
 export function AdminDashboardPage() {
@@ -69,7 +70,15 @@ export function AdminDashboardPage() {
 
   async function approveAll() {
     if (!pending || pending.length === 0) return;
-    if (!window.confirm(`Approve all ${pending.length} waiting signup${pending.length === 1 ? '' : 's'}? Each person is emailed that their studio is ready.`)) return;
+    const n = pending.length;
+    const shown = pending.slice(0, 3).map((p) => p.email);
+    const ok = await confirm({
+      title: `Approve all ${n} signup${n === 1 ? '' : 's'}?`,
+      body: 'Each person is emailed that their studio is ready and can sign in right away. You can still suspend any account later.',
+      details: n > 3 ? `${shown.join(', ')} and ${n - 3} more` : shown.join(', '),
+      confirmLabel: `Approve all ${n}`,
+    });
+    if (!ok) return;
     setRegBusy(true);
     setError(null);
     setNotice(null);
@@ -85,8 +94,16 @@ export function AdminDashboardPage() {
     }
   }
 
-  function handleReject(id: string, email: string) {
-    if (!window.confirm(`Reject and permanently delete the signup for ${email}? This cannot be undone.`)) return;
+  async function handleReject(id: string, email: string) {
+    const ok = await confirm({
+      title: 'Reject this signup?',
+      details: email,
+      body: 'This permanently deletes the signup and emails the person that it was not approved. It cannot be undone.',
+      confirmLabel: 'Reject and delete',
+      cancelLabel: 'Keep pending',
+      destructive: true,
+    });
+    if (!ok) return;
     void decide(id, () => superadminApi.rejectUser(id), 'Failed to reject.');
   }
 

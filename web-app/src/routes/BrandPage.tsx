@@ -24,6 +24,7 @@ import {
 } from '../studio/brandSizes';
 import { kitSetFor } from '../studio/brandKitSet';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
+import { confirm } from '../components/ui';
 
 const MB = 1024 * 1024;
 const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', ad: 'Ad', other: 'Other' };
@@ -304,7 +305,13 @@ function AssetCard({ asset, onChanged, onError }: { asset: LibraryAsset; onChang
     }
   }
   async function remove() {
-    if (!window.confirm(`Delete "${asset.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete "${asset.name}"?`,
+      body: 'Brand kits that use this file will lose it. This cannot be undone.',
+      confirmLabel: 'Delete file',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await assetsApi.deleteAsset(asset.id);
       await onChanged();
@@ -547,7 +554,14 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   }
 
   async function remove() {
-    if (!kit || !window.confirm(`Delete the brand kit "${kit.name}"? Its channels go back to the account default.`)) return;
+    if (!kit) return;
+    const ok = await confirm({
+      title: `Delete "${kit.name}"?`,
+      body: 'Channels that use this kit go back to the account default. Your uploaded files stay in storage.',
+      confirmLabel: 'Delete kit',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await assetsApi.deleteBrandKit(kit.id);
       await onChanged();

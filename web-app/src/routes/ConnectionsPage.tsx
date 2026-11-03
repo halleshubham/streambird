@@ -17,6 +17,7 @@ import { ApiError } from '../api/client';
 import type { PlatformConnection } from '../types/api';
 import { BirdBusy } from '../components/BirdBusy';
 import { DocsLink } from '../components/DocsLink';
+import { confirm } from '../components/ui';
 
 const OAUTH_NOTICE_ERRORS: Record<string, string> = {
   youtube_oauth_failed: "Connecting YouTube failed. Please try again.",
@@ -161,7 +162,13 @@ export function ConnectionsPage() {
   }
 
   async function handleRemove(id: string, label: string) {
-    if (!window.confirm(`Remove the connection "${label}"? StreamBird will revoke its access (for YouTube) and delete the stored credentials. Any stream using it will need to be reconnected before going live again.`)) return;
+    const ok = await confirm({
+      title: `Remove ${label}?`,
+      body: 'StreamBird will revoke its access (for YouTube) and delete the stored credentials. Any stream using it must be reconnected before going live again. You can reconnect any time.',
+      confirmLabel: 'Remove connection',
+      destructive: true,
+    });
+    if (!ok) return;
     setRemovingId(id);
     try {
       await removeConnection(id);

@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { solidGif } from '../gif';
 import { computeLayout } from '../../web-app/src/studio/compose';
 import type {} from '../../web-app/src/studio/personSegmenter'; // brings in the window.__SB_TEST_SEGMENTER__ type
+import { acceptConfirm, cancelConfirm, confirmDialog } from './helpers';
 
 const CONTROL = `http://127.0.0.1:${process.env.UI_CONTROL_PORT ?? 4311}`;
 const APP = `http://127.0.0.1:${process.env.UI_APP_PORT ?? 4310}`;
@@ -829,14 +830,16 @@ test.describe('brand library and kits', () => {
       await expect(page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Save kit' })).toBeDisabled(); // nothing changed since
 
       // A file in use is refused; once the kits are gone it can be deleted.
-      page.on('dialog', (d) => void d.accept());
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('alert')).toContainText('used by the brand kits');
       await page.getByRole('form', { name: 'Brand kit Hindi' }).getByRole('button', { name: 'Delete kit' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('heading', { name: /^Hindi/ })).toHaveCount(0);
       await page.getByRole('button', { name: 'Edit English' }).click();
       await page.getByRole('form', { name: 'Brand kit English' }).getByRole('button', { name: 'Delete kit' }).click();
+      await acceptConfirm(page);
       await expect(page.getByRole('heading', { name: /^English/ })).toHaveCount(0);
       await expect(page.getByText('No brand kits yet')).toBeVisible();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
@@ -1919,8 +1922,9 @@ test.describe('admin console', () => {
       await expect(page.getByRole('row', { name: new RegExp(waitingEmail) })).toBeVisible();
 
       // Approve everyone waiting in one go.
-      page.on('dialog', (d) => void d.accept());
       await page.getByRole('button', { name: /Approve all waiting/ }).click();
+      await expect(confirmDialog(page)).toContainText(/Approve all \d+ signup/);
+      await acceptConfirm(page);
       await expect(page.getByRole('status').filter({ hasText: /Approved \d+ signup/ })).toBeVisible();
       await expect(page.getByRole('row', { name: new RegExp(pausedEmail) })).toHaveCount(0);
       await expect(page.getByRole('button', { name: /Approve all waiting/ })).toHaveCount(0);
@@ -2022,17 +2026,13 @@ test.describe('admin console', () => {
     const row = page.getByRole('row', { name: new RegExp(email) });
     await expect(row.getByText('Approved')).toBeVisible();
 
-    let asked = '';
-    page.once('dialog', (d) => {
-      asked = d.message();
-      void d.dismiss();
-    });
     await row.getByRole('button', { name: 'Suspend' }).click();
-    await expect.poll(() => asked).toContain(email);
+    await expect(confirmDialog(page)).toContainText(email);
+    await cancelConfirm(page);
     await expect(row.getByText('Suspended')).toHaveCount(0); // cancelled: nothing changed
 
-    page.once('dialog', (d) => void d.accept());
     await row.getByRole('button', { name: 'Suspend' }).click();
+    await acceptConfirm(page);
     await expect(row.getByText('Suspended')).toBeVisible();
     await row.getByRole('button', { name: 'Reactivate' }).click();
     await expect(row.getByText('Suspended')).toHaveCount(0);
@@ -2404,7 +2404,6 @@ test.describe('admin analytics: Force end', () => {
     const title = `Stuck show ${crypto.randomBytes(4).toString('hex')}`;
     const { id, ctx } = await liveStreamAs(browser, title);
     await signIn(context, { superadmin: true });
-    page.on('dialog', (d) => void d.accept());
 
     await page.goto('/admin/analytics');
     const row = page.getByRole('row', { name: new RegExp(title) });
@@ -2418,6 +2417,8 @@ test.describe('admin analytics: Force end', () => {
       else await route.continue();
     });
     await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await expect(confirmDialog(page)).toContainText(title);
+    await acceptConfirm(page);
     await expect(page.getByTestId('force-end-note')).toContainText(`Could not end "${title}"`);
     await expect(page.getByRole('heading', { name: 'Analytics' })).toBeVisible();
     await expect(row).toBeVisible();
@@ -2425,6 +2426,7 @@ test.describe('admin analytics: Force end', () => {
 
     // Retry works: the row goes, the note says what happened, and the stream really ended.
     await row.getByRole('button', { name: `Force end ${title}` }).click();
+    await acceptConfirm(page);
     await expect(page.getByTestId('force-end-note')).toContainText(`Ended "${title}"`);
     await expect(page.getByRole('row', { name: new RegExp(title) })).toHaveCount(0);
     const status = await (await ctx.request.get(`${APP}/api/streams/${id}`)).json();

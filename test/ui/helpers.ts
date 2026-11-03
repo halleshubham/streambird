@@ -104,3 +104,18 @@ export const pinAdClock = (page: Page, sec: number | null) =>
     localStorage.setItem('streambird:test:adclock', 'on');
     (window as unknown as { __SB_TEST_AD_ELAPSED__?: number }).__SB_TEST_AD_ELAPSED__ = s === null ? undefined : s;
   }, sec);
+
+/** The in-app confirm dialog (components/ui/ConfirmDialog.tsx; replaces window.confirm). */
+export function confirmDialog(page: Page) {
+  return page.getByTestId('confirm-dialog');
+}
+/** Clicks the confirm button of the open confirm dialog. */
+export async function acceptConfirm(page: Page): Promise<void> {
+  await confirmDialog(page).getByTestId('confirm-accept').click();
+  await expect(confirmDialog(page)).toHaveCount(0);
+}
+/** Clicks Cancel in the open confirm dialog. */
+export async function cancelConfirm(page: Page): Promise<void> {
+  await confirmDialog(page).getByTestId('confirm-cancel').click();
+  await expect(confirmDialog(page)).toHaveCount(0);
+}

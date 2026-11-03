@@ -23,6 +23,7 @@ import { thumbnailProblem } from './ThumbnailPicker';
 import { DURATION_OPTIONS, formatWhen, parseEmails, toLocalInputValue } from '../lib/schedule';
 import type { ScheduleDetail } from '../types/api';
 import { BirdBusy } from './BirdBusy';
+import { confirm } from './ui';
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -227,11 +228,13 @@ export function ScheduledStreamPanel({
             onClick={() => {
               const n = detail.guests.length;
               const onPlatforms = detail.destinations.some((d) => d.onPlatform) ? ' It will also be removed from the platforms.' : '';
-              const msg = n > 0 ? `Cancel this stream? ${n} invited ${n === 1 ? 'guest' : 'guests'} will get a cancellation email.${onPlatforms}` : `Cancel this stream?${onPlatforms}`;
-              if (!window.confirm(msg)) return;
-              void run('cancel', async () => {
-                await cancelSchedule(streamId);
-                navigate('/dashboard');
+              const body = n > 0 ? `${n} invited ${n === 1 ? 'guest' : 'guests'} will get a cancellation email.${onPlatforms}` : `Nobody has been invited yet.${onPlatforms}`;
+              void confirm({ title: 'Cancel this stream?', body, confirmLabel: 'Cancel stream', cancelLabel: 'Keep stream', destructive: true }).then((ok) => {
+                if (!ok) return;
+                void run('cancel', async () => {
+                  await cancelSchedule(streamId);
+                  navigate('/dashboard');
+                });
               });
             }}
           >
@@ -244,10 +247,18 @@ export function ScheduledStreamPanel({
               disabled={busy !== null}
               title="Removes it without emailing your guests"
               onClick={() => {
-                if (!window.confirm(`Delete this stream? Your guests will not be emailed.${detail.destinations.some((d) => d.onPlatform) ? ' It will also be removed from the platforms.' : ''}`)) return;
-                void run('delete', async () => {
-                  await deleteScheduledStream(streamId);
-                  navigate('/streams/upcoming');
+                void confirm({
+                  title: 'Delete this stream?',
+                  body: `Your guests will not be emailed and the invitation link stops working.${detail.destinations.some((d) => d.onPlatform) ? ' It will also be removed from the platforms.' : ''} This cannot be undone.`,
+                  confirmLabel: 'Delete stream',
+                  cancelLabel: 'Keep stream',
+                  destructive: true,
+                }).then((ok) => {
+                  if (!ok) return;
+                  void run('delete', async () => {
+                    await deleteScheduledStream(streamId);
+                    navigate('/streams/upcoming');
+                  });
                 });
               }}
             >
@@ -366,7 +377,14 @@ export function ScheduledStreamPanel({
                   className="icon-btn icon-btn--small icon-btn--danger"
                   disabled={busy !== null}
                   onClick={() => {
-                    if (window.confirm(`Remove ${g.email}? Their link will stop working.`)) void run(`rm-${g.id}`, () => removeScheduleGuest(streamId, g.id));
+                    void confirm({
+                      title: `Remove ${g.email}?`,
+                      body: 'Their personal join link stops working. You can invite them again later.',
+                      confirmLabel: 'Remove guest',
+                      destructive: true,
+                    }).then((ok) => {
+                      if (ok) void run(`rm-${g.id}`, () => removeScheduleGuest(streamId, g.id));
+                    });
                   }}
                 >
                   <Trash2 size={14} /> Remove

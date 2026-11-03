@@ -61,6 +61,7 @@ import { isTouchDevice } from '../../studio/cameraDevices';
 import { createPreset } from '../../api/presets';
 import { ApiError } from '../../api/client';
 import type { PresetConfig } from '../../types/api';
+import { confirm } from '../../components/ui';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
 
@@ -772,7 +773,14 @@ export function HostStudioPage() {
                                 type="button"
                                 className="icon-btn icon-btn--small icon-btn--danger"
                                 onClick={() => {
-                                  if (window.confirm(`Remove ${p.displayName} from the studio?`)) actions.dropParticipant(p.id);
+                                  void confirm({
+                                    title: `Remove ${p.displayName}?`,
+                                    body: 'They are disconnected from the studio. They can rejoin with their link.',
+                                    confirmLabel: 'Remove guest',
+                                    destructive: true,
+                                  }).then((ok) => {
+                                    if (ok) actions.dropParticipant(p.id);
+                                  });
                                 }}
                               >
                                 <UserX size={14} /> Remove
@@ -1122,7 +1130,15 @@ export function HostStudioPage() {
           aria-label="End stream"
           title="End the stream for everyone"
           onClick={() => {
-            if (window.confirm('End the stream for everyone watching? This cannot be undone.')) void actions.endStream();
+            void confirm({
+              title: 'End the stream for everyone?',
+              body: 'The broadcast stops on every destination and viewers see it end. This cannot be undone.',
+              confirmLabel: 'End stream',
+              cancelLabel: 'Keep streaming',
+              destructive: true,
+            }).then((ok) => {
+              if (ok) void actions.endStream();
+            });
           }}
           disabled={ending}
         >

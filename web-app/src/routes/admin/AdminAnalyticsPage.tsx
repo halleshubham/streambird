@@ -7,6 +7,7 @@ import { BirdLoader } from '../../components/BirdLoader';
 import type { AnalyticsOverview, LiveStreamRow, UsageAlert } from '../../types/api';
 import { BirdBusy } from '../../components/BirdBusy';
 import { Badge, DataTable, Empty, PageHeader, Section, planLabel } from '../../components/admin/adminKit';
+import { confirm } from '../../components/ui';
 
 const TOP_ROWS = 10;
 
@@ -68,13 +69,15 @@ export function AdminAnalyticsPage() {
   }, []);
 
   async function handleForceEnd(stream: LiveStreamRow) {
-    if (
-      !window.confirm(
-        `Force-end "${stream.title}" (${stream.accountName})? Only do this if you've confirmed it's actually a hung stream, not a real broadcast still in progress.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Force end this live stream?',
+      details: `${stream.title} · ${stream.accountName}`,
+      body: "The stream stops on every destination immediately. Only do this if you've confirmed it's actually a hung stream, not a real broadcast still in progress.",
+      confirmLabel: 'Force end',
+      cancelLabel: 'Keep streaming',
+      destructive: true,
+    });
+    if (!ok) return;
     setEndingId(stream.id);
     setActionNote(null);
     try {

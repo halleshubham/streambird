@@ -8,6 +8,7 @@ import { BirdLoader } from '../../components/BirdLoader';
 import type { AccountDetail, AdminPlan } from '../../types/api';
 import { BirdBusy } from '../../components/BirdBusy';
 import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, Section, When, fmtDate, planLabel, statusTone } from '../../components/admin/adminKit';
+import { confirm } from '../../components/ui';
 
 /** One account: its plan and exceptions, day pass, users, recent streams, connections; suspend/reactivate lives in a separate danger card. */
 export function AdminAccountDetailPage() {
@@ -85,7 +86,16 @@ export function AdminAccountDetailPage() {
   }
 
   async function handleUser(u: AccountDetail['users'][number]) {
-    if (!u.suspendedAt && !window.confirm(`Suspend ${u.email}? They are signed out and cannot log in until reactivated.`)) return;
+    if (!u.suspendedAt) {
+      const ok = await confirm({
+        title: 'Suspend this user?',
+        details: u.email,
+        body: 'They are signed out and cannot log in. Other users on the account are not affected. You can reactivate them at any time.',
+        confirmLabel: 'Suspend user',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     setUserBusyId(u.id);
     setError(null);
     try {
@@ -102,10 +112,19 @@ export function AdminAccountDetailPage() {
   async function handleToggleSuspend() {
     if (!id || !account) return;
     const confirmed = account.suspendedAt
-      ? true
-      : window.confirm(
-          `Suspend ${account.name}? This immediately blocks every user on this account from logging in or streaming.`,
-        );
+      ? await confirm({
+          title: `Reactivate ${account.name}?`,
+          body: 'Users can sign in again straight away. Their plan and settings are unchanged.',
+          confirmLabel: 'Reactivate account',
+        })
+      : await confirm({
+          title: `Suspend ${account.name}?`,
+          body: 'This immediately blocks every user on this account from logging in or streaming, and ends any live stream.',
+          confirmLabel: 'Suspend account',
+          destructive: true,
+          typeToConfirm: account.name,
+          typeToConfirmLabel: 'Type the company name to confirm',
+        });
     if (!confirmed) return;
     setSuspending(true);
     setError(null);

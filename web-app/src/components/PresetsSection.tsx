@@ -9,6 +9,7 @@ import { BirdBusy } from './BirdBusy';
 import { presetSummary } from '../lib/presets';
 import { seedStudioFromPreset } from '../studio/useHostStudio';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, StreamPreset } from '../types/api';
+import { confirm } from './ui';
 
 /** Same ceiling as the server (src/presets: MAX_PRESETS_PER_ACCOUNT). */
 export const MAX_PRESETS = 20;
@@ -94,7 +95,14 @@ export function PresetsSection({
   }
 
   async function remove(preset: StreamPreset) {
-    if (!window.confirm(`Delete the preset "${preset.name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete the preset "${preset.name}"?`,
+      body: 'Its card disappears from your dashboard. Streams you already made from it are not affected.',
+      confirmLabel: 'Delete preset',
+      cancelLabel: 'Keep preset',
+      destructive: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       await deletePreset(preset.id);

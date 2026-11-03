@@ -1,0 +1,379 @@
+/* ==========================================================================
+   App chrome: AppShell (host), AdminShell (superadmin), footer, bottom tab bar, "More" sheet.
+   Moved here from index.css by the redesign foundation. Tokens only, no raw colours.
+   ========================================================================== */
+
+.app-shell {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 68px;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.app-header .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.app-header .brand-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.app-nav,
+.app-header nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.app-header nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-header nav a:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.app-header nav a.active {
+  background: var(--soft);
+  color: var(--brand-text);
+}
+
+.app-header nav a:focus-visible,
+.tab-bar a:focus-visible,
+.tab-bar button:focus-visible,
+.app-avatar:focus-visible,
+.more-sheet a:focus-visible,
+.more-sheet button:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-email {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.app-avatar {
+  display: none; /* phones only */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--brand-text);
+  font: 800 13px var(--sans);
+}
+
+.app-avatar:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--brand-text);
+  border: 0;
+}
+
+.app-main {
+  flex: 1;
+  padding: 40px;
+  max-width: 1160px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.app-footer {
+  padding: 24px 40px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.app-footer a {
+  color: var(--muted);
+}
+
+.app-footer a:hover {
+  color: var(--brand-text);
+}
+
+/* ---- Superadmin shell: same chrome, unmistakably different (ADMIN badge, deep-purple rule) ---- */
+.admin-header {
+  flex-wrap: wrap;
+  row-gap: 8px;
+  gap: 20px;
+  min-height: 60px;
+  padding: 6px 32px;
+  border-bottom: 3px solid var(--brand-deep);
+}
+
+.admin-header .brand {
+  color: var(--brand-text);
+  font-size: 17px;
+}
+
+.admin-badge {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-deep);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.admin-header nav {
+  flex-wrap: wrap;
+  margin-left: 8px;
+}
+
+.admin-header nav a {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+.admin-header nav a.active {
+  font-weight: 700;
+}
+
+.admin-nav-count {
+  min-width: 18px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--danger-btn);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.admin-header .user-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-shell .app-main {
+  padding: 28px 32px;
+}
+
+/* ---- Bottom tab bar + sheet: phones only ---- */
+.tab-bar {
+  display: none;
+}
+
+.more-sheet-email {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.more-sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.more-sheet-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.more-sheet-list a,
+.more-sheet-list .more-sheet-logout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: 600 16px var(--sans);
+  text-align: left;
+  text-decoration: none;
+}
+
+.more-sheet-list .more-sheet-logout {
+  color: var(--danger-text);
+}
+
+.more-sheet-list .more-sheet-logout:hover:not(:disabled) {
+  background: none;
+  border: 0;
+  color: var(--danger-text);
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    gap: 12px;
+    padding: 0 20px;
+  }
+  .app-main,
+  .app-footer {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .app-header nav a {
+    padding: 8px 10px;
+  }
+  .app-header .user-email {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  :root,
+  body[data-tabbar] {
+    --tabbar-h: 0px;
+  }
+  body[data-tabbar] {
+    --tabbar-h: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-header {
+    min-height: 60px;
+    padding: 0 16px;
+  }
+
+  .app-header .brand-logo {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Host app on a phone: brand + avatar on top, destinations in the tab bar. */
+  .app-shell:not(.admin-shell) .app-nav,
+  .app-shell:not(.admin-shell) .app-logout,
+  .app-shell:not(.admin-shell) .user-email {
+    display: none;
+  }
+
+  .app-shell:not(.admin-shell) .app-header-right {
+    margin-left: auto;
+  }
+
+  .app-shell:not(.admin-shell) .app-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-shell:not(.admin-shell) {
+    padding-bottom: var(--tabbar-h);
+  }
+
+  .app-main {
+    padding: 20px 16px;
+  }
+
+  .app-footer {
+    padding: 16px;
+  }
+
+  .tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: var(--tabbar-h);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .tab-bar a,
+  .tab-bar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+    font: 600 11px var(--sans);
+    text-decoration: none;
+  }
+
+  .tab-bar a.active,
+  .tab-bar button.active {
+    color: var(--brand-text);
+  }
+
+  .tab-bar button:hover:not(:disabled) {
+    background: none;
+    border: 0;
+    color: var(--brand-text);
+  }
+
+  /* Superadmin on a phone keeps a single scrolling nav row (no tab bar: it has six destinations). */
+  .admin-header {
+    gap: 8px 12px;
+    padding: 8px 16px;
+  }
+  .admin-header nav {
+    order: 3;
+    flex: 0 0 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -4px;
+  }
+  .admin-header nav a {
+    white-space: nowrap;
+  }
+  .admin-header .app-header-right {
+    margin-left: auto;
+  }
+  .admin-header .user-email {
+    display: none;
+  }
+  .admin-shell .app-main {
+    padding: 16px;
+  }
+}
