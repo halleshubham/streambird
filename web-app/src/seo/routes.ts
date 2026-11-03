@@ -22,9 +22,9 @@ export interface RouteSeo {
 /** Public, indexable pages. Add a new public page here AND to `src/seo/seo.ts` (sitemap) -- see frontend.md "SEO". */
 export const PUBLIC_ROUTES: Record<string, RouteSeo> = {
   '/': {
-    title: 'StreamBird: multistream to YouTube, Facebook and Twitch from your browser',
+    title: 'StreamBird: multistream to YouTube, Facebook and Twitch',
     description:
-      'Go live once and stream everywhere. StreamBird is a browser-based live-streaming studio with remote guests, layouts and branding that sends one broadcast to YouTube, Facebook and Twitch at once. Free plan, INR pricing.',
+      'Go live once and stream to YouTube, Facebook and Twitch at the same time. A browser-based studio with remote guests, layouts and branding. Free plan, INR pricing.',
     index: true,
     prerender: 'home',
   },

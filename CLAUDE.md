@@ -27,7 +27,7 @@ npm ci && npm ci --prefix web-app          # install
 npm run typecheck                          # backend + tests + web app
 npm test                                   # unit (Jest)
 export E2E_DATABASE_URL="$(.claude/skills/streambird-test/local-postgres.sh start)"   # throwaway Postgres
-(cd web-app && npx tsc -b && npx vite build)   # REQUIRED before UI tests (they serve dist-web/)
+npm run build --prefix web-app   # REQUIRED before UI tests (tsc + vite build + public-page prerender; they serve dist-web/)
 npm run test:e2e                           # real Postgres + real app + mock Razorpay
 npm run test:ui                            # Playwright (set PW_CHROMIUM=/opt/pw-browsers/chromium in the cloud sandbox)
 npm run start:dev                          # backend with watch (needs .env: DATABASE_URL, ENCRYPTION_KEY_BASE64)

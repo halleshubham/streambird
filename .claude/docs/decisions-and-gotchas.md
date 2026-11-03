@@ -43,6 +43,9 @@ Short "why" records. When code looks odd, check here before "fixing" it. Add a l
 | `git push --delete` / force push in the sandbox | not possible; use UI / new branch |
 | Coolify token expired (401) | ask the user for a fresh one |
 | An outside call with no timeout (platform API, relay, MediaMTX) inside something that must finish (ending a stream) | wrap it in `withTimeout` and make it best-effort; log what failed |
+| Public page shows stale/other content to crawlers, or `_prerender/` missing in tests | the prerender runs only in `npm run build --prefix web-app`; plain `vite build` skips it |
+| `window`/`localStorage` used while rendering a public page | breaks the build-time prerender; read them in effects or guard `typeof window` |
+| Unknown URL returned 200 | the SPA fallback made soft 404s; `src/seo/seo.ts` now sends 404 + noindex. A new top-level SPA route must be added to `APP_PREFIXES` there, or it 404s |
 | Docs/skills claim something the code no longer does | update `.claude/` in the same PR |
 
 ## Known gaps / ideas not built

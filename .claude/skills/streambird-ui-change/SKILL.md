@@ -22,7 +22,7 @@ Context: `.claude/docs/frontend.md` (map, CSS rules, loading system) and `studio
 8. Error handling: `ApiError` → message in `<p className="error">`; never swallow errors silently on user actions.
 
 ## Verify (all three)
-1. `npm run typecheck`, rebuild: `(cd web-app && npx tsc -b && npx vite build)`.
+1. `npm run typecheck`, rebuild: `npm run build --prefix web-app`.
 2. Tests: update/add Playwright tests (`test/ui/smoke.spec.ts` "UI polish" block is the pattern: API setup, then assert in the page; assert computed styles/boxes for layout bugs).
 3. **Screenshots**: temporary `test/ui/zz-shots.spec.ts` (sign in via API with the `CONTROL` helper endpoints, create data over `context.request`, `page.setViewportSize`, `page.screenshot`) at 1366×800 and 390×800 → read the PNGs → delete the spec. Template:
    ```ts
