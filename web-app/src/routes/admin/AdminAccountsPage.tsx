@@ -4,8 +4,8 @@ import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
-import { BirdBusy } from '../../components/BirdBusy';
-import { Badge, DataTable, Empty, PageHeader, ShowMore, fmtDate, planLabel } from '../../components/admin/adminKit';
+import { Badge, DataTable, Empty, Notice, PageHeader, ShowMore, fmtDate, planLabel } from '../../components/admin/adminKit';
+import { Button, Card, Spinner } from '../../components/ui';
 import type { AccountSummary, AdminPlan } from '../../types/api';
 
 const PAGE = 50;
@@ -63,30 +63,36 @@ export function AdminAccountsPage() {
 
   return (
     <>
-      <PageHeader title="Companies" subtitle="Every account on StreamBird. Search by company, name or any user's email. Open one to change its plan, grant a day pass, suspend it or one of its users." />
+      <PageHeader title="Companies" subtitle="Every account on StreamBird. Search by company, name or any user's email; open one to change its plan, grant a day pass or suspend it." />
       <div className="admin-toolbar">
         <input
           type="search"
+          className="ui-input"
           aria-label="Search companies"
           placeholder="Search by company or user email…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        {query && (
+          <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
+            Clear
+          </Button>
+        )}
         {items && <span className="admin-toolbar-count">{total} {total === 1 ? 'account' : 'accounts'}</span>}
       </div>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
       {items === null ? (
         <BirdLoader loading compact label="Loading companies…" />
       ) : items.length === 0 ? (
         <Empty>{query ? `No companies match "${query}".` : 'No accounts yet.'}</Empty>
       ) : (
-        <>
-          <DataTable caption="Companies">
+        <Card className="admin-section">
+          <DataTable caption="Companies" cards>
             <thead>
               <tr>
                 <th scope="col">Company</th>
-                <th scope="col">Plan</th>
-                <th scope="col">Usage this period</th>
+                <th scope="col" className="hide-sm">Plan</th>
+                <th scope="col" className="admin-card-grow">Usage this period</th>
                 <th scope="col" className="num hide-sm">Users</th>
                 <th scope="col" className="hide-sm">Joined</th>
                 <th scope="col">Status</th>
@@ -99,9 +105,10 @@ export function AdminAccountsPage() {
                     <Link to={`/admin/accounts/${a.id}`} className="admin-link">{a.companyName ?? a.name}</Link>
                     {a.companyName && a.companyName !== a.name && <span className="admin-cell-sub">{a.name}</span>}
                     {a.matchedUserEmail && <span className="admin-cell-sub">User: {a.matchedUserEmail}</span>}
+                    <span className="admin-cell-sub show-sm">{planLabel(a.planKey, plans)} · {a.userCount} {a.userCount === 1 ? 'user' : 'users'} · Joined {fmtDate(a.createdAt)}</span>
                   </td>
-                  <td>{planLabel(a.planKey, plans)}</td>
-                  <td>
+                  <td className="hide-sm">{planLabel(a.planKey, plans)}</td>
+                  <td className="admin-card-grow">
                     <UsageBar compact used={Number(a.streamHourUsageCurrentPeriod)} included={Number(a.includedHoursPerMonth)} />
                   </td>
                   <td className="num hide-sm">{a.userCount}</td>
@@ -111,8 +118,8 @@ export function AdminAccountsPage() {
               ))}
             </tbody>
           </DataTable>
-          {loadingMore ? <BirdBusy /> : <ShowMore shown={items.length} total={total} step={PAGE} onMore={() => void showMore()} />}
-        </>
+          {loadingMore ? <p className="admin-showmore"><Spinner size="sm" /></p> : <ShowMore shown={items.length} total={total} step={PAGE} onMore={() => void showMore()} />}
+        </Card>
       )}
     </>
   );

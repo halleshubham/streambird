@@ -4,7 +4,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import * as authApi from '../../api/auth';
 import { ApiError } from '../../api/client';
-import { BirdBusy } from '../../components/BirdBusy';
+import { Button, Input } from '../../components/ui';
 
 /** Superadmin login: password, then a code emailed after it checks out -- see
  * AuthController.superadminLogin / superadminVerify. Completely separate from
@@ -57,9 +57,9 @@ export function AdminLoginPage() {
           {codeSent ? `Step 2 of 2: enter the 6-digit code we sent to ${email.trim()}.` : 'Step 1 of 2: your admin email and password. A code is emailed next.'}
         </p>
         <form onSubmit={handleSubmit}>
-          <label htmlFor="email">Email</label>
-          <input
+          <Input
             id="email"
+            label="Email"
             type="email"
             autoComplete="username"
             autoFocus
@@ -68,9 +68,9 @@ export function AdminLoginPage() {
             disabled={codeSent}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <label htmlFor="password">Password</label>
-          <input
+          <Input
             id="password"
+            label="Password"
             type="password"
             autoComplete="current-password"
             required
@@ -79,29 +79,28 @@ export function AdminLoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
           {codeSent && (
-            <>
-              <label htmlFor="code">Code</label>
-              <input
-                id="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-                required
-                maxLength={6}
-                placeholder="123456"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </>
+            <Input
+              id="code"
+              label="Code"
+              className="admin-auth-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
           )}
-          {error && <p className="error" role="alert">{error}</p>}
-          <button type="submit" className="admin-auth-submit" disabled={busy || !email.trim() || !password || (codeSent && code.trim().length !== 6)}>
-            {busy && <BirdBusy />} {codeSent ? 'Verify and log in' : 'Continue'}
-          </button>
+          {error && <p className="ui-field-error" style={{ color: 'var(--danger-text)', margin: '0 0 12px' }} role="alert">{error}</p>}
+          <Button type="submit" block busy={busy} disabled={!email.trim() || !password || (codeSent && code.trim().length !== 6)}>
+            {codeSent ? 'Verify and log in' : 'Continue'}
+          </Button>
           {codeSent && (
-            <button type="button" className="link-button" onClick={() => { setCodeSent(false); setCode(''); setError(null); }}>
+            <Button variant="ghost" className="admin-auth-again" onClick={() => { setCodeSent(false); setCode(''); setError(null); }}>
               Start over
-            </button>
+            </Button>
           )}
         </form>
         <p className="admin-auth-note">Restricted area. Every admin action is recorded in the audit log.</p>

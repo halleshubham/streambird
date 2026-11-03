@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as billingApi from '../../api/billing';
 import { ApiError } from '../../api/client';
-import { BirdBusy } from '../../components/BirdBusy';
 import { BirdLoader } from '../../components/BirdLoader';
-import { Badge, DataTable, Empty, PageHeader, Section, ShowMore, When, planLabel, statusTone } from '../../components/admin/adminKit';
+import { Badge, DataTable, Empty, Notice, PageHeader, Section, ShowMore, When, planLabel, statusTone } from '../../components/admin/adminKit';
+import { Card, confirm, toast } from '../../components/ui';
 import type { AdminBilling } from '../../types/api';
 
 const ROWS = 20;
@@ -29,10 +29,30 @@ export function AdminBillingPage() {
   }, []);
 
   async function toggle(next: boolean) {
+    if (!next) {
+      const ok = await confirm({
+        title: 'Turn online payments off?',
+        body: (
+          <>
+            Customers will not be able to buy plans or day passes.
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              <li>The Buy buttons are hidden and no order can be created</li>
+              <li>Existing autopay subscriptions keep renewing</li>
+              <li>You can turn it back on at any time</li>
+            </ul>
+          </>
+        ),
+        confirmLabel: 'Turn off',
+        cancelLabel: 'Keep payments on',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
     setSaving(true);
     setError(null);
     try {
       await billingApi.setPaymentsEnabled(next);
+      toast.success(next ? 'Online payments are on.' : 'Online payments are off.');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to update.');
@@ -41,7 +61,7 @@ export function AdminBillingPage() {
     }
   }
 
-  if (!data) return error ? <p className="error">{error}</p> : <BirdLoader loading compact />;
+  if (!data) return error ? <Notice tone="error">{error}</Notice> : <BirdLoader loading compact />;
 
   const live = data.enabled && data.keysConfigured;
   const setup: Array<[string, boolean, string]> = [
@@ -53,16 +73,32 @@ export function AdminBillingPage() {
     <>
       <PageHeader title="Billing" subtitle="The payments switch, Razorpay setup, autopay subscriptions and recent payments." />
 
-      <Section
-        title={`Online payments: ${live ? 'ON' : 'OFF'}`}
-        hint="When on, signed-in users see Buy buttons (Razorpay Checkout) for paid plans and the Day Pass. When off, those buttons are hidden and no order can be created; plans are then assigned by hand on the company page."
-      >
-        <button type="button" disabled={saving || (!data.enabled && !data.keysConfigured)} onClick={() => void toggle(!data.enabled)}>
-          {saving && <BirdBusy />} {data.enabled ? 'Turn payments off' : 'Turn payments on'}
-        </button>
-        {!data.keysConfigured && <p className="error">Add the Razorpay keys to the server environment first.</p>}
-        {data.enabled && data.mode === 'test' && <p className="docs-hint">Test mode: no real money moves. Switch to live keys when ready.</p>}
-        {error && <p className="error" role="alert">{error}</p>}
+      <Section>
+        <div className="admin-card-head">
+          <div>
+            <h2>Online payments</h2>
+            <p className="admin-hint">
+              When on, signed-in users see Buy buttons (Razorpay Checkout) for paid plans and the Day Pass. When off, those buttons are hidden and no order can be created; plans are then assigned by hand on the company page. Existing autopay continues.
+            </p>
+          </div>
+          <div className="admin-toggle">
+            <span className="admin-toggle-state" data-on={live} aria-hidden="true">{live ? 'ON' : 'OFF'}</span>
+            <button
+              type="button"
+              role="switch"
+              className="admin-switch"
+              aria-checked={live}
+              aria-label="Online payments"
+              disabled={saving || (!data.enabled && !data.keysConfigured)}
+              onClick={() => void toggle(!data.enabled)}
+            >
+              <i />
+            </button>
+          </div>
+        </div>
+        {!data.keysConfigured && <Notice tone="error">Add the Razorpay keys to the server environment first.</Notice>}
+        {data.enabled && data.mode === 'test' && <p className="admin-hint" style={{ marginBottom: 0 }}>Test mode: no real money moves. Switch to live keys when ready.</p>}
+        {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
       </Section>
 
       <Section title="Razorpay setup">
@@ -82,7 +118,8 @@ export function AdminBillingPage() {
         </dl>
       </Section>
 
-      <h2 className="admin-list-title">Autopay subscriptions</h2>
+      <Card className="admin-section">
+      <h2>Autopay subscriptions</h2>
       {data.subscriptions.length === 0 ? (
         <Empty>No subscriptions yet.</Empty>
       ) : (
@@ -118,7 +155,10 @@ export function AdminBillingPage() {
         </>
       )}
 
-      <h2 className="admin-list-title">Recent payments</h2>
+      </Card>
+
+      <Card className="admin-section">
+      <h2>Recent payments</h2>
       {data.payments.length === 0 ? (
         <Empty>No payments yet.</Empty>
       ) : (
@@ -153,6 +193,7 @@ export function AdminBillingPage() {
           <ShowMore shown={Math.min(paymentRows, data.payments.length)} total={data.payments.length} step={ROWS} onMore={() => setPaymentRows((n) => n + ROWS)} />
         </>
       )}
+      </Card>
     </>
   );
 }
