@@ -262,9 +262,13 @@ test.describe('admin redesign: plans drawer', () => {
     await page.goto('/admin/plans');
     expect(await noHScroll(page)).toBe(true);
     await page.getByRole('row', { name: /Starter/ }).getByRole('button', { name: 'Edit' }).click();
-    const box = (await page.getByRole('dialog').boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    // The drawer slides in (0.2 s): measure once it has settled, not mid-animation.
+    await expect
+      .poll(async () => {
+        const box = (await page.getByRole('dialog').boundingBox())!;
+        return box.x >= 0 && box.x + box.width <= 390.5;
+      })
+      .toBe(true);
     await expect(page.getByRole('button', { name: 'Save plan' })).toBeInViewport();
     await page.screenshot({ path: 'test-results/admin-plan-drawer-phone.png' });
   });
