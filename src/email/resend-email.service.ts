@@ -7,6 +7,7 @@ import { StreamInviteData, buildStreamInviteEmail } from './stream-invite.templa
 import { PendingApprovalsDigestData, buildApprovalDigest } from './approval-digest.template';
 import { ApprovalDecisionData, buildApprovalDecisionEmail } from './approval-decision.template';
 import { buildLoginCodeEmail } from './login-code.template';
+import { buildAccountDeletedEmail, buildAccountDeletionCodeEmail } from './account-deletion.template';
 import { buildTeamInviteEmail } from './team-invite.template';
 import { buildPaymentReceiptEmail } from './payment-receipt.template';
 
@@ -30,6 +31,14 @@ export class ResendEmailService implements EmailService {
 
   async sendLoginCode(to: string, code: string): Promise<void> {
     await this.send({ to, ...buildLoginCodeEmail({ code, baseUrl: this.baseUrl() }) });
+  }
+
+  async sendAccountDeletionCode(to: string, code: string): Promise<void> {
+    await this.send({ to, ...buildAccountDeletionCodeEmail({ code, baseUrl: this.baseUrl() }) });
+  }
+
+  async sendAccountDeletedNotice(to: string, data: { companyDeleted: boolean }): Promise<void> {
+    await this.send({ to, ...buildAccountDeletedEmail({ ...data, baseUrl: this.baseUrl() }) });
   }
 
   async sendPaymentReceipt(to: string, data: PaymentReceiptData): Promise<void> {

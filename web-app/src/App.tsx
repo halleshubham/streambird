@@ -27,6 +27,9 @@ import { BrandPage } from './routes/BrandPage';
 import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
+import { AccountPage } from './routes/AccountPage';
+import { DeleteAccountInfoPage } from './routes/DeleteAccountInfoPage';
+import { AccountDeletedPage } from './routes/AccountDeletedPage';
 import { CookieBanner } from './components/CookieBanner';
 
 export function App() {
@@ -46,6 +49,9 @@ export function App() {
           Service URL fields). */}
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/terms" element={<TermsOfServicePage />} />
+      {/* Public: how to delete an account and data (Google Play requires a public URL for this). */}
+      <Route path="/delete-account" element={<DeleteAccountInfoPage />} />
+      <Route path="/account-deleted" element={<AccountDeletedPage />} />
 
       {/* Public -- a guest never has an account or session cookie. */}
       <Route path="/join/:token" element={<GuestJoinPage />} />
@@ -83,6 +89,7 @@ export function App() {
           <Route path="/streams/upcoming" element={<UpcomingStreamsPage />} />
           <Route path="/streams/:streamId" element={<StreamDetailPage />} />
           <Route path="/team" element={<TeamPage />} />
+          <Route path="/account" element={<AccountPage />} />
         </Route>
       </Route>
 

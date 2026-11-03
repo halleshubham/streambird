@@ -398,7 +398,7 @@ export function LandingPage() {
             </a>
           </span>
           <span>
-            <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link><CookieSettingsLink />
+            <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link> &middot; <Link to="/delete-account">Delete your account</Link><CookieSettingsLink />
           </span>
           <span>
             <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>

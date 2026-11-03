@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
 import { PlansService } from '../plans/plans.service';
 import { User } from '../users/entities/user.entity';
 import { LiveStream } from '../streams/entities/live-stream.entity';
@@ -104,7 +104,7 @@ export class SuperadminAnalyticsService {
    * whole stream.
    */
   async getHeavyUsage(): Promise<HeavyUsageRow[]> {
-    const accounts = await this.accounts.find({ where: { streamHourUsageCurrentPeriod: MoreThan('0') } });
+    const accounts = await this.accounts.find({ where: { streamHourUsageCurrentPeriod: MoreThan('0'), deletedAt: IsNull() } });
     if (accounts.length === 0) return [];
 
     const rows = await Promise.all(
@@ -192,7 +192,7 @@ export class SuperadminAnalyticsService {
         this.liveStreams.count({ where: { createdAt: MoreThanOrEqual(weekAgo) } }),
         this.liveStreams.count({ where: { status: StreamStatus.LIVE } }),
         this.destinations.find({ where: { createdAt: MoreThanOrEqual(weekAgo) } }),
-        this.accounts.find(),
+        this.accounts.find({ where: { deletedAt: IsNull() } }),
       ]);
 
     const destinationFailureRate =
@@ -253,7 +253,7 @@ export class SuperadminAnalyticsService {
    * than dividing by zero.
    */
   async getUsageAlerts(): Promise<UsageAlert[]> {
-    const accounts = await this.accounts.find();
+    const accounts = await this.accounts.find({ where: { deletedAt: IsNull() } });
     const alerts: UsageAlert[] = [];
 
     for (const account of accounts) {

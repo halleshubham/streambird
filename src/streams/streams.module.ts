@@ -30,6 +30,6 @@ import { StudioModule } from '../studio/studio.module';
   ],
   providers: [StreamsService, GlitchRecoveryService, StaleStreamReaperService, StreamSchedulingService, SessionLimitService],
   controllers: [StreamsController],
-  exports: [StreamsService, GlitchRecoveryService],
+  exports: [StreamsService, GlitchRecoveryService, StreamSchedulingService],
 })
 export class StreamsModule {}

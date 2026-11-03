@@ -17,6 +17,7 @@ import { SuperadminModule } from './superadmin/superadmin.module';
 import { AppController } from './app.controller';
 import { PresetsModule } from './presets/presets.module';
 import { AssetsModule } from './assets/assets.module';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module';
 
 @Module({
   controllers: [AppController],
@@ -52,6 +53,7 @@ import { AssetsModule } from './assets/assets.module';
     AuthModule,
     TeamModule,
     SuperadminModule,
+    AccountDeletionModule,
   ],
 })
 export class AppModule {}

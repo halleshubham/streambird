@@ -374,4 +374,39 @@ describe('BillingService', () => {
       expect([...ctx.subRows.values()].find((r) => r.razorpaySubscriptionId === 'sub_old').status).toBe('cancelled');
     });
   });
+
+  describe('account deletion support', () => {
+    const sub = (id: string, status: string, over: any = {}) => ({ id, accountId: 'acc_1', planKey: 'pro', razorpaySubscriptionId: `rzp_${id}`, status, cancelAtCycleEnd: false, currentEnd: new Date('2026-12-01T00:00:00Z'), createdAt: new Date(), ...over });
+
+    it('cancels every chargeable autopay immediately, marks it cancelled, and ignores other accounts', async () => {
+      const t = build();
+      t.subRows.set('a', sub('a', 'active'));
+      t.subRows.set('b', sub('b', 'halted'));
+      t.subRows.set('c', sub('c', 'cancelled'));
+      t.subRows.set('d', sub('d', 'active', { accountId: 'acc_other' }));
+      expect(await t.svc.cancelAllForAccountDeletion('acc_1')).toBe(2);
+      expect(t.rzpCancel.mock.calls.map((c) => [c[0], c[1]])).toEqual([['rzp_a', false], ['rzp_b', false]]);
+      expect(t.subRows.get('a').status).toBe('cancelled');
+      expect(t.subRows.get('d').status).toBe('active');
+    });
+
+    it('a Razorpay failure throws a 502 that says nothing was deleted; "already cancelled" is fine', async () => {
+      const t = build();
+      t.subRows.set('a', sub('a', 'active'));
+      t.rzpCancel.mockRejectedValueOnce(new Error('upstream is down'));
+      await expect(t.svc.cancelAllForAccountDeletion('acc_1')).rejects.toThrow(/nothing was deleted/);
+      t.rzpCancel.mockRejectedValueOnce(new Error('The subscription is already cancelled'));
+      await expect(t.svc.cancelAllForAccountDeletion('acc_1')).resolves.toBe(1);
+    });
+
+    it('summarises the autopay for the warning: plan name, next renewal (none once cancel-at-cycle-end), null without one', async () => {
+      const t = build();
+      expect(await t.svc.activeSubscriptionSummary('acc_1')).toBeNull();
+      t.subRows.set('a', sub('a', 'active'));
+      (t.svc as any).planRepo = { findOne: async () => ({ name: 'Pro' }) };
+      expect(await t.svc.activeSubscriptionSummary('acc_1')).toEqual({ plan: 'Pro', nextRenewal: '2026-12-01T00:00:00.000Z' });
+      t.subRows.get('a').cancelAtCycleEnd = true;
+      expect((await t.svc.activeSubscriptionSummary('acc_1'))!.nextRenewal).toBeNull();
+    });
+  });
 });

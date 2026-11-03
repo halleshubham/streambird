@@ -40,4 +40,12 @@ export class FakeEmailService implements EmailService {
   async sendApprovalDecision(to: string, data: ApprovalDecisionData): Promise<void> {
     this.logger.log(`[fake email] sign-up ${data.decision} notice to ${to}`);
   }
+
+  async sendAccountDeletionCode(to: string, code: string): Promise<void> {
+    this.logger.log(`[fake email] account deletion code for ${to}: ${code}`);
+  }
+
+  async sendAccountDeletedNotice(to: string, data: { companyDeleted: boolean }): Promise<void> {
+    this.logger.log(`[fake email] account deleted notice to ${to} (company: ${data.companyDeleted})`);
+  }
 }

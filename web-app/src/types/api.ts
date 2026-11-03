@@ -33,6 +33,16 @@ export interface TeamMember {
   createdAt: string;
 }
 
+/** GET /account/delete/preview: what deleting the signed-in person's account would remove (counts and flags only). */
+export interface DeletionPreview {
+  isOnlyAdmin: boolean;
+  memberCount: number;
+  activeSubscription: { plan: string; nextRenewal: string | null } | null;
+  liveStream: boolean;
+  connectionsCount: number;
+  assetsCount: number;
+}
+
 export interface PendingApproval {
   id: string;
   email: string;

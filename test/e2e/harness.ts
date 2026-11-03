@@ -30,6 +30,10 @@ export class Mailbox {
   decisions: Array<{ to: string; data: any }> = [];
 
   sendLoginCode = async (to: string, code: string) => void this.codes.set(to, code);
+  deletionCodes = new Map<string, string>();
+  deleted: Array<{ to: string; companyDeleted: boolean }> = [];
+  sendAccountDeletionCode = async (to: string, code: string) => void this.deletionCodes.set(to, code);
+  sendAccountDeletedNotice = async (to: string, data: { companyDeleted: boolean }) => void this.deleted.push({ to, companyDeleted: data.companyDeleted });
   sendTeamInvite = async () => undefined;
   sendStreamInvite = async () => undefined;
   sendPaymentReceipt = async (to: string, data: any) => void this.receipts.push({ to, data });
@@ -184,6 +188,8 @@ export async function bootApp(opts: { razorpay?: boolean; port?: number; mediamt
   // NODE_ENV is not 'production', so the app runs its logging FakeEmailService; capture instead of logging.
   Object.assign(app.get(EMAIL_SERVICE) as object, {
     sendLoginCode: mailbox.sendLoginCode,
+    sendAccountDeletionCode: mailbox.sendAccountDeletionCode,
+    sendAccountDeletedNotice: mailbox.sendAccountDeletedNotice,
     sendPaymentReceipt: mailbox.sendPaymentReceipt,
     sendBillingNotice: mailbox.sendBillingNotice,
     sendPendingApprovalsDigest: mailbox.sendPendingApprovalsDigest,

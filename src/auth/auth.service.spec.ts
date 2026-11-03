@@ -67,6 +67,7 @@ describe('AuthService', () => {
     };
     const emailService = {
       sendLoginCode: jest.fn(async (_to: string, _code: string) => undefined),
+      sendAccountDeletionCode: jest.fn(async (_to: string, _code: string) => undefined),
     };
 
     // The real repo applies column defaults (attempts=0, createdAt=now) on
@@ -382,6 +383,48 @@ describe('AuthService', () => {
       expect(usersService.findOrCreateForEmail).toHaveBeenCalledWith('tester@example.com');
       expect(result.token).toHaveLength(43);
       expect(sessions.rows.size).toBe(1);
+    });
+  });
+
+  describe('account deletion codes', () => {
+    it('are stored under their own key and sent with the deletion email, never as a login code', async () => {
+      const { service, loginCodes, emailService } = await build();
+      await service.sendDeletionCode('  Tester@Example.com ');
+      expect(emailService.sendLoginCode).not.toHaveBeenCalled();
+      expect(emailService.sendAccountDeletionCode).toHaveBeenCalledWith('tester@example.com', expect.stringMatching(/^\d{6}$/));
+      expect([...loginCodes.rows.values()].map((r) => r.email)).toEqual(['delete:tester@example.com']);
+    });
+
+    it('a deletion code does not log in, and a login code does not confirm a deletion', async () => {
+      const { service, emailService } = await build();
+      await service.sendDeletionCode('tester@example.com');
+      const deletionCode = emailService.sendAccountDeletionCode.mock.calls[0][1];
+      await expect(service.verifyCode('tester@example.com', deletionCode, {})).rejects.toBeInstanceOf(BadRequestException);
+
+      await service.requestCode('tester@example.com');
+      const loginCode = emailService.sendLoginCode.mock.calls[0][1];
+      if (loginCode !== deletionCode) {
+        await expect(service.checkDeletionCode('tester@example.com', loginCode, { consume: true })).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+
+    it('check without consume leaves the code usable; consume uses it up', async () => {
+      const { service, emailService } = await build();
+      await service.sendDeletionCode('tester@example.com');
+      const code = emailService.sendAccountDeletionCode.mock.calls[0][1];
+      await service.checkDeletionCode('tester@example.com', code, { consume: false });
+      await service.checkDeletionCode('tester@example.com', code, { consume: false });
+      await service.checkDeletionCode('tester@example.com', code, { consume: true });
+      await expect(service.checkDeletionCode('tester@example.com', code, { consume: true })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('five wrong guesses burn the code', async () => {
+      const { service, emailService } = await build();
+      await service.sendDeletionCode('tester@example.com');
+      const code = emailService.sendAccountDeletionCode.mock.calls[0][1];
+      const wrong = code === '000000' ? '111111' : '000000';
+      for (let i = 0; i < 5; i++) await expect(service.checkDeletionCode('tester@example.com', wrong, { consume: false })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.checkDeletionCode('tester@example.com', code, { consume: false })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

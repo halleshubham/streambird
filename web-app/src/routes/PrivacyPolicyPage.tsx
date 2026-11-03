@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { LegalLayout } from '../components/LegalLayout';
 import { useConsentBannerEnabled } from '../lib/consent';
 
@@ -15,7 +16,7 @@ export function PrivacyPolicyPage() {
   const consentMode = useConsentBannerEnabled();
 
   return (
-    <LegalLayout title="StreamBird Privacy Policy" updated="Last updated: October 18, 2026">
+    <LegalLayout title="StreamBird Privacy Policy" updated="Last updated: November 3, 2026">
 
         <p>
           StreamBird ("StreamBird", "we", "us") is a multi-platform live-streaming
@@ -159,8 +160,8 @@ export function PrivacyPolicyPage() {
         <h2>5. Data retention and deletion</h2>
         <p>
           We retain your account and stream history for as long as your account is
-          active. You may request deletion of your account and associated data at
-          any time by emailing{' '}
+          active. You can delete your account and associated data yourself at any
+          time (see "Deleting your account and data" below), or ask us to by emailing{' '}
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>; we will delete
           your account record, connected-platform credentials, and stream history
           within 30 days, except where we're required to retain limited records for
@@ -175,6 +176,30 @@ export function PrivacyPolicyPage() {
           can also remove StreamBird under "Business Integrations" in your
           Facebook settings. The history of streams you already ran is kept.
         </p>
+
+        <h2 id="delete-account">Deleting your account and data</h2>
+        <p>
+          Log in, open <strong>Account</strong> and choose <strong>Delete account</strong> (in the browser or in the StreamBird app). We email you a
+          6-digit code to confirm it is you, and the deletion takes effect immediately. If you cannot log in, email{' '}
+          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> from your account address and we do it for you within 30 days. The steps, and
+          exactly what is deleted, are on the public page <Link to="/delete-account">Delete your StreamBird account and data</Link>.
+        </p>
+        <ul>
+          <li>
+            <strong>Deleted:</strong> your sign-in, email address and mobile number. If you own the account (a personal account, or you are the only
+            admin of a company), also the whole account: connected-platform tokens and stream keys (and for YouTube we ask Google to revoke StreamBird&apos;s
+            access), brand kits and uploaded files, presets, scheduled streams, guest invites, stream history, and your autopay is cancelled. Other people on a company
+            account lose access and are told by email. A team member deleting their own account leaves the company&apos;s data in place.
+          </li>
+          <li>
+            <strong>Kept:</strong> payment records (amount, date, payment reference) that accounting and tax law require us to keep, with no name or
+            email, attached to an anonymous account record. Copies in routine backups are overwritten within 30 days and are not restored for a deleted
+            account.
+          </li>
+          <li>
+            <strong>Not ours to delete:</strong> broadcasts already published on YouTube, Facebook or Twitch stay on those platforms; delete them there.
+          </li>
+        </ul>
 
         <h2>6. Security</h2>
         <p>

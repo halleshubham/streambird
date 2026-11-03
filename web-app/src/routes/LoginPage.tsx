@@ -152,7 +152,7 @@ export function LoginPage() {
         )}
 
         <p className="auth-legal-links">
-          <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link>
+          <DocsLink /> · <Link to="/privacy">Privacy Policy</Link> · <Link to="/terms">Terms of Service</Link> · <Link to="/delete-account">Delete your account</Link>
           <CookieSettingsLink />
         </p>
       </div>

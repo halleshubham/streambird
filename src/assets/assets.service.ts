@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -29,6 +30,8 @@ export interface AssetLibrary {
 
 @Injectable()
 export class AssetsService {
+  private readonly logger = new Logger(AssetsService.name);
+
   constructor(
     @InjectRepository(Asset) private readonly assets: Repository<Asset>,
     @InjectRepository(BrandKit) private readonly kits: Repository<BrandKit>,
@@ -36,6 +39,36 @@ export class AssetsService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     private readonly accounts: AccountsService,
   ) {}
+
+  /** How many library files the account has (for the account-deletion warning). */
+  countForAccount(accountId: string): Promise<number> {
+    return this.assets.count({ where: { accountId } });
+  }
+
+  /** The bucket keys of every file of the account. Read BEFORE the rows are deleted (account deletion). */
+  async storageKeysForAccount(accountId: string): Promise<string[]> {
+    return (await this.assets.find({ where: { accountId }, select: ['storageKey'] })).map((a) => a.storageKey);
+  }
+
+  /**
+   * Deletes the given bucket objects, best-effort per object: a failure is logged (by key, which holds only ids) and
+   * the rest still go. Used after the rows are gone, so a stray object is the worst case.
+   */
+  async deleteStoredObjects(keys: string[]): Promise<{ deleted: number; failed: number }> {
+    let deleted = 0;
+    let failed = 0;
+    if (!this.storage.enabled) return { deleted, failed: keys.length };
+    for (const key of keys) {
+      try {
+        await this.storage.delete(key);
+        deleted += 1;
+      } catch (err) {
+        failed += 1;
+        this.logger.warn(`Account deletion: could not delete stored object ${key}: ${(err as Error).message}`);
+      }
+    }
+    return { deleted, failed };
+  }
 
   /** Bytes the plan allows; refuses with an upgrade hint when the plan keeps assets in the browser only. */
   async quotaBytesFor(accountId: string): Promise<number> {
