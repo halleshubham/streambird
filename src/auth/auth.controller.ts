@@ -11,11 +11,14 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './google-oauth.service';
+import { GoogleIdTokenService } from './google-id-token.service';
+import { GoogleMobileLoginDto } from './dto/google-mobile-login.dto';
 import { FacebookLoginService } from './facebook-login.service';
 import { RequestCodeDto } from './dto/request-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
@@ -54,6 +57,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly googleOAuth: GoogleOAuthService,
+    private readonly googleIdToken: GoogleIdTokenService,
     private readonly facebookLogin: FacebookLoginService,
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
@@ -241,6 +245,27 @@ export class AuthController {
     } catch {
       res.redirect('/login?error=google_oauth_failed');
     }
+  }
+
+  /**
+   * Native "Sign in with Google" for the Android app: it sends the Google ID
+   * token (JWT) from Credential Manager. Verified locally (signature, iss,
+   * exp, aud, verified email -- see GoogleIdTokenService), then the SAME
+   * identity resolution as the web callback and the SAME cookie + JSON as
+   * verify-code. Public and unauthenticated, so throttled per IP.
+   */
+  @Post('google/mobile')
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async googleMobile(
+    @Body() dto: GoogleMobileLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const profile = await this.googleIdToken.verify(dto.idToken);
+    const { user, account, token, expiresAt } = await this.authService.loginWithGoogleProfile(profile.email, {});
+    this.setSessionCookie(res, token, expiresAt);
+    return this.toAuthResponse(user, account.id);
   }
 
   /** Step 1 of "Continue with Facebook" -- same CSRF-state-cookie pattern as Google above. */
