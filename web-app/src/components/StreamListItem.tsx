@@ -38,10 +38,10 @@ export function StreamListItem({ stream }: { stream: StreamListItemType }) {
   const label = stream.cancelledAt ? 'Cancelled' : STATUS_LABELS[stream.status];
 
   return (
-    <li className={`stream-list-item ha-stream-row status-${stream.status}`}>
+    <li className="ha-stream-row">
       <div className="ha-list-main">
-        <h3 className="stream-title">{stream.title}</h3>
-        <p className="stream-date" title={date.toLocaleString()}>
+        <h3>{stream.title}</h3>
+        <p title={date.toLocaleString()}>
           {meta}
         </p>
       </div>

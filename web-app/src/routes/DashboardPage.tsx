@@ -199,7 +199,7 @@ export function DashboardPage() {
               Manage
             </Link>
           </div>
-          <ul className="ha-list connections-summary" style={{ marginTop: 8 }}>
+          <ul className="ha-list" style={{ marginTop: 8 }}>
             {connections.map((c) => (
               <li key={c.id}>
                 <span className="ha-dot ha-dot--ok" aria-hidden="true" />
@@ -223,7 +223,7 @@ export function DashboardPage() {
       <Card as="section" aria-labelledby="recent-title">
         <h2 id="recent-title">Recent streams</h2>
         {streams.length > 0 ? (
-          <ul className="ha-list stream-list" style={{ marginTop: 8 }}>
+          <ul className="ha-list" style={{ marginTop: 8 }}>
             {streams.map((s) => (
               <StreamListItem key={s.id} stream={s} />
             ))}

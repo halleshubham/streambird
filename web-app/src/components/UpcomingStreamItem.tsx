@@ -38,8 +38,8 @@ export function UpcomingStreamItem({
         <span className="ha-up-time">{time}</span>
       )}
       <div className="ha-list-main">
-        <h3 className="stream-title">{stream.title}</h3>
-        <p className="stream-date">
+        <h3>{stream.title}</h3>
+        <p>
           {variant === 'compact' ? `${time} · ` : ''}
           {[destinations, guestText].filter(Boolean).join(' · ')}
         </p>

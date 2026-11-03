@@ -296,7 +296,7 @@ export function ConnectionsPage() {
             No platforms connected yet. Connect one below to pick it as a destination.
           </p>
         ) : (
-          <ul className="ha-list connection-list" style={{ marginTop: 8 }}>
+          <ul className="ha-list" style={{ marginTop: 8 }}>
             {connections.map((c) => (
               <li key={c.id} className="ha-conn-item" style={{ flexWrap: 'wrap' }}>
                 <PlatformTile platform={c.platform} />
@@ -388,7 +388,7 @@ export function ConnectionsPage() {
           Twitch doesn't expose your stream key through its API -- copy it from your Twitch dashboard (Creator Dashboard → Settings → Stream) and paste it below. The same works for any
           other RTMP address.
         </p>
-        <form onSubmit={handleConnect} className="connect-form" style={{ marginTop: 16 }}>
+        <form onSubmit={handleConnect} style={{ marginTop: 16 }}>
           <div className="ha-rtmp-form">
             <Input id="label" label="Label" type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My Twitch channel" />
             <Input id="ingestServerUrl" label="Ingest server URL" type="text" required value={ingestServerUrl} onChange={(e) => setIngestServerUrl(e.target.value)} placeholder="rtmp://live.twitch.tv/app" />

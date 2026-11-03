@@ -244,7 +244,7 @@ export function BillingPage() {
       )}
 
       <div className={autopay ? 'ha-dash-grid ha-dash-grid--pair' : undefined}>
-        <Card as="section" className="billing-current" aria-labelledby="cp-title">
+        <Card as="section" aria-labelledby="cp-title">
           <div className="ha-row">
             <h2 id="cp-title">{isFree && !limits.planExpired ? `You are on the ${limits.planName} plan` : `Your plan: ${limits.planName}`}</h2>
             <span className="ha-sp" />
@@ -270,7 +270,7 @@ export function BillingPage() {
         </Card>
 
         {autopay && (
-          <Card as="section" className="billing-current" aria-labelledby="ap-title">
+          <Card as="section" aria-labelledby="ap-title">
             <h2 id="ap-title">Autopay</h2>
             {autopay.status === 'halted' ? (
               <p className="ha-error" style={{ marginTop: 8 }}>
@@ -310,14 +310,14 @@ export function BillingPage() {
         <h2 id="plans-title" style={{ marginBottom: 16 }}>
           {isFree ? 'Upgrade when you are ready' : 'Plans'}
         </h2>
-        <div className="ha-plans billing-plans">
+        <div className="ha-plans">
           {plans.map((p) => {
             const isCurrent = !limits.planExpired && limits.planKey === p.key;
             return (
               <Card
                 key={p.key}
                 as="div"
-                className={`ha-plan billing-plan${isCurrent ? ' ha-plan--current' : ''}${highlight === p.key ? ' billing-plan--highlight' : ''}`}
+                className={`ha-plan${isCurrent ? ' ha-plan--current' : ''}${highlight === p.key ? ' billing-plan--highlight' : ''}`}
               >
                 <div className="ha-row">
                   <h3 style={{ fontSize: 17 }}>{p.name}</h3>

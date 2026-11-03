@@ -167,7 +167,7 @@ export function ScheduledStreamPanel({
         </Notice>
       )}
 
-      <Card as="section" className="scheduled-summary" aria-label="When and where">
+      <Card as="section" aria-label="When and where">
         <div className="ha-row ha-row--wrap" style={{ alignItems: 'flex-start' }}>
           <div className="ha-list-main">
             <p className="ha-b" style={{ fontSize: 17 }}>
@@ -251,9 +251,9 @@ export function ScheduledStreamPanel({
                 No one invited by email yet.
               </p>
             ) : (
-              <ul className="ha-list participant-list" style={{ marginTop: 8 }}>
+              <ul className="ha-list" style={{ marginTop: 8 }}>
                 {detail.guests.map((g) => (
-                  <li key={g.id} className="participant-row">
+                  <li key={g.id} >
                     <span className="ha-avatar" aria-hidden="true">
                       {initialsFor(g.email)}
                     </span>
@@ -292,7 +292,7 @@ export function ScheduledStreamPanel({
               </ul>
             )}
 
-            <form onSubmit={handleAddGuests} className="ha-form create-stream-form" style={{ marginTop: 16 }}>
+            <form onSubmit={handleAddGuests} className="ha-form" style={{ marginTop: 16 }}>
               <Field label="Invite more guests" id="add-guests">
                 {() => <GuestEmailsField id="add-guests" value={newGuests} onChange={setNewGuests} rows={2} />}
               </Field>
@@ -311,9 +311,9 @@ export function ScheduledStreamPanel({
             <p className="ha-hint">
               <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Other destinations (Facebook, Twitch) are created when you start the stream.
             </p>
-            <ul className="ha-list destination-status-list" style={{ marginTop: 8 }}>
+            <ul className="ha-list" style={{ marginTop: 8 }}>
               {detail.destinations.map((d) => (
-                <li key={d.id} className="destination-status-row" style={{ flexWrap: 'wrap' }}>
+                <li key={d.id} style={{ flexWrap: 'wrap' }}>
                   <PlatformTile platform={d.platform} size={36} />
                   <div className="ha-list-main">
                     <h3>{d.label}</h3>
@@ -465,7 +465,7 @@ function EditSchedule({
   }
 
   return (
-    <Card as="form" onSubmit={submit} className="ha-form create-stream-form" aria-label="Edit details">
+    <Card as="form" onSubmit={submit} className="ha-form" aria-label="Edit details">
       <h2>Edit details</h2>
       <Input id="edit-title" label="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <TextArea id="edit-desc" label="Description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />

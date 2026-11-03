@@ -187,13 +187,13 @@ export function StreamDetailPage() {
               {destinations.length} destination{destinations.length === 1 ? '' : 's'}
             </span>
           </div>
-          <ul className="ha-list connection-list" style={{ marginTop: 8 }}>
+          <ul className="ha-list" style={{ marginTop: 8 }}>
             {destinations.map((d) => {
               const connection = connectionById.get(d.platformConnectionId);
               const platformStatus = d.platformStatus;
               const dot = d.status === 'live' ? 'ok' : d.status === 'failed' ? 'bad' : d.status === 'ended' ? '' : 'warn';
               return (
-                <li key={d.id} className="destination-detail-row">
+                <li key={d.id} >
                   {connection ? <PlatformTile platform={connection.platform} size={36} /> : <span className={`ha-dot ha-dot--${dot}`} aria-hidden="true" />}
                   <div className="ha-list-main">
                     <h3>{connection ? PLATFORM_LABELS[connection.platform] : 'Destination'}</h3>

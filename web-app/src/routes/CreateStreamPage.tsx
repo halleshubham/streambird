@@ -278,7 +278,7 @@ export function CreateStreamPage() {
         </DocsLink>
       </p>
       <Card as="div" style={{ padding: 32 }}>
-        <form onSubmit={handleSubmit} className="ha-form create-stream-form" style={{ gap: 28 }}>
+        <form onSubmit={handleSubmit} className="ha-form" style={{ gap: 28 }}>
           {tabs}
           <Input id="title" label="Title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Untitled stream" className="ha-title-input" />
 
