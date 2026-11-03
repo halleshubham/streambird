@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Account } from '../accounts/entities/account.entity';
 import { Company } from '../companies/entities/company.entity';
 import { User } from '../users/entities/user.entity';
@@ -91,7 +91,8 @@ export class SuperadminAccountsService {
       [accounts, total] = await this.accounts
         .createQueryBuilder('a')
         .leftJoin(Company, 'c', 'c.accountId = a.id')
-        .where(
+        .where('a.deletedAt IS NULL')
+        .andWhere(
           `(a.name ILIKE :like ESCAPE '\\' OR c.name ILIKE :like ESCAPE '\\' OR EXISTS (SELECT 1 FROM users u WHERE u.account_id = a.id AND u.email ILIKE :like ESCAPE '\\'))`,
           { like },
         )
@@ -101,6 +102,7 @@ export class SuperadminAccountsService {
         .getManyAndCount();
     } else {
       [accounts, total] = await this.accounts.findAndCount({
+        where: { deletedAt: IsNull() },
         order: { createdAt: 'DESC' },
         take: limit,
         skip: offset,

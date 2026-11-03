@@ -214,7 +214,20 @@ export class PlatformConnectionsService {
    *   Integrations settings.
    * - Twitch: a manually pasted stream key, nothing to revoke.
    */
-  private async revokeAtProvider(connection: PlatformConnection): Promise<void> {
+  /**
+   * Account deletion: ends our access at the provider for every connection of the account, best-effort (a failure is
+   * logged and never blocks the deletion; the rows and their stored tokens are deleted by the caller regardless).
+   * A token shared with a connection of ANOTHER account is left alone, like in remove(). Facebook/Twitch: nothing to
+   * revoke (see revokeAtProvider).
+   */
+  async revokeAllAtProvider(accountId: string): Promise<void> {
+    const all = await this.connections.find({ where: { accountId } });
+    for (const connection of all) {
+      await this.revokeAtProvider(connection, accountId);
+    }
+  }
+
+  private async revokeAtProvider(connection: PlatformConnection, ignoreAccountId?: string): Promise<void> {
     if (connection.platform !== Platform.YOUTUBE || connection.credentialsCiphertext.length === 0) return;
 
     let refreshToken: string | undefined;
@@ -226,7 +239,7 @@ export class PlatformConnectionsService {
     }
     if (!refreshToken) return;
 
-    if (await this.refreshTokenUsedElsewhere(connection.id, refreshToken)) {
+    if (await this.refreshTokenUsedElsewhere(connection.id, refreshToken, ignoreAccountId)) {
       this.logger.log(`Not revoking the Google token of connection ${connection.id}: another active connection uses the same token`);
       return;
     }
@@ -238,10 +251,11 @@ export class PlatformConnectionsService {
     }
   }
 
-  private async refreshTokenUsedElsewhere(connectionId: string, refreshToken: string): Promise<boolean> {
+  private async refreshTokenUsedElsewhere(connectionId: string, refreshToken: string, ignoreAccountId?: string): Promise<boolean> {
     const others = await this.connections.find({ where: { platform: Platform.YOUTUBE, isActive: true } });
     return others.some((other) => {
       if (other.id === connectionId || other.credentialsCiphertext.length === 0) return false;
+      if (ignoreAccountId && other.accountId === ignoreAccountId) return false;
       try {
         return this.encryption.decrypt<YouTubeCredentials>(other.credentialsCiphertext).refreshToken === refreshToken;
       } catch {

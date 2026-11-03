@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ForbiddenException,
   Inject,
@@ -37,6 +38,8 @@ export interface CheckoutOrder {
 /** How long autopay is asked to run: 10 years of monthly cycles (Razorpay requires a count). */
 const SUBSCRIPTION_TOTAL_COUNT = 120;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Subscriptions that can still charge the customer (live ones plus a halted one Razorpay may retry). */
+const CHARGEABLE_STATUSES: SubscriptionStatus[] = [...LIVE_SUBSCRIPTION_STATUSES, 'halted'];
 
 interface WebhookPayload {
   event?: string;
@@ -409,6 +412,36 @@ export class BillingService {
     await this.cancelAtRazorpay(sub, true);
     await this.subscriptions.update({ id: sub.id }, { cancelAtCycleEnd: true });
     return this.mySubscription(accountId);
+  }
+
+  /**
+   * Account deletion, step one: the autopay must stop before any data goes. Cancels every subscription that can still
+   * charge (immediately, no refund) and throws a clear 502 if Razorpay refuses, so the caller deletes nothing.
+   * "Already cancelled/completed" counts as success. A subscription still in `created` (checkout never finished)
+   * cannot charge; cancelling it is best-effort.
+   */
+  async cancelAllForAccountDeletion(accountId: string): Promise<number> {
+    const chargeable = await this.subscriptions.find({ where: { accountId, status: In(CHARGEABLE_STATUSES) } });
+    for (const sub of chargeable) {
+      try {
+        await this.cancelAtRazorpay(sub, false);
+      } catch (err) {
+        this.logger.error(`Account deletion: cancelling subscription ${sub.id} at Razorpay failed: ${(err as Error).message}`);
+        throw new BadGatewayException('We could not cancel your autopay with our payment provider, so nothing was deleted. Please try again in a few minutes, or write to support@shackyapps.in.');
+      }
+    }
+    for (const sub of await this.subscriptions.find({ where: { accountId, status: 'created' } })) {
+      await this.cancelAtRazorpay(sub, false).catch((err) => this.logger.warn(`Account deletion: could not cancel unfinished subscription ${sub.id}: ${(err as Error).message}`));
+    }
+    return chargeable.length;
+  }
+
+  /** For the deletion warning: the autopay that would be cancelled (plan name and next renewal), or null. Counts only, no PII. */
+  async activeSubscriptionSummary(accountId: string): Promise<{ plan: string; nextRenewal: string | null } | null> {
+    const sub = await this.subscriptions.findOne({ where: { accountId, status: In(CHARGEABLE_STATUSES) }, order: { createdAt: 'DESC' } });
+    if (!sub) return null;
+    const plan = await this.planRepo.findOne({ where: { key: sub.planKey } });
+    return { plan: plan?.name ?? sub.planKey, nextRenewal: sub.cancelAtCycleEnd ? null : (sub.currentEnd?.toISOString() ?? null) };
   }
 
   private async cancelAtRazorpay(sub: Subscription, atCycleEnd: boolean): Promise<void> {

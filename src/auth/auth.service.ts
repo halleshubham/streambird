@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { isReviewAccountEmail } from '../users/review-accounts';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { LoginCode } from './entities/login-code.entity';
 import { UserSession } from './entities/user-session.entity';
@@ -22,6 +22,8 @@ import { verifyPassword } from './password.util';
 const CODE_TTL_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
 const SESSION_TTL_DAYS = 30;
+/** Key prefix that keeps account-deletion codes apart from login codes in `login_codes`. */
+const DELETION_CODE_PREFIX = 'delete:';
 
 export interface SessionMeta {
   userAgent?: string;
@@ -55,7 +57,7 @@ export class AuthService {
     await this.sendCode(email);
   }
 
-  private async sendCode(email: string): Promise<void> {
+  private async sendCode(email: string, send: (code: string) => Promise<void> = (c) => this.emailService.sendLoginCode(email, c)): Promise<void> {
     const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 
     const loginCode = this.loginCodes.create({
@@ -65,7 +67,32 @@ export class AuthService {
     });
     await this.loginCodes.save(loginCode);
 
-    await this.emailService.sendLoginCode(email, code);
+    await send(code);
+  }
+
+  /**
+   * Account deletion codes live in the same table under a different key (`delete:<email>`), so a login code can
+   * never confirm a deletion and a deletion code can never log anyone in. Never skipped, not even for the review
+   * accounts that sign in without a code.
+   */
+  async sendDeletionCode(rawEmail: string): Promise<void> {
+    const email = this.normalizeEmail(rawEmail);
+    await this.sendCode(`${DELETION_CODE_PREFIX}${email}`, (code) => this.emailService.sendAccountDeletionCode(email, code));
+  }
+
+  /**
+   * Checks the deletion code (wrong guesses count towards the 5-attempt cap either way). With `consume: false` a
+   * correct code is left usable, so the caller can still refuse for another reason (e.g. the company-deletion
+   * confirmation) without making the person ask for a new code.
+   */
+  async checkDeletionCode(rawEmail: string, code: string, opts: { consume: boolean }): Promise<void> {
+    await this.consumeLoginCode(`${DELETION_CODE_PREFIX}${this.normalizeEmail(rawEmail)}`, code, opts.consume);
+  }
+
+  /** Forgets every code (login and deletion) stored for an address: part of deleting the person's data. */
+  async purgeCodesFor(rawEmail: string): Promise<void> {
+    const email = this.normalizeEmail(rawEmail);
+    await this.loginCodes.delete({ email: In([email, `${DELETION_CODE_PREFIX}${email}`]) });
   }
 
   /**
@@ -74,7 +101,7 @@ export class AuthService {
    * Company Admin sign-up flow (verifyCompanySignup), which is otherwise
    * identical except for what happens to identity resolution afterwards.
    */
-  private async consumeLoginCode(email: string, code: string): Promise<void> {
+  private async consumeLoginCode(email: string, code: string, consume = true): Promise<void> {
     const loginCode = await this.loginCodes.findOne({
       where: { email },
       order: { createdAt: 'DESC' },
@@ -93,6 +120,7 @@ export class AuthService {
       throw new BadRequestException('Incorrect code.');
     }
 
+    if (!consume) return;
     loginCode.consumedAt = new Date();
     await this.loginCodes.save(loginCode);
   }

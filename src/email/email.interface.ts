@@ -32,4 +32,8 @@ export interface EmailService {
   sendPendingApprovalsDigest(to: string, data: PendingApprovalsDigestData): Promise<void>;
   /** Tells a user their sign-up was approved ("studio is ready") or declined. Best-effort: never fails the approval itself. */
   sendApprovalDecision(to: string, data: ApprovalDecisionData): Promise<void>;
+  /** The 6-digit code that confirms an account deletion (its own email, so it cannot be mistaken for a login code). */
+  sendAccountDeletionCode(to: string, code: string): Promise<void>;
+  /** After a deletion: says only that the account was deleted. Best-effort. */
+  sendAccountDeletedNotice(to: string, data: { companyDeleted: boolean }): Promise<void>;
 }

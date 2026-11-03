@@ -40,6 +40,18 @@ export class AuditLogService {
     }
   }
 
+  /**
+   * An entry with no actor row: for a person who has just deleted their own account (the user row, which the
+   * actor id would point to, is gone). Ids only in `metadata` -- never an email or a name.
+   */
+  async logAnonymous(action: string, targetType: string, targetId: string | null, metadata?: Record<string, unknown>): Promise<void> {
+    try {
+      await this.entries.save(this.entries.create({ actorUserId: null, action, targetType, targetId, metadata: metadata ?? null }));
+    } catch {
+      // Same rule as log(): never the reason a legitimate action fails.
+    }
+  }
+
   async list(limit: number, offset: number): Promise<SuperadminAuditLogEntry[]> {
     return this.entries.find({
       order: { createdAt: 'DESC' },

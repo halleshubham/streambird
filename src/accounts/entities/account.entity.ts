@@ -66,6 +66,13 @@ export class Account {
   @Column({ type: 'timestamptz', nullable: true })
   suspendedAt!: Date | null;
 
+  /**
+   * Set only on the anonymous tombstone kept for an account that was deleted but has payment records (migration
+   * 0030). Such a row has no users and no data; every listing skips it.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  deletedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 
