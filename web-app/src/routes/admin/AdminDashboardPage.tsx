@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import * as superadminApi from '../../api/superadmin';
 import { BirdLoader } from '../../components/BirdLoader';
-import { BirdBusy } from '../../components/BirdBusy';
 import { PENDING_CHANGED_EVENT } from '../../lib/adminEvents';
-import { Badge, DataTable, Empty, PageHeader, ROLE_LABEL, Section, When } from '../../components/admin/adminKit';
+import { Badge, DataTable, Empty, Notice, PageHeader, ROLE_LABEL, Section, When } from '../../components/admin/adminKit';
 import { ApiError } from '../../api/client';
 import type { HeavyUsageRow, PendingApproval, RegistrationStatus } from '../../types/api';
-import { confirm } from '../../components/ui';
+import { Button, Card, confirm, toast } from '../../components/ui';
 
 /** Everyone waiting for approval -- a new Company Admin signup or a brand-new solo user's first login. */
 export function AdminDashboardPage() {
@@ -39,11 +38,12 @@ export function AdminDashboardPage() {
     void load();
   }, []);
 
-  async function decide(id: string, run: () => Promise<unknown>, failure: string) {
+  async function decide(id: string, run: () => Promise<unknown>, failure: string, done?: string) {
     setBusyId(id);
     setError(null);
     try {
       await run();
+      if (done) toast.success(done);
       await load();
       window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
     } catch (err) {
@@ -84,7 +84,7 @@ export function AdminDashboardPage() {
     setNotice(null);
     try {
       const { approved } = await superadminApi.approveAllPending();
-      setNotice(`Approved ${approved} signup${approved === 1 ? '' : 's'}.`);
+      setNotice(`Approved ${approved} signup${approved === 1 ? '' : 's'}. They have been emailed.`);
       await load();
       window.dispatchEvent(new Event(PENDING_CHANGED_EVENT));
     } catch (err) {
@@ -104,37 +104,39 @@ export function AdminDashboardPage() {
       destructive: true,
     });
     if (!ok) return;
-    void decide(id, () => superadminApi.rejectUser(id), 'Failed to reject.');
+    void decide(id, () => superadminApi.rejectUser(id), 'Failed to reject.', `${email} rejected.`);
   }
 
   return (
     <>
-      <PageHeader
-        title="Pending approvals"
-        subtitle="Unless registration is open (auto-approve), new signups can't use StreamBird until you approve them. They get an email either way."
-      />
+      <PageHeader title="Pending approvals" subtitle="Unless registration is open (auto-approve), new signups can't use StreamBird until you approve them. They get an email either way." />
+      {notice && <Notice tone="success" onDismiss={() => setNotice(null)}>{notice}</Notice>}
+      {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
       {reg && (
-        <Section
-          title={`Registration: ${reg.autoApprove ? 'open (auto-approve)' : 'paused (manual review)'}`}
-          hint="Open lets new signups straight in. Paused makes them wait here for you, which is the way to slow growth when the server is busy. People already approved are never affected."
-        >
-          <div className="segmented" role="group" aria-label="Registration mode">
-            <button type="button" className={!reg.autoApprove ? 'active' : ''} aria-pressed={!reg.autoApprove} disabled={regBusy} onClick={() => void changeMode(false)}>
-              Manual review
-            </button>
-            <button type="button" className={reg.autoApprove ? 'active' : ''} aria-pressed={reg.autoApprove} disabled={regBusy} onClick={() => void changeMode(true)}>
-              Auto-approve
-            </button>
+        <Section>
+          <div className="admin-reg" aria-label="Registration">
+            <div>
+              <div className="admin-card-head">
+                <h2>
+                  Registration <Badge tone={reg.autoApprove ? 'success' : 'warning'}>{reg.autoApprove ? 'Open' : 'Paused'}</Badge>
+                </h2>
+              </div>
+              <p className="admin-hint">
+                Open: new accounts are approved automatically. Paused: every signup waits for you. People already approved are never affected.
+              </p>
+              <p className="admin-hint" data-testid="registration-history" style={{ marginBottom: 0 }}>
+                New signups: <strong>{reg.last24h}</strong> in the last 24 hours, <strong>{reg.last7d}</strong> in the last 7 days. <strong>{reg.waiting}</strong> waiting for approval now.
+              </p>
+            </div>
+            <div className="admin-seg" role="group" aria-label="Registration mode">
+              <button type="button" aria-pressed={reg.autoApprove} disabled={regBusy} onClick={() => void changeMode(true)}>
+                Open, auto-approve
+              </button>
+              <button type="button" aria-pressed={!reg.autoApprove} disabled={regBusy} onClick={() => void changeMode(false)}>
+                Paused, manual review
+              </button>
+            </div>
           </div>
-          <p className="admin-hint" data-testid="registration-history">
-            New signups: <strong>{reg.last24h}</strong> in the last 24 hours, <strong>{reg.last7d}</strong> in the last 7 days. <strong>{reg.waiting}</strong> waiting for approval now.
-          </p>
-          {notice && <p role="status" className="brand-notice">{notice}</p>}
-          {reg.waiting > 0 && (
-            <button type="button" className="icon-btn" disabled={regBusy} onClick={() => void approveAll()}>
-              {regBusy && <BirdBusy />} Approve all waiting ({reg.waiting})
-            </button>
-          )}
         </Section>
       )}
       <Section
@@ -152,10 +154,10 @@ export function AdminDashboardPage() {
                 <tr>
                   <th scope="col">Account</th>
                   <th scope="col" className="hide-sm">Plan</th>
-                  <th scope="col">Hours</th>
-                  <th scope="col">Used</th>
-                  <th scope="col" className="hide-sm">Dest-hours</th>
-                  <th scope="col" className="hide-sm">Est. cost</th>
+                  <th scope="col" className="num">Hours</th>
+                  <th scope="col" className="num">Used</th>
+                  <th scope="col" className="num hide-sm">Dest-hours</th>
+                  <th scope="col" className="num hide-sm">Est. cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,16 +169,16 @@ export function AdminDashboardPage() {
                       <span className="admin-cell-sub show-sm">{r.planName} · {r.destinationHours} dest-h · Rs {r.estimatedBandwidthCostInr}</span>
                     </td>
                     <td className="hide-sm">{r.planName}</td>
-                    <td className="nowrap">{r.hoursUsed} / {r.includedHours === null ? '∞' : r.includedHours}</td>
-                    <td className="nowrap">
+                    <td className="num nowrap">{r.hoursUsed} / {r.includedHours === null ? '∞' : r.includedHours}</td>
+                    <td className="num nowrap">
                       {r.percentUsed === null ? (
                         <Badge tone="neutral">Unlimited</Badge>
                       ) : (
                         <Badge tone={r.percentUsed >= 100 ? 'danger' : r.percentUsed >= 80 ? 'warning' : 'neutral'}>{r.percentUsed}%</Badge>
                       )}
                     </td>
-                    <td className="nowrap hide-sm">{r.destinationHours}</td>
-                    <td className="nowrap hide-sm">Rs {r.estimatedBandwidthCostInr}</td>
+                    <td className="num nowrap hide-sm">{r.destinationHours}</td>
+                    <td className="num nowrap hide-sm">Rs {r.estimatedBandwidthCostInr}</td>
                   </tr>
                 ))}
               </tbody>
@@ -184,48 +186,57 @@ export function AdminDashboardPage() {
           )}
         </div>
       </Section>
-      {error && <p className="error" role="alert">{error}</p>}
       {pending === null ? (
         <BirdLoader loading compact label="Loading pending approvals…" />
       ) : pending.length === 0 ? (
-        <Empty>Nobody is waiting. New signups will appear here.</Empty>
+        <Empty title="All caught up">No signups are waiting. When registration is paused, new requests will show up here and in the Approvals badge.</Empty>
       ) : (
-        <DataTable caption="Signups waiting for approval">
-          <thead>
-            <tr>
-              <th scope="col">Email</th>
-              <th scope="col" className="hide-sm">Type</th>
-              <th scope="col" className="hide-sm">Company</th>
-              <th scope="col" className="hide-sm">Mobile</th>
-              <th scope="col" className="hide-sm">Signed up</th>
-              <th scope="col" />
-            </tr>
-          </thead>
-          <tbody>
-            {pending.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  <span className="admin-cell-main">{p.email}</span>
-                  <span className="admin-cell-sub show-sm">
-                    {ROLE_LABEL[p.role]}{p.role === 'company_admin' && p.companyName ? ` · ${p.companyName}` : ''}{p.phone ? ` · ${p.phone}` : ''} · <When iso={p.createdAt} />
-                  </span>
-                </td>
-                <td className="hide-sm"><Badge tone={p.role === 'company_admin' ? 'info' : 'neutral'}>{ROLE_LABEL[p.role]}</Badge></td>
-                <td className="hide-sm">{p.role === 'company_admin' ? (p.companyName ?? '—') : '—'}</td>
-                <td className="nowrap hide-sm">{p.phone ?? '—'}</td>
-                <td className="nowrap hide-sm"><When iso={p.createdAt} /></td>
-                <td className="actions">
-                  <button type="button" className="btn-sm" disabled={busyId === p.id} onClick={() => void decide(p.id, () => superadminApi.approveUser(p.id), 'Failed to approve.')}>
-                    {busyId === p.id && <BirdBusy />} Approve
-                  </button>
-                  <button type="button" className="btn-sm danger-button" disabled={busyId === p.id} onClick={() => handleReject(p.id, p.email)}>
-                    Reject
-                  </button>
-                </td>
+        <Card className="admin-section">
+          <div className="admin-card-head">
+            <h2>
+              Pending signups <Badge tone="warning">{pending.length}</Badge>
+            </h2>
+            <Button size="sm" busy={regBusy} onClick={() => void approveAll()}>
+              Approve all ({pending.length})
+            </Button>
+          </div>
+          <DataTable caption="Signups waiting for approval" cards>
+            <thead>
+              <tr>
+                <th scope="col">Email</th>
+                <th scope="col" className="hide-sm">Type</th>
+                <th scope="col" className="hide-sm">Company</th>
+                <th scope="col" className="hide-sm">Mobile</th>
+                <th scope="col" className="hide-sm">Signed up</th>
+                <th scope="col"><span className="ui-sr-only">Actions</span></th>
               </tr>
-            ))}
-          </tbody>
-        </DataTable>
+            </thead>
+            <tbody>
+              {pending.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <span className="admin-cell-main">{p.email}</span>
+                    <span className="admin-cell-sub show-sm">
+                      {ROLE_LABEL[p.role]}{p.role === 'company_admin' && p.companyName ? ` · ${p.companyName}` : ''}{p.phone ? ` · ${p.phone}` : ''} · <When iso={p.createdAt} />
+                    </span>
+                  </td>
+                  <td className="hide-sm"><Badge tone={p.role === 'company_admin' ? 'info' : 'neutral'}>{ROLE_LABEL[p.role]}</Badge></td>
+                  <td className="hide-sm">{p.role === 'company_admin' ? (p.companyName ?? '—') : '—'}</td>
+                  <td className="nowrap hide-sm">{p.phone ?? '—'}</td>
+                  <td className="nowrap hide-sm"><When iso={p.createdAt} /></td>
+                  <td className="actions">
+                    <Button size="sm" busy={busyId === p.id} disabled={busyId === p.id} onClick={() => void decide(p.id, () => superadminApi.approveUser(p.id), 'Failed to approve.', `${p.email} approved. They have been emailed.`)}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="secondary" className="admin-reject" disabled={busyId === p.id} onClick={() => handleReject(p.id, p.email)}>
+                      Reject
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </Card>
       )}
     </>
   );

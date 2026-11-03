@@ -124,6 +124,59 @@ export function AdminLoginPage() {
           </form>
         </div>
         <p className="pub-fine">Restricted area. Every admin action is recorded in the audit log.</p>
+        </div>
+        <h1>{codeSent ? 'Check your email' : 'Sign in'}</h1>
+        <p className="admin-subtitle">
+          {codeSent ? `Step 2 of 2: enter the 6-digit code we sent to ${email.trim()}.` : 'Step 1 of 2: your admin email and password. A code is emailed next.'}
+        </p>
+        <form onSubmit={handleSubmit}>
+          <Input
+            id="email"
+            label="Email"
+            type="email"
+            autoComplete="username"
+            autoFocus
+            required
+            value={email}
+            disabled={codeSent}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Input
+            id="password"
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            disabled={codeSent}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {codeSent && (
+            <Input
+              id="code"
+              label="Code"
+              className="admin-auth-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          )}
+          {error && <p className="ui-field-error" style={{ color: 'var(--danger-text)', margin: '0 0 12px' }} role="alert">{error}</p>}
+          <Button type="submit" block busy={busy} disabled={!email.trim() || !password || (codeSent && code.trim().length !== 6)}>
+            {codeSent ? 'Verify and log in' : 'Continue'}
+          </Button>
+          {codeSent && (
+            <Button variant="ghost" className="admin-auth-again" onClick={() => { setCodeSent(false); setCode(''); setError(null); }}>
+              Start over
+            </Button>
+          )}
+        </form>
+        <p className="admin-auth-note">Restricted area. Every admin action is recorded in the audit log.</p>
       </div>
     </AuthLayout>
   );
