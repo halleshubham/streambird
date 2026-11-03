@@ -4,6 +4,8 @@
  * (dist-web), with a captured mailbox and a mock Razorpay. A second tiny HTTP
  * server exposes the two things a browser can't get for itself:
  *   GET  /code?email=...      the latest login code "emailed" to that address
+ *   GET  /deletion-code?email=...   the latest ACCOUNT DELETION code "emailed" to that address
+ *   POST /make-company-admin?email=...   make that user the admin of a (new) company row on their account
  *   POST /approve?email=...   approve that user (&superadmin=1 to promote)
  *   POST /set-usage?email=...&hours=N[&plan=key]   set that user's account hours used + plan
  *   POST /add-connection?email=...&platform=youtube|facebook&label=...   connect a (fake) channel/page to that user's account
@@ -31,6 +33,14 @@ async function main() {
       };
       if (url.pathname === '/ready') return send(200, { ok: true });
       if (url.pathname === '/code') return send(200, { code: h.mailbox.codes.get(email) ?? null });
+      if (url.pathname === '/deletion-code') return send(200, { code: h.mailbox.deletionCodes.get(email) ?? null });
+      if (url.pathname === '/make-company-admin' && req.method === 'POST') {
+        const r = await h.db.query(`UPDATE users SET role = 'company_admin' WHERE email = $1 RETURNING account_id`, [email]);
+        if (!r.rowCount) return send(404, { error: 'no such user' });
+        await h.db.query(`INSERT INTO companies (name, account_id) VALUES ($2, $1)`, [r.rows[0].account_id, url.searchParams.get('name') ?? 'Acme Media']);
+        await h.db.query(`UPDATE accounts SET name = $2 WHERE id = $1`, [r.rows[0].account_id, url.searchParams.get('name') ?? 'Acme Media']);
+        return send(200, { updated: 1 });
+      }
       if (url.pathname === '/approve' && req.method === 'POST') {
         const role = url.searchParams.get('superadmin') ? ", role = 'superadmin'" : '';
         const r = await h.db.query(`UPDATE users SET approved_at = now(), phone_required = false${role} WHERE email = $1`, [email]);
