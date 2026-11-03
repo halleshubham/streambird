@@ -205,7 +205,7 @@ export function BrandPage() {
         )}
       </div>
 
-      <section aria-labelledby="kits-heading" className="brand-section">
+      <section aria-labelledby="kits-heading" className="ha-brand-section">
         <h2 id="kits-heading">Brand kits</h2>
         <p className="ha-hint" style={{ marginBottom: 16 }}>
           The kit a channel or page uses is its look. A channel with no kit of its own uses the account default.
@@ -225,9 +225,9 @@ export function BrandPage() {
           </EmptyState>
         )}
 
-        <ul className="ha-kits brand-kit-list">
+        <ul className="ha-kits">
           {kits.map((k) => (
-            <li key={k.id} className={`brand-kit-card${editing === k.id ? ' ha-kit-editing' : ''}`}>
+            <li key={k.id} className={editing === k.id ? "ha-kit-editing" : undefined}>
               {editing === k.id ? (
                 <KitEditor key={k.id} kit={k} {...editorProps} />
               ) : (
@@ -236,7 +236,7 @@ export function BrandPage() {
             </li>
           ))}
           {editing === 'new' && (
-            <li className="brand-kit-card ha-kit-editing">
+            <li className="ha-kit-editing">
               <KitEditor kit={null} {...editorProps} />
             </li>
           )}
@@ -253,10 +253,10 @@ export function BrandPage() {
         </ul>
       </section>
 
-      <Card as="section" aria-labelledby="storage-heading" className="brand-section">
+      <Card as="section" aria-labelledby="storage-heading" className="ha-brand-section">
         <h2 id="storage-heading">Storage</h2>
         <div
-          className={`ha-meter brand-meter${nearlyFull ? ' ha-meter--warn' : ''}`}
+          className={`ha-meter${nearlyFull ? ' ha-meter--warn' : ''}`}
           style={{ marginTop: 12 }}
           role="img"
           aria-label={`${fmtMb(lib.usedBytes)} of ${fmtMb(lib.quotaBytes)} used`}
@@ -266,7 +266,7 @@ export function BrandPage() {
         <p className="ha-hint" data-testid="brand-usage">
           {fmtMb(lib.usedBytes)} of {fmtMb(lib.quotaBytes)} used{nearlyFull ? ' -- nearly full. Delete a file or upgrade your plan for more room.' : ''}
         </p>
-        <details className="brand-files ha-files" data-testid="brand-files">
+        <details className="ha-files" data-testid="brand-files">
           <summary>Uploaded files ({lib.items.length})</summary>
           <p className="ha-hint">
             Every picture you add in a kit is kept here, so another slot or kit can reuse it. Delete a file you no longer need to free space (a file a kit uses must be removed from the kit first).
@@ -274,7 +274,7 @@ export function BrandPage() {
           {lib.items.length === 0 ? (
             <p className="ha-hint">No files yet.</p>
           ) : (
-            <ul className="ha-asset-grid brand-grid">
+            <ul className="ha-asset-grid">
               {lib.items.map((a) => (
                 <AssetCard key={a.id} asset={a} onChanged={reload} onError={setError} />
               ))}
@@ -326,7 +326,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
 function KitSummary({ kit, assets, channelNames, onEdit }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void }) {
   const hasPortrait = !!(kit.logoAssetIdPortrait || kit.wallpaperAssetIdPortrait || (kit.adsPortrait ?? []).length > 0);
   return (
-    <Card as="div" className="ha-kit-card brand-kit-summary">
+    <Card as="div" className="ha-kit-card">
       <div className="ha-kit-previews">
         <KitPreview kit={kit} assets={assets} orientation="landscape" />
         {hasPortrait && <KitPreview kit={kit} assets={assets} orientation="portrait" />}
@@ -388,7 +388,7 @@ function AssetCard({ asset, onChanged, onError }: { asset: LibraryAsset; onChang
     }
   }
   return (
-    <li className="ha-asset brand-asset">
+    <li className="ha-asset">
       <img src={assetsApi.assetFileUrl(asset.id)} alt={asset.name} loading="lazy" />
       <span className="ha-asset-name">{asset.name}</span>
       <span className="ha-sm ha-muted">
@@ -514,7 +514,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
   const mismatch = asset ? aspectMismatch(asset.width, asset.height, spec) : false;
 
   return (
-    <div className="ha-slot kit-slot" data-testid={`kit-slot-${slot}`} data-has-file={asset ? 'true' : 'false'}>
+    <div className="ha-slot" data-testid={`kit-slot-${slot}`} data-has-file={asset ? 'true' : 'false'}>
       <label
         className={`ha-slot-thumb${over ? ' is-over' : ''}`}
         onDragOver={(e) => {
@@ -528,7 +528,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
         <input ref={fileRef} type="file" accept={accept} aria-label={`${label} file`} disabled={busy} onChange={(e) => void take(e.target.files?.[0])} />
       </label>
       <div className="ha-slot-body">
-        <div className="ha-slot-head kit-slot-head">
+        <div className="ha-slot-head">
           <strong>{label}</strong>
           <span className="ha-slot-sug" data-testid={`slot-size-${slot}`}>Suggested {sizeText(spec)}</span>
         </div>
@@ -549,7 +549,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
             It still works, but it may look small or cropped.
           </p>
         )}
-        <div className="ha-slot-actions kit-slot-actions">
+        <div className="ha-slot-actions">
           {asset ? (
             <Button variant="secondary" size="sm" aria-label={`Replace ${label}`} disabled={busy} icon={<Replace size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
               Replace
@@ -561,7 +561,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
           )}
           {options.length > 0 && (
             <select
-              className="kit-slot-choose ui-input ui-select"
+              className="ui-input ui-select"
               aria-label={`${label}: choose from uploaded`}
               value=""
               disabled={busy}
@@ -698,7 +698,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   );
 
   return (
-    <form className="ha-kit-editor brand-kit brand-kit--editing" onSubmit={save} aria-label={kit ? `Brand kit ${kit.name}` : 'New brand kit'}>
+    <form className="ha-kit-editor" onSubmit={save} aria-label={kit ? `Brand kit ${kit.name}` : 'New brand kit'}>
       <div className="ha-kit-bar">
         <button type="button" className="ha-quiet" aria-label="Close without saving" onClick={onClose}>
           &larr; Brand kits
@@ -722,7 +722,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
           <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
             Shape
           </span>
-          <div className="ha-seg kit-orientation" role="tablist" aria-label="Kit orientation">
+          <div className="ha-seg" role="tablist" aria-label="Kit orientation">
             {BRAND_ORIENTATIONS.map((o) => (
               <button
                 key={o}
@@ -742,7 +742,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
       </div>
 
       <div className="ha-kit-cols">
-        <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-tab-${orientation}`} className="kit-orientation-panel ha-slots" data-orientation={orientation}>
+        <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-tab-${orientation}`} className="ha-slots" data-orientation={orientation}>
           <p className="ha-hint" style={{ marginTop: 0 }} data-testid="kit-orientation-note">
             {orientation === 'landscape'
               ? 'Used by 16:9 (landscape) streams.'
@@ -756,7 +756,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
             Size: {sizeText(spec.wallpaper)} for {BRAND_ORIENTATION_LABEL[orientation]}.
           </p>
 
-          <fieldset className="kit-ads ha-fieldset ha-slots" data-testid="kit-ads">
+          <fieldset className="ha-fieldset ha-slots" data-testid="kit-ads">
             <legend>Ads</legend>
             <p className="ha-hint" style={{ marginTop: 0 }}>
               Up to three ads on the broadcast picture, one in each place. Studio hosts can still switch them off or replace them per stream.
@@ -810,7 +810,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
             <p className="ha-hint">A preview of the look. The studio draws it at full size.</p>
           </Card>
 
-          <Card as="fieldset" className="kit-shared ha-fieldset ha-stack" data-testid="kit-shared" style={{ gap: 20 }}>
+          <Card as="fieldset" className="ha-fieldset ha-stack" data-testid="kit-shared" style={{ gap: 20 }}>
             <legend className="ha-legend">Look (both shapes)</legend>
             <div>
               <span className="ui-field-label" id={`${idPrefix}-pos`} style={{ display: 'block', marginBottom: 6 }}>
@@ -846,7 +846,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
             <ShrinkSwitch shrink={form.adsShrinkPicture !== false} onChange={(on) => set('adsShrinkPicture', on)} />
           </Card>
 
-          <Card as="fieldset" className="brand-channels ha-fieldset ha-stack" style={{ gap: 4 }}>
+          <Card as="fieldset" className="ha-fieldset ha-stack" style={{ gap: 4 }}>
             <legend className="ha-legend">Channels and pages using this kit</legend>
             {connections.length === 0 ? (
               <p className="ha-hint">Connect a platform first (Connections).</p>

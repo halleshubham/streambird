@@ -362,7 +362,7 @@ test.describe('team', () => {
     });
     await bothWidths(page, '/team', async () => {
       await expect(page.getByRole('heading', { name: 'Invite a teammate' })).toBeVisible();
-      await expect(page.getByRole('cell', { name: 'maya@acme.example' })).toBeVisible();
+      await expect(page.getByRole('cell', { name: 'maya@acme.example', exact: true })).toBeVisible();
     });
     await expect(page.getByRole('button', { name: 'Remove maya@acme.example' })).toBeVisible();
     await expect(page.getByRole('cell', { name: new RegExp(`${email}.*\\(you\\)`) })).toBeVisible();

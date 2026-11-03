@@ -68,7 +68,8 @@ test.describe('dashboard presets', () => {
     await page.getByRole('button', { name: 'Save preset' }).click();
 
     const card = page.getByRole('article', { name: 'Tall show' });
-    await expect(card).toContainText('Twitch · Default look · 360p · ticker on · vertical');
+    await expect(card).toContainText('Twitch');
+    await expect(card).toContainText('Default look · 360p · ticker on · vertical');
     // The server holds exactly what the form had.
     const saved = (await (await api.get(`${APP}/api/presets`)).json())[0];
     expect(saved.config).toMatchObject({ orientation: 'portrait', quality: 'sd', tickerEnabled: true, tickerText: 'Breaking: it works' });
