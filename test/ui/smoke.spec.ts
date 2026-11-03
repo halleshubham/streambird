@@ -843,6 +843,7 @@ test.describe('brand library and kits', () => {
       await expect(page.getByRole('heading', { name: /^English/ })).toHaveCount(0);
       await expect(page.getByText('No brand kits yet')).toBeVisible();
       await page.getByRole('button', { name: 'Delete main-logo' }).click();
+      await acceptConfirm(page);
       await expect(page.getByText('No files yet')).toBeVisible();
     });
 
