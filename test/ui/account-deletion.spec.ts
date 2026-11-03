@@ -12,9 +12,17 @@ async function noSidewaysScroll(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
+// The code email is sent asynchronously after "Send confirmation code": wait until it is in the fixture mailbox.
 const deletionCode = async (page: Page, email: string) => {
-  const { code } = await (await page.request.get(`${CONTROL}/deletion-code?email=${email}`)).json();
-  return code as string;
+  let code: string | null = null;
+  await expect
+    .poll(async () => {
+      const body = (await (await page.request.get(`${CONTROL}/deletion-code?email=${email}`)).json()) as { code: string | null };
+      code = body.code;
+      return typeof code;
+    })
+    .toBe('string');
+  return code as unknown as string;
 };
 
 test.describe('public page /delete-account', () => {

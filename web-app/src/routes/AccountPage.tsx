@@ -12,7 +12,7 @@ const ROLE_LABEL: Record<string, string> = { company_admin: 'Company admin', use
 
 /** The signed-in person's own details, and the danger zone: deleting the account (Google Play / GDPR / DPDP). */
 export function AccountPage() {
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [account, setAccount] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -29,10 +29,10 @@ export function AccountPage() {
   function onDeleted() {
     setDeleting(false);
     toast.success('Your account was deleted');
-    // Land on the public page first: the session is already gone on the server, and refreshing the auth state
-    // first would bounce this protected page to the login screen.
+    // Land on the public page. The session is already gone on the server; the auth state is refreshed from THAT page
+    // (see AccountDeletedPage). Refreshing here races the navigation: a fast 401 flips this protected page to
+    // 'anonymous' before the router has moved, and it redirects to /login instead.
     navigate('/account-deleted', { replace: true });
-    void refresh();
   }
 
   return (

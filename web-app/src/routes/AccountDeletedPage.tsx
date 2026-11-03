@@ -1,9 +1,16 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { AuthHeading, AuthLayout } from '../components/PublicLayout';
 import { buttonClass } from '../components/ui';
 
 /** Where a person lands after deleting their account (public: they no longer have a session). */
 export function AccountDeletedPage() {
+  const { refresh } = useAuth();
+  // The server session is gone: let the app notice (this route is public, so becoming 'anonymous' here is harmless).
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   return (
     <AuthLayout>
       <div className="pub-auth-col">
