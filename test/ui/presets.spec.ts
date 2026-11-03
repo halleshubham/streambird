@@ -193,7 +193,7 @@ test.describe('setup form', () => {
       await page.locator('#brandKit').selectOption(kit.id);
       await expect(page.getByTestId('more-options-summary')).toHaveText('Acme brand · 720p · ticker off');
       await page.getByLabel(/Kit Twitch/).check();
-      await page.getByRole('button', { name: /Create and open studio/ }).click();
+      await page.getByRole('button', { name: /Go live now/ }).click();
       await expect(page).toHaveURL(/\/studio$/);
       const id = page.url().split('/streams/')[1].split('/')[0];
       const persisted = await page.evaluate((sid) => JSON.parse(localStorage.getItem(`streambird:studio:${sid}:v1`) ?? '{}'), id);
@@ -227,7 +227,7 @@ test.describe('setup form', () => {
     await addTwitch(api, 'Offer Twitch');
     await page.goto('/streams/new');
     await page.getByLabel(/Offer Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     const offer = page.getByTestId('save-preset-offer');
     await expect(offer).toBeVisible();
     await offer.getByRole('button', { name: 'Save preset' }).click();

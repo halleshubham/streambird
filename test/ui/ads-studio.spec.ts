@@ -453,7 +453,7 @@ test.describe('brand kit ads', () => {
 
     // The file in use cannot be deleted from the library.
     await page.locator('summary', { hasText: 'Uploaded files' }).click();
-    await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of sponsor') })).toContainText('Ad');
+    await expect(page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete sponsor' }) })).toContainText('Ad');
     await page.getByRole('button', { name: 'Delete sponsor' }).click();
     await acceptConfirm(page);
     await expect(page.getByRole('alert')).toContainText('used by the brand kit');

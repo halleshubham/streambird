@@ -576,7 +576,7 @@ test.describe('host studio', () => {
 
     const sent = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
     await page.getByLabel(/Form Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     expect((await sent).postDataJSON().visibility).toBe('public');
   });
 
@@ -602,7 +602,7 @@ test.describe('host studio', () => {
 
     const upload = page.waitForRequest((r) => /\/api\/streams\/[^/]+\/thumbnail$/.test(r.url()) && r.method() === 'PUT');
     await page.getByLabel(/Thumb Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     await upload;
     await expect(page).toHaveURL(/\/studio$/);
   });
@@ -629,7 +629,7 @@ test.describe('host studio', () => {
     png.writeUInt32BE(720, 20);
     await page.locator('.thumbnail-picker input[type=file]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
     await page.getByLabel(/Refuse Twitch/).check();
-    await page.getByRole('button', { name: /Create and open studio/ }).click();
+    await page.getByRole('button', { name: /Go live now/ }).click();
     const notice = page.getByTestId('thumbnail-notice');
     await expect(notice).toContainText('Thumbnail not applied');
     await expect(notice).toContainText('verified channel');
@@ -811,7 +811,7 @@ test.describe('brand library and kits', () => {
       await expect(englishCard).toContainText('Used by English channel');
       await expect(englishCard).not.toContainText('Account default');
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
-      const card = page.getByRole('listitem').filter({ has: page.getByLabel('Name of main-logo') });
+      const card = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete main-logo' }) });
       await expect(card).toContainText('Logo');
       await expect(card).toContainText('used by Hindi, English');
 
@@ -1812,7 +1812,7 @@ test.describe('animated GIF logo', () => {
       await expect(slot).toContainText('spin');
       await expect.poll(() => slot.locator('.brand-drop-preview').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true);
       await page.locator('summary', { hasText: 'Uploaded files' }).click();
-      await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of spin') })).toContainText('Logo');
+      await expect(page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete spin' }) })).toContainText('Logo');
 
       await form.getByLabel('Wallpaper file').setInputFiles({ name: 'wall.gif', mimeType: 'image/gif', buffer: GIF });
       await expect(page.getByRole('alert')).toContainText('GIF images can only be used as a logo');
@@ -2223,8 +2223,12 @@ test.describe('UI polish', () => {
     await calm.close();
   });
 
-  test('dashboard: Go live has space between icon and text; Manage is a chip', async ({ page, context }) => {
-    await signIn(context);
+  test('dashboard: the New stream button keeps space between icon and text; Manage and Connect are quiet links', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await api.post(`${APP}/api/platform-connections/twitch/manual`, {
+      data: { label: 'Dash Twitch', ingestServerUrl: 'rtmp://live.example.com/app', streamKey: 'k' },
+      headers: apiHeaders,
+    });
     await page.goto('/dashboard');
     const cta = page.locator('a.go-live-cta');
     await expect(cta).toBeVisible();
@@ -2236,11 +2240,8 @@ test.describe('UI polish', () => {
       return [svg.right, range.getBoundingClientRect().left];
     });
     expect(textLeft - svgRight).toBeGreaterThanOrEqual(8);
-    const manage = page.getByRole('link', { name: /Manage/ });
-    await expect(manage).toHaveClass(/chip-link/);
-    expect(await manage.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-    const schedule = page.getByRole('link', { name: /Connect one/ });
-    await expect(schedule).toHaveClass(/chip-link/);
+    await expect(page.getByRole('link', { name: /^Manage/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Connect YouTube' })).toHaveAttribute('href', '/connections');
   });
 
   test('a button that is working puts a big bird in the middle of the screen', async ({ page }) => {

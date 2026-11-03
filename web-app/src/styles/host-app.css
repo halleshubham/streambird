@@ -1600,3 +1600,131 @@
     transition: none !important;
   }
 }
+
+/* ---------- additions ---------- */
+.ha-title-input {
+  font-size: 17px;
+  font-weight: 600;
+}
+.ha-notice--slim {
+  padding: 12px 16px;
+}
+.ha-plan--current .ui-btn--primary,
+.ha-plan--current .ui-btn--primary:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
+  color: var(--brand-deep);
+}
+.ha-plan--current .ha-quiet,
+.ha-plan--current .ha-quiet:hover:not(:disabled) {
+  color: #fff;
+}
+.ha-legend {
+  padding: 0;
+  margin-bottom: 12px;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--ink);
+  float: left;
+  width: 100%;
+}
+.ha-legend + * {
+  clear: both;
+}
+.ha-kit-editing {
+  grid-column: 1 / -1;
+}
+.ha-kits > li {
+  min-width: 0;
+  list-style: none;
+}
+.ha-kit-card .kit-preview {
+  max-width: 100%;
+}
+.ha-ad-slot > .ha-slot {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ha-ad-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 8px 16px 12px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+  background: var(--bg);
+}
+.ha-ad-controls .ha-check {
+  min-height: 44px;
+}
+.ha-files > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--brand-text);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+/* the shrink switch (shared markup with the studio's Ads tab) looks like a switch inside the kit editor */
+.ha-kit-editor .ad-shrink-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ha-kit-editor .ad-shrink-row input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 26px;
+  margin: 0;
+  border-radius: 13px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ha-kit-editor .ad-shrink-row input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.ha-kit-editor .ad-shrink-row input[type='checkbox']:checked {
+  background: var(--brand);
+}
+.ha-kit-editor .ad-shrink-row input[type='checkbox']:checked::after {
+  transform: translateX(20px);
+}
+.ha-kit-editor .ad-shrink-row input[type='checkbox']:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+.ha-kit-editor .kit-preview {
+  width: 100%;
+}
+.ha-kit-editor input[type='range'] {
+  width: 100%;
+  margin: 4px 0 0;
+}
+@media (max-width: 640px) {
+  .ha-slot-actions select {
+    width: 100%;
+  }
+  .ha-kit-bar .ui-btn {
+    flex: 1;
+  }
+}
