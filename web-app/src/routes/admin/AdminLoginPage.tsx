@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import * as authApi from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { AuthHeading, AuthLayout } from '../../components/PublicLayout';
-import { Badge, Button, Input } from '../../components/ui';
+import { Button, Input } from '../../components/ui';
 
 /** Superadmin login: password, then a code emailed after it checks out -- see
  * AuthController.superadminLogin / superadminVerify. Completely separate from
@@ -46,7 +46,7 @@ export function AdminLoginPage() {
   }
 
   return (
-    <AuthLayout headerAction={<Badge tone="pro">ADMIN</Badge>} className="admin-auth">
+    <AuthLayout className="admin-auth">
       <div className="pub-auth-col">
         <AuthHeading
           title={codeSent ? 'Check your email' : 'Sign in'}
@@ -56,7 +56,8 @@ export function AdminLoginPage() {
               : 'Step 1 of 2: your admin email and password. A code is emailed next.'
           }
         />
-        <div className="pub-auth-card">
+        <div className="pub-auth-card admin-auth-card">
+          <span className="admin-badge">ADMIN</span>
           <form onSubmit={handleSubmit} className="pub-form">
             <Input
               id="email"

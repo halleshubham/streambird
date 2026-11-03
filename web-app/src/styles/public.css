@@ -189,6 +189,16 @@
   color: var(--muted);
 }
 
+/* admin sign-in: same card with the admin identity (ADMIN badge, amber rule) */
+.pub-auth-card.admin-auth-card {
+  max-width: none;
+  border-top: 3px solid var(--warning);
+}
+.admin-auth-card .admin-badge {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
 /* ---- 404 ---- */
 .pub-notfound {
   flex: 1;
@@ -361,6 +371,9 @@
   display: flex;
   gap: 8px;
   flex: none;
+}
+.pub-cookie-actions .ui-btn {
+  min-width: 120px; /* both answers exactly the same size */
 }
 
 /* ---- Landing ---- */
