@@ -68,6 +68,8 @@ export interface AppConfig {
   google: {
     clientId: string;
     clientSecret: string;
+    /** Extra OAuth client IDs (the Android clients of the same Google project) whose ID tokens POST /auth/google/mobile accepts, besides clientId (GOOGLE_ANDROID_CLIENT_IDS, comma-separated). */
+    androidClientIds: string[];
     /** Must exactly match a redirect URI registered on the Google OAuth
      * client, e.g. `${publicBaseUrl}/api/auth/google/callback`. */
     redirectUri: string;
@@ -178,6 +180,7 @@ export default (): AppConfig => ({
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    androidClientIds: (process.env.GOOGLE_ANDROID_CLIENT_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     redirectUri: process.env.GOOGLE_REDIRECT_URI ?? '',
     youtubeRedirectUri: process.env.GOOGLE_YOUTUBE_REDIRECT_URI ?? '',
     youtubeScope: process.env.GOOGLE_YOUTUBE_SCOPE || 'https://www.googleapis.com/auth/youtube.force-ssl',
