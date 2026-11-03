@@ -126,7 +126,7 @@ test.describe('unified brand kit editor', () => {
 
     // The uploaded files are an internal detail under Storage; a file a kit uses cannot be deleted.
     await page.locator('summary', { hasText: 'Uploaded files' }).click();
-    await expect(page.getByRole('listitem').filter({ has: page.getByLabel('Name of logo16') })).toContainText('used by Both shapes');
+    await expect(page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete logo16' }) })).toContainText('used by Both shapes');
   });
 
   test('the shrink switch is part of the kit and is saved', async ({ page, context }) => {

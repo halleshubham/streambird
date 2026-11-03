@@ -31,6 +31,22 @@ export function destinationNames(ids: string[] | undefined, connections: Platfor
   return names.join(', ');
 }
 
+/** The platform names behind `destinationNames`, as a list (for chips). */
+export function destinationList(ids: string[] | undefined, connections: PlatformConnection[]): string[] {
+  const chosen = ids && ids.length > 0 ? connections.filter((c) => ids.includes(c.id)) : connections;
+  return [...new Set(chosen.map((c) => PLATFORM_LABELS[c.platform] ?? c.platform))];
+}
+
+/** The look/quality/ticker line of a preset card, without the destinations ("Acme brand · 720p · ticker off"). */
+export function presetOptionsLine(config: PresetConfig, kits: BrandKit[]): string {
+  return optionsSummary({
+    look: lookLabel(config.brandKitId, kits),
+    quality: config.quality ?? DEFAULT_QUALITY,
+    tickerOn: !!config.tickerEnabled && !!config.tickerText?.trim(),
+    portrait: config.orientation === 'portrait',
+  });
+}
+
 export function presetSummary(config: PresetConfig, connections: PlatformConnection[], kits: BrandKit[]): string {
   return [
     destinationNames(config.destinationIds, connections),

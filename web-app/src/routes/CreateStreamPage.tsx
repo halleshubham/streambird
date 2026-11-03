@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, ChevronDown, Plug, Radio, Save } from 'lucide-react';
+import { CalendarClock, ChevronDown, Radio, Save } from 'lucide-react';
 import { listConnections } from '../api/connections';
 import { listBrandKits } from '../api/assets';
 import { getMyLimits } from '../api/plans';
@@ -13,12 +13,13 @@ import { ThumbnailPicker } from '../components/ThumbnailPicker';
 import { rememberThumbnailNotice } from '../lib/thumbnailNotice';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
-import { PlatformBadge } from '../components/PlatformBadge';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, Resolution, StreamPreset } from '../types/api';
-import { BirdBusy } from '../components/BirdBusy';
 import { DocsLink } from '../components/DocsLink';
+import { DestinationPicker } from '../components/host/DestinationPicker';
+import { Notice, PageHeader } from '../components/host/HostKit';
+import { Button, Card, Field, Input, SelectField, TextArea, buttonClass } from '../components/ui';
 
 export function CreateStreamPage() {
   const navigate = useNavigate();
@@ -212,257 +213,320 @@ export function CreateStreamPage() {
     }
   }
 
+  const header = (
+    <PageHeader
+      title="New stream"
+      actions={
+        connections && connections.length > 0 ? (
+          <Link to="/dashboard" className="ha-quiet">
+            Start from a preset
+          </Link>
+        ) : undefined
+      }
+    />
+  );
+
+  const tabs = (
+    <div className="ha-tabs" role="tablist" aria-label="When to stream">
+      <button type="button" role="tab" aria-selected={mode === 'now'} onClick={() => setMode('now')}>
+        Go live now
+      </button>
+      <button type="button" role="tab" aria-selected={mode === 'schedule'} onClick={() => setMode('schedule')}>
+        Schedule
+      </button>
+    </div>
+  );
+
   if (connections !== null && connections.length === 0) {
     return (
-      <div>
-        <h1>Create a stream</h1>
-        <p className="empty-state">
-          Connect at least one platform before creating a stream. <Link to="/connections" className="chip-link chip-link--sm"><Plug size={14} /> Connect one</Link>.
-        </p>
+      <div className="ha-page ha-narrow">
+        {header}
+        <Card className="ha-form" style={{ padding: 32, gap: 28 }}>
+          {tabs}
+          <Input id="title" label="Title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What are you streaming?" />
+          <div className="ha-empty-dest">
+            <h3>Where should this stream go?</h3>
+            <p>You have not connected a platform yet. Connect one to pick it as a destination, or paste a custom RTMP address.</p>
+            <div className="ha-row ha-row--wrap">
+              <Link to="/connections" className={buttonClass('primary')}>
+                Connect a platform
+              </Link>
+              <Link to="/connections#rtmp" className="ha-quiet">
+                Use custom RTMP
+              </Link>
+            </div>
+          </div>
+          <div>
+            <Button variant="live" size="lg" block disabled>
+              Go live now
+            </Button>
+            <p className="ha-hint" style={{ textAlign: 'center' }}>
+              Choose at least one destination to go live.
+            </p>
+          </div>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1>{mode === 'schedule' ? 'Schedule a stream' : 'Create a stream'}</h1>
-      <p className="docs-hint">
+    <div className="ha-page ha-narrow">
+      {header}
+      <p className="ha-sm ha-muted" style={{ marginTop: -16 }}>
         <DocsLink page={mode === 'schedule' ? 'schedule-and-invite' : 'go-live'}>
           {mode === 'schedule' ? 'How scheduling and guest invites work' : 'How to go live'}
         </DocsLink>
       </p>
-      <div className="mode-toggle" role="tablist" aria-label="When to stream">
-        <button type="button" role="tab" aria-selected={mode === 'now'} className={mode === 'now' ? 'active' : ''} onClick={() => setMode('now')}>
-          <Radio size={14} /> Go live now
-        </button>
-        <button type="button" role="tab" aria-selected={mode === 'schedule'} className={mode === 'schedule' ? 'active' : ''} onClick={() => setMode('schedule')}>
-          <CalendarClock size={14} /> Schedule for later
-        </button>
-      </div>
-      <form onSubmit={handleSubmit} className="create-stream-form">
-        <label htmlFor="title">Title</label>
-        <input
-          id="title"
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Untitled stream"
-        />
+      <Card as="div" style={{ padding: 32 }}>
+        <form onSubmit={handleSubmit} className="ha-form" style={{ gap: 28 }}>
+          {tabs}
+          <Input id="title" label="Title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Untitled stream" className="ha-title-input" />
 
-        <label>Destinations</label>
-        {mode === 'schedule' && (
-          <p className="notice">
-            <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Facebook (Meta retired scheduled lives) and Twitch are created when you start the stream.
-          </p>
-        )}
-        {!connections ? (
-          <BirdLoader loading compact label="Loading your connections…" />
-        ) : (
-          <div className="destination-checkboxes">
-            {connections.map((c) => (
-              <label key={c.id} className="destination-checkbox">
-                <input
-                  type="checkbox"
-                  checked={selected.has(c.id)}
-                  onChange={() => toggle(c.id)}
-                />
-                <PlatformBadge platform={c.platform} />
-                {c.label}
-              </label>
-            ))}
-          </div>
-        )}
-
-        {mode === 'schedule' && (
-          <>
-            <label htmlFor="when">Date and time</label>
-            <input
-              id="when"
-              type="datetime-local"
-              value={whenLocal}
-              min={toLocalInputValue(new Date())}
-              onChange={(e) => setWhenLocal(e.target.value)}
-              required
-            />
-            <p className="field-hint">Your time zone: {timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.</p>
-
-            <label htmlFor="duration">Expected duration</label>
-            <select id="duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
-              {DURATION_OPTIONS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-
-            <label htmlFor="guest-emails">Invite guests by email (optional)</label>
-            <GuestEmailsField value={guestEmailsText} onChange={setGuestEmailsText} />
-
-            <label htmlFor="guest-notes">Message to guests (optional)</label>
-            <textarea
-              id="guest-notes"
-              value={guestNotes}
-              onChange={(e) => setGuestNotes(e.target.value)}
-              placeholder="Anything they should know -- topics, dress code, tech check time…"
-              rows={3}
-              maxLength={2000}
-            />
-
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={createOnPlatforms}
-                disabled={precreatable.length === 0}
-                onChange={(e) => setCreateOnPlatforms(e.target.checked)}
-              />{' '}
-              Create the broadcast on YouTube now
-            </label>
-            <p className="field-hint">
-              {precreatable.length > 0
-                ? 'It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests\' invites. Other destinations (Twitch, and Facebook -- which no longer supports scheduled live videos) are always created when you start the stream.'
-                : 'Select a YouTube destination to use this. Other platforms are created when you start the stream.'}
-            </p>
-
-            <label className="checkbox-row">
-              <input type="checkbox" checked={requirePassword} onChange={(e) => setRequirePassword(e.target.checked)} /> Require a password to join
-            </label>
-            {requirePassword && (
-              <input type="text" placeholder="Join password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} />
+          <fieldset className="ha-fieldset">
+            <legend>Stream to</legend>
+            {mode === 'schedule' && (
+              <Notice tone="info" className="ha-notice--slim">
+                <strong>Only YouTube can have a live stream scheduled ahead of time.</strong> Facebook (Meta retired scheduled lives) and Twitch are created when you start the stream.
+              </Notice>
             )}
-            {requirePassword && <p className="field-hint">The password is never emailed -- share it with your guests yourself.</p>}
-          </>
-        )}
+            {!connections ? (
+              <BirdLoader loading compact label="Loading your connections…" />
+            ) : (
+              <div className="ha-row ha-row--wrap" style={{ marginTop: mode === 'schedule' ? 12 : 0 }}>
+                <DestinationPicker connections={connections} selected={selected} onToggle={toggle} />
+                <Link to="/connections#rtmp" className="ha-quiet">
+                  + Custom RTMP
+                </Link>
+              </div>
+            )}
+          </fieldset>
 
-        <div className="more-options">
-          <button
-            type="button"
-            className="more-options-toggle"
-            aria-expanded={moreOpen}
-            aria-controls="more-options-panel"
-            onClick={() => setMoreOpen((o) => !o)}
-          >
-            <ChevronDown size={16} className={moreOpen ? 'more-options-chevron more-options-chevron--open' : 'more-options-chevron'} aria-hidden="true" />
-            <span className="more-options-title">More options</span>
-            <span className="more-options-summary" data-testid="more-options-summary">{summary}</span>
-          </button>
-          <div id="more-options-panel" className="more-options-panel" hidden={!moreOpen}>
-            <label htmlFor="description">Description</label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What's this stream about?"
-              rows={3}
-            />
+          {mode === 'schedule' && (
+            <div className="ha-form-grid">
+              <Input
+                id="when"
+                label="Date and time"
+                type="datetime-local"
+                value={whenLocal}
+                min={toLocalInputValue(new Date())}
+                onChange={(e) => setWhenLocal(e.target.value)}
+                required
+                hint={`Your time zone: ${timeZone}. Guests see this time in your zone, and the calendar file adjusts to theirs.`}
+              />
+              <SelectField id="duration" label="Expected duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+                {DURATION_OPTIONS.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
 
-            <label htmlFor="visibility">Visibility</label>
-            <select
-              id="visibility"
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
-            >
-              <option value="public">Public</option>
-              <option value="unlisted">Unlisted</option>
-              <option value="private">Private</option>
-            </select>
-            <p className="field-hint">Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.</p>
+          <div className="ha-more more-options">
+            <button type="button" className="ha-more-head more-options-toggle" aria-expanded={moreOpen} aria-controls="more-options-panel" onClick={() => setMoreOpen((o) => !o)}>
+              <span className="ha-more-text">
+                <b className="more-options-title">More options</b>
+                <span className="more-options-summary" data-testid="more-options-summary">
+                  {summary}
+                </span>
+              </span>
+              <span className="ha-more-toggle" aria-hidden="true">
+                {moreOpen ? 'Hide' : 'Show'} <ChevronDown size={16} style={{ transform: moreOpen ? 'rotate(180deg)' : undefined }} />
+              </span>
+            </button>
+            <div id="more-options-panel" className="ha-more-body" hidden={!moreOpen}>
+              <TextArea id="description" label="Description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's this stream about?" rows={3} />
 
-            <label htmlFor="orientation">Shape</label>
-            <select
-              id="orientation"
-              value={orientation}
-              onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
-            >
-              <option value="landscape">Landscape (16:9) -- the usual</option>
-              <option value="portrait">Vertical (9:16) -- phones, YouTube Shorts live</option>
-            </select>
-            <p className="field-hint">
-              {orientation === 'portrait'
-                ? 'The same vertical picture goes to every destination you pick, so Twitch and Facebook get it vertical too. YouTube shows it full-screen on phones. This cannot be changed once the stream is created.'
-                : 'Every destination gets the same 16:9 picture.'}
-            </p>
+              <SelectField
+                id="visibility"
+                label="Visibility"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as 'public' | 'unlisted' | 'private')}
+                hint="Only platforms that support visibility (e.g. YouTube) use this -- others ignore it."
+              >
+                <option value="public">Public</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="private">Private</option>
+              </SelectField>
 
-            {mode === 'now' && (
-              <>
-              {kits.length > 0 && (
+              <SelectField
+                id="orientation"
+                label="Shape"
+                value={orientation}
+                onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
+                hint={
+                  orientation === 'portrait'
+                    ? 'The same vertical picture goes to every destination you pick, so Twitch and Facebook get it vertical too. YouTube shows it full-screen on phones. This cannot be changed once the stream is created.'
+                    : 'Every destination gets the same 16:9 picture.'
+                }
+              >
+                <option value="landscape">Landscape (16:9) -- the usual</option>
+                <option value="portrait">Vertical (9:16) -- phones, YouTube Shorts live</option>
+              </SelectField>
+
+              {mode === 'now' && (
                 <>
-                  <label htmlFor="brandKit">Brand kit</label>
-                  <select id="brandKit" value={kitChoice} onChange={(e) => setKitChoice(e.target.value)}>
-                    <option value="">Default look</option>
-                    <option value="none">No brand kit</option>
-                    {kits.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.name}
+                  {kits.length > 0 && (
+                    <SelectField
+                      id="brandKit"
+                      label="Brand kit"
+                      value={kitChoice}
+                      onChange={(e) => setKitChoice(e.target.value)}
+                      hint={'"Default look" uses the kit of the channel or Page you stream to, else your account default.'}
+                    >
+                      <option value="">Default look</option>
+                      <option value="none">No brand kit</option>
+                      {kits.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+
+                  <SelectField
+                    id="quality"
+                    label="Quality"
+                    value={effectiveQuality}
+                    onChange={(e) => setQuality(e.target.value as Resolution)}
+                    hint="The studio starts at this quality; you can still change it there before you go live."
+                  >
+                    {qualityChoices.map((q) => (
+                      <option key={q} value={q}>
+                        {QUALITY_SHORT[q]}
                       </option>
                     ))}
-                  </select>
-                  <p className="field-hint">"Default look" uses the kit of the channel or Page you stream to, else your account default.</p>
+                  </SelectField>
+
+                  <div>
+                    <label className="ha-check">
+                      <input type="checkbox" checked={tickerOn} onChange={(e) => setTickerOn(e.target.checked)} /> Show a news ticker
+                    </label>
+                    {tickerOn && (
+                      <input type="text" className="ui-input" aria-label="Ticker text" value={tickerText} maxLength={200} placeholder="Text shown along the bottom" onChange={(e) => setTickerText(e.target.value)} />
+                    )}
+                  </div>
                 </>
               )}
 
-              <label htmlFor="quality">Quality</label>
-              <select id="quality" value={effectiveQuality} onChange={(e) => setQuality(e.target.value as Resolution)}>
-                {qualityChoices.map((q) => (
-                  <option key={q} value={q}>
-                    {QUALITY_SHORT[q]}
-                  </option>
-                ))}
-              </select>
-              <p className="field-hint">The studio starts at this quality; you can still change it there before you go live.</p>
+              {mode === 'schedule' && (
+                <>
+                  <Field label="Invite guests by email (optional)" id="guest-emails">
+                    {() => <GuestEmailsField value={guestEmailsText} onChange={setGuestEmailsText} />}
+                  </Field>
 
-              <label className="checkbox-row">
-                <input type="checkbox" checked={tickerOn} onChange={(e) => setTickerOn(e.target.checked)} /> Show a news ticker
-              </label>
-              {tickerOn && (
-                <input type="text" aria-label="Ticker text" value={tickerText} maxLength={200} placeholder="Text shown along the bottom" onChange={(e) => setTickerText(e.target.value)} />
-              )}
-              </>
-            )}
-
-            <label>Thumbnail (optional)</label>
-            <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
-            <p className="field-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
-
-            <div className="preset-save">
-              {presetNaming ? (
-                <div className="preset-save-row">
-                  <input
-                    type="text"
-                    aria-label="Preset name"
-                    value={presetName}
-                    maxLength={MAX_PRESET_NAME}
-                    placeholder="Name this preset"
-                    onChange={(e) => setPresetName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        void savePreset();
-                      }
-                    }}
+                  <TextArea
+                    id="guest-notes"
+                    label="Message to guests (optional)"
+                    value={guestNotes}
+                    onChange={(e) => setGuestNotes(e.target.value)}
+                    placeholder="Anything they should know -- topics, dress code, tech check time…"
+                    rows={3}
+                    maxLength={2000}
                   />
-                  <button type="button" className="icon-btn" disabled={presetBusy} onClick={() => void savePreset()}>
-                    {presetBusy ? <BirdBusy /> : <Save size={16} />} Save preset
-                  </button>
-                  <button type="button" className="link-button" disabled={presetBusy} onClick={() => setPresetNaming(false)}>
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button type="button" className="link-button" onClick={() => { setPresetNaming(true); setPresetNote(null); }}>
-                  <Save size={14} /> Save these settings as a preset
-                </button>
+
+                  <div>
+                    <label className="ha-check">
+                      <input type="checkbox" checked={createOnPlatforms} disabled={precreatable.length === 0} onChange={(e) => setCreateOnPlatforms(e.target.checked)} /> Create the broadcast on YouTube now
+                    </label>
+                    <p className="ha-hint">
+                      {precreatable.length > 0
+                        ? "It shows up there as an upcoming stream at your scheduled time, and its watch link is included in your guests' invites. Other destinations (Twitch, and Facebook -- which no longer supports scheduled live videos) are always created when you start the stream."
+                        : 'Select a YouTube destination to use this. Other platforms are created when you start the stream.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="ha-check">
+                      <input type="checkbox" checked={requirePassword} onChange={(e) => setRequirePassword(e.target.checked)} /> Require a password to join
+                    </label>
+                    {requirePassword && (
+                      <div style={{ maxWidth: 320, marginTop: 8 }}>
+                        <input type="text" className="ui-input" aria-label="Join password" placeholder="Join password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} />
+                        <p className="ha-hint">The password is never emailed -- share it with your guests yourself.</p>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
-              {presetNote && <p className="field-hint" role="status">{presetNote}</p>}
+
+              <div>
+                <span className="ui-field-label" style={{ display: 'block', marginBottom: 8 }}>
+                  Thumbnail (optional)
+                </span>
+                <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
+                <p className="ha-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
+              </div>
+
+              <div className="preset-save">
+                {presetNaming ? (
+                  <div className="ha-row ha-row--wrap" style={{ alignItems: 'flex-end' }}>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <input
+                        type="text"
+                        className="ui-input"
+                        aria-label="Preset name"
+                        value={presetName}
+                        maxLength={MAX_PRESET_NAME}
+                        placeholder="Name this preset"
+                        onChange={(e) => setPresetName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void savePreset();
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button variant="secondary" busy={presetBusy} icon={<Save size={16} aria-hidden="true" />} onClick={() => void savePreset()}>
+                      Save preset
+                    </Button>
+                    <Button variant="ghost" disabled={presetBusy} onClick={() => setPresetNaming(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="ha-quiet"
+                    style={{ paddingLeft: 0 }}
+                    onClick={() => {
+                      setPresetNaming(true);
+                      setPresetNote(null);
+                    }}
+                  >
+                    <Save size={14} aria-hidden="true" /> Save these settings as a preset
+                  </button>
+                )}
+                {presetNote && (
+                  <p className="ha-hint" role="status">
+                    {presetNote}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {error && <p className="error">{error}</p>}
-        <button type="submit" className="icon-btn" disabled={busy}>
-          {busy ? <BirdBusy /> : mode === 'schedule' ? <CalendarClock size={16} /> : <Radio size={16} />}{' '}
-          {mode === 'schedule' ? 'Schedule stream' : 'Create and open studio'}
-        </button>
-      </form>
+          {error && (
+            <p className="ha-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="ha-submit">
+            {mode === 'schedule' ? (
+              <Button type="submit" size="lg" busy={busy} icon={<CalendarClock size={16} aria-hidden="true" />}>
+                Schedule stream
+              </Button>
+            ) : (
+              <Button type="submit" variant="live" busy={busy} block icon={<Radio size={18} aria-hidden="true" />}>
+                Go live now
+              </Button>
+            )}
+            {mode === 'now' && <p className="ha-sm ha-muted" style={{ textAlign: 'center' }}>Opens the studio with your camera ready</p>}
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }

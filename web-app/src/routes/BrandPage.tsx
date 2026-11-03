@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, ImagePlus, Lock, Pencil, Plus, Replace, Trash2, UploadCloud, X } from 'lucide-react';
+import { AlertTriangle, ImagePlus, Lock, Pencil, Plus, Replace, Trash2, UploadCloud, X } from 'lucide-react';
 import * as assetsApi from '../api/assets';
 import { listConnections } from '../api/connections';
 import { ApiError } from '../api/client';
@@ -24,7 +24,8 @@ import {
 } from '../studio/brandSizes';
 import { kitSetFor } from '../studio/brandKitSet';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
-import { confirm } from '../components/ui';
+import { Button, Card, EmptyState, Input, Modal, SelectField, buttonClass, confirm, toast } from '../components/ui';
+import { Notice, PageHeader } from '../components/host/HostKit';
 
 const MB = 1024 * 1024;
 const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', ad: 'Ad', other: 'Other' };
@@ -107,26 +108,50 @@ export function BrandPage() {
   }, []);
 
   if (!lib) {
-    return error ? <p className="error">{error}</p> : <BirdLoader loading compact label="Loading your brand library…" />;
+    return error ? (
+      <div className="ha-page">
+        <EmptyState tone="error" title="We couldn't load your brand library">
+          {error}
+        </EmptyState>
+      </div>
+    ) : (
+      <BirdLoader loading compact label="Loading your brand library…" />
+    );
   }
 
   if (!lib.enabled) {
     return (
-      <div className="page brand-page">
-        <h1>Brand</h1>
-        <p className="notice">Brand storage is not enabled on this server yet.</p>
+      <div className="ha-page page brand-page">
+        <PageHeader title="Brand" subtitle="Logo, wallpaper and ads that appear on your stream." />
+        <Notice tone="info">Brand storage is not enabled on this server yet.</Notice>
       </div>
     );
   }
 
   if (lib.quotaBytes <= 0) {
     return (
-      <div className="page brand-page">
-        <h1>Brand</h1>
-        <p className="notice" data-testid="brand-free-notice">
-          <Lock size={14} /> Saving your logo, wallpaper and brand kits in your account is on the paid plans. On the Free plan they stay saved in this
-          browser, in the studio. <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
-        </p>
+      <div className="ha-page page brand-page">
+        <PageHeader title="Brand" subtitle="Logo, wallpaper and ads that appear on your stream." />
+        <section className="ha-lock" aria-labelledby="lock-title" data-testid="brand-free-notice">
+          <div className="ha-lock-main">
+            <p className="ha-eyebrow">
+              <Lock size={14} aria-hidden="true" style={{ verticalAlign: '-2px' }} /> On the paid plans
+            </p>
+            <h2 id="lock-title">Make every stream look like yours</h2>
+            <p style={{ marginTop: 8, maxWidth: 480 }}>
+              Saving your logo, wallpaper and brand kits in your account is on the paid plans. On the Free plan they stay saved in this browser, in the studio.
+            </p>
+            <div className="ha-row ha-row--wrap" style={{ marginTop: 24 }}>
+              <Link to="/billing" className={buttonClass('primary', 'lg')}>
+                See plans
+              </Link>
+            </div>
+          </div>
+          <div className="ha-lock-art" role="img" aria-label="Preview of a branded stream with logo and lower third">
+            <i style={{ left: 14, top: 14, width: 44, height: 44, borderRadius: 10 }} />
+            <i style={{ left: 14, right: 14, bottom: 14, height: 36, borderRadius: 8 }} />
+          </div>
+        </section>
       </div>
     );
   }
@@ -149,48 +174,60 @@ export function BrandPage() {
   };
 
   return (
-    <div className="page brand-page">
-      <h1>Brand</h1>
-      <p>
-        A <strong>brand kit</strong> is your look: logo, wallpaper and ads, with one set for 16:9 streams and one for 9:16 (vertical) streams. Give each YouTube
-        channel or Facebook Page its own kit, or let several share one.
-      </p>
-      <div className="brand-feedback" aria-live="polite">
+    <div className="ha-page page brand-page">
+      <PageHeader
+        title="Brand"
+        subtitle={
+          <>
+            A <strong>brand kit</strong> is your look: logo, wallpaper and ads, with one set for 16:9 streams and one for 9:16 (vertical) streams. Give each YouTube channel or Facebook Page its own
+            kit, or let several share one.
+          </>
+        }
+        actions={
+          editing !== 'new' ? (
+            <Button icon={<Plus size={16} aria-hidden="true" />} onClick={() => setEditing('new')}>
+              New brand kit
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <div className="brand-feedback ha-stack" style={{ gap: 12 }} aria-live="polite">
         {notice && (
-          <p className="brand-notice" role="status">
-            <CheckCircle2 size={16} /> {notice}
-          </p>
+          <Notice tone="success" onDismiss={() => setNotice(null)}>
+            {notice}
+          </Notice>
         )}
         {error && (
-          <p className="error" role="alert">
+          <Notice tone="error" onDismiss={() => setError(null)}>
             {error}
-          </p>
+          </Notice>
         )}
       </div>
 
-      <section aria-labelledby="kits-heading" className="panel brand-section">
-        <div className="brand-section-head">
-          <h2 id="kits-heading">Brand kits</h2>
-          {editing !== 'new' && (
-            <button type="button" className="icon-btn icon-btn--small" onClick={() => setEditing('new')}>
-              <Plus size={14} /> New brand kit
-            </button>
-          )}
-        </div>
-        <p className="field-hint">The kit a channel or page uses is its look. A channel with no kit of its own uses the account default.</p>
+      <section aria-labelledby="kits-heading" className="ha-brand-section">
+        <h2 id="kits-heading">Brand kits</h2>
+        <p className="ha-hint" style={{ marginBottom: 16 }}>
+          The kit a channel or page uses is its look. A channel with no kit of its own uses the account default.
+        </p>
 
         {kits.length === 0 && editing !== 'new' && (
-          <div className="brand-empty">
-            <ImagePlus size={28} aria-hidden="true" />
-            <p>
-              <strong>No brand kits yet.</strong> Create a kit, then add your logo and wallpaper right in it.
-            </p>
-          </div>
+          <EmptyState
+            icon={<ImagePlus size={28} />}
+            title="No brand kits yet"
+            action={
+              <Button onClick={() => setEditing('new')} icon={<Plus size={16} aria-hidden="true" />}>
+                Create a kit
+              </Button>
+            }
+          >
+            Create a kit, then add your logo and wallpaper right in it.
+          </EmptyState>
         )}
 
-        <ul className="brand-kit-list">
+        <ul className="ha-kits">
           {kits.map((k) => (
-            <li key={k.id} className="brand-kit-card">
+            <li key={k.id} className={editing === k.id ? "ha-kit-editing" : undefined}>
               {editing === k.id ? (
                 <KitEditor key={k.id} kit={k} {...editorProps} />
               ) : (
@@ -199,35 +236,52 @@ export function BrandPage() {
             </li>
           ))}
           {editing === 'new' && (
-            <li className="brand-kit-card">
+            <li className="ha-kit-editing">
               <KitEditor kit={null} {...editorProps} />
+            </li>
+          )}
+          {kits.length > 0 && editing !== 'new' && (
+            <li>
+              <button type="button" className="ha-kit-new" onClick={() => setEditing('new')}>
+                <span style={{ fontSize: 28, lineHeight: 1 }} aria-hidden="true">
+                  +
+                </span>
+                New kit
+              </button>
             </li>
           )}
         </ul>
       </section>
 
-      <section aria-labelledby="storage-heading" className="panel brand-section">
+      <Card as="section" aria-labelledby="storage-heading" className="ha-brand-section">
         <h2 id="storage-heading">Storage</h2>
-        <div className={`brand-meter${nearlyFull ? ' brand-meter--warn' : ''}`} role="img" aria-label={`${fmtMb(lib.usedBytes)} of ${fmtMb(lib.quotaBytes)} used`}>
-          <div className="brand-meter-fill" style={{ width: `${pct}%` }} />
+        <div
+          className={`ha-meter${nearlyFull ? ' ha-meter--warn' : ''}`}
+          style={{ marginTop: 12 }}
+          role="img"
+          aria-label={`${fmtMb(lib.usedBytes)} of ${fmtMb(lib.quotaBytes)} used`}
+        >
+          <i style={{ width: `${pct}%` }} />
         </div>
-        <p className="field-hint" data-testid="brand-usage">
+        <p className="ha-hint" data-testid="brand-usage">
           {fmtMb(lib.usedBytes)} of {fmtMb(lib.quotaBytes)} used{nearlyFull ? ' -- nearly full. Delete a file or upgrade your plan for more room.' : ''}
         </p>
-        <details className="brand-files" data-testid="brand-files">
+        <details className="ha-files" data-testid="brand-files">
           <summary>Uploaded files ({lib.items.length})</summary>
-          <p className="field-hint">Every picture you add in a kit is kept here, so another slot or kit can reuse it. Delete a file you no longer need to free space (a file a kit uses must be removed from the kit first).</p>
+          <p className="ha-hint">
+            Every picture you add in a kit is kept here, so another slot or kit can reuse it. Delete a file you no longer need to free space (a file a kit uses must be removed from the kit first).
+          </p>
           {lib.items.length === 0 ? (
-            <p className="field-hint">No files yet.</p>
+            <p className="ha-hint">No files yet.</p>
           ) : (
-            <ul className="brand-grid">
+            <ul className="ha-asset-grid">
               {lib.items.map((a) => (
                 <AssetCard key={a.id} asset={a} onChanged={reload} onError={setError} />
               ))}
             </ul>
           )}
         </details>
-      </section>
+      </Card>
     </div>
   );
 }
@@ -272,36 +326,50 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
 function KitSummary({ kit, assets, channelNames, onEdit }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void }) {
   const hasPortrait = !!(kit.logoAssetIdPortrait || kit.wallpaperAssetIdPortrait || (kit.adsPortrait ?? []).length > 0);
   return (
-    <div className="brand-kit-summary">
-      <KitPreview kit={kit} assets={assets} orientation="landscape" />
-      {hasPortrait && <KitPreview kit={kit} assets={assets} orientation="portrait" />}
-      <div className="brand-kit-info">
-        <h3>
-          {kit.name}
-          {kit.isDefault && <span className="badge badge-accent">Account default</span>}
-        </h3>
-        <p className="field-hint">
-          {channelNames.length > 0 ? `Used by ${channelNames.join(', ')}` : kit.isDefault ? 'Used by every channel without a kit of its own' : 'Not used by any channel yet'}
-        </p>
-        <p className="field-hint">{hasPortrait ? 'Has a 16:9 and a 9:16 set' : 'Has a 16:9 set (no 9:16 set yet)'}</p>
-        <button type="button" className="icon-btn icon-btn--small" aria-label={`Edit ${kit.name}`} onClick={onEdit}>
-          <Pencil size={14} /> Edit
-        </button>
+    <Card as="div" className="ha-kit-card">
+      <div className="ha-kit-previews">
+        <KitPreview kit={kit} assets={assets} orientation="landscape" />
+        {hasPortrait && <KitPreview kit={kit} assets={assets} orientation="portrait" />}
       </div>
-    </div>
+      <div className="ha-row ha-row--wrap" style={{ gap: 8 }}>
+        <h3>{kit.name}</h3>
+        {kit.isDefault && <span className="ha-tag ha-tag--ok">Account default</span>}
+      </div>
+      <p className="ha-sm ha-muted">
+        {channelNames.length > 0 ? `Used by ${channelNames.join(', ')}` : kit.isDefault ? 'Used by every channel without a kit of its own' : 'Not used by any channel yet'}
+      </p>
+      <p className="ha-sm ha-muted">{hasPortrait ? 'Has a 16:9 and a 9:16 set' : 'Has a 16:9 set (no 9:16 set yet)'}</p>
+      <div className="ha-row">
+        <Button variant="secondary" aria-label={`Edit ${kit.name}`} icon={<Pencil size={14} aria-hidden="true" />} onClick={onEdit}>
+          Edit
+        </Button>
+      </div>
+    </Card>
   );
 }
 
 function AssetCard({ asset, onChanged, onError }: { asset: LibraryAsset; onChanged: () => Promise<void>; onError: (m: string | null) => void }) {
+  const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(asset.name);
+  const [saving, setSaving] = useState(false);
   async function rename() {
     const next = name.trim();
-    if (!next || next === asset.name) return setName(asset.name);
+    if (!next || next === asset.name) {
+      setName(asset.name);
+      setRenaming(false);
+      return;
+    }
+    setSaving(true);
     try {
       await assetsApi.renameAsset(asset.id, next);
       await onChanged();
+      setRenaming(false);
+      toast.success('File renamed');
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Could not rename the file.');
+      setRenaming(false);
+    } finally {
+      setSaving(false);
     }
   }
   async function remove() {
@@ -320,16 +388,59 @@ function AssetCard({ asset, onChanged, onError }: { asset: LibraryAsset; onChang
     }
   }
   return (
-    <li className="brand-asset">
+    <li className="ha-asset">
       <img src={assetsApi.assetFileUrl(asset.id)} alt={asset.name} loading="lazy" />
-      <input aria-label={`Name of ${asset.name}`} value={name} maxLength={120} onChange={(e) => setName(e.target.value)} onBlur={() => void rename()} />
-      <span className="field-hint">
+      <span className="ha-asset-name">{asset.name}</span>
+      <span className="ha-sm ha-muted">
         {KIND_LABEL[asset.kind]} · {asset.width}×{asset.height} · {fmtSize(asset.sizeBytes)}
         {asset.usedBy.length > 0 && <> · used by {asset.usedBy.join(', ')}</>}
       </span>
-      <button type="button" className="icon-btn icon-btn--small icon-btn--danger" aria-label={`Delete ${asset.name}`} onClick={() => void remove()}>
-        <Trash2 size={14} />
-      </button>
+      <div className="ha-asset-actions">
+        <button
+          type="button"
+          className="ha-quiet"
+          aria-label={`Rename ${asset.name}`}
+          onClick={() => {
+            setName(asset.name);
+            setRenaming(true);
+          }}
+        >
+          <Pencil size={14} aria-hidden="true" /> Rename
+        </button>
+        <button type="button" className="ha-quiet ha-quiet--danger" aria-label={`Delete ${asset.name}`} onClick={() => void remove()}>
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      </div>
+      <Modal
+        open={renaming}
+        onClose={() => setRenaming(false)}
+        title="Rename file"
+        description="Only you see this name. Kits keep using the same picture."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRenaming(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button busy={saving} disabled={!name.trim()} onClick={() => void rename()}>
+              Save name
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="File name"
+          value={name}
+          maxLength={120}
+          data-autofocus
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void rename();
+            }
+          }}
+        />
+      </Modal>
     </li>
   );
 }
@@ -403,13 +514,9 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
   const mismatch = asset ? aspectMismatch(asset.width, asset.height, spec) : false;
 
   return (
-    <div className="kit-slot" data-testid={`kit-slot-${slot}`} data-has-file={asset ? 'true' : 'false'}>
-      <div className="kit-slot-head">
-        <strong>{label}</strong>
-        <span className="field-hint" data-testid={`slot-size-${slot}`}>Suggested {sizeText(spec)}</span>
-      </div>
+    <div className="ha-slot" data-testid={`kit-slot-${slot}`} data-has-file={asset ? 'true' : 'false'}>
       <label
-        className={`brand-drop kit-slot-drop${over ? ' brand-drop--over' : ''}${asset ? ' brand-drop--has-file' : ''}`}
+        className={`ha-slot-thumb${over ? ' is-over' : ''}`}
         onDragOver={(e) => {
           e.preventDefault();
           setOver(true);
@@ -417,61 +524,65 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
         onDragLeave={() => setOver(false)}
         onDrop={onDrop}
       >
-        {busy ? <BirdBusy /> : asset ? <img src={assetsApi.assetFileUrl(asset.id)} alt="" className="brand-drop-preview" /> : <UploadCloud size={28} aria-hidden="true" />}
-        <span className="brand-drop-text">
-          {asset ? (
-            <>
-              <strong className="kit-slot-name">{asset.name}</strong>
-              <span className="field-hint">
-                {asset.width} x {asset.height} · {fmtSize(asset.sizeBytes)}
-              </span>
-            </>
-          ) : (
-            <>
-              <strong>Drop an image here</strong> or click to choose one
-            </>
-          )}
-        </span>
+        {busy ? <BirdBusy /> : asset ? <img src={assetsApi.assetFileUrl(asset.id)} alt="" className="brand-drop-preview" /> : <span>No image</span>}
         <input ref={fileRef} type="file" accept={accept} aria-label={`${label} file`} disabled={busy} onChange={(e) => void take(e.target.files?.[0])} />
       </label>
-      <p className="field-hint" data-testid={`slot-help-${slot}`}>
-        {slotHelp(orientation, slot)}
-      </p>
-      {mismatch && asset && (
-        <p className="kit-slot-warning" role="status" data-testid={`slot-warning-${slot}`}>
-          <AlertTriangle size={14} aria-hidden="true" /> This picture is {asset.width} x {asset.height}, a different shape from the suggested {sizeText(spec)}. It still works, but it may look
-          small or cropped.
+      <div className="ha-slot-body">
+        <div className="ha-slot-head">
+          <strong>{label}</strong>
+          <span className="ha-slot-sug" data-testid={`slot-size-${slot}`}>Suggested {sizeText(spec)}</span>
+        </div>
+        {asset && (
+          <p className="ha-sm">
+            <strong className="kit-slot-name">{asset.name}</strong>{' '}
+            <span className="ha-muted">
+              {asset.width} x {asset.height} · {fmtSize(asset.sizeBytes)}
+            </span>
+          </p>
+        )}
+        <p className="ha-hint" style={{ marginTop: 0 }} data-testid={`slot-help-${slot}`}>
+          {slotHelp(orientation, slot)}
         </p>
-      )}
-      <div className="studio-toolbar kit-slot-actions">
-        {asset && (
-          <button type="button" className="icon-btn icon-btn--small" aria-label={`Replace ${label}`} disabled={busy} onClick={() => fileRef.current?.click()}>
-            <Replace size={14} /> Replace
-          </button>
+        {mismatch && asset && (
+          <p className="ha-slot-warn kit-slot-warning" role="status" data-testid={`slot-warning-${slot}`}>
+            <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> This picture is {asset.width} x {asset.height}, a different shape from the suggested {sizeText(spec)}.
+            It still works, but it may look small or cropped.
+          </p>
         )}
-        {asset && (
-          <button type="button" className="icon-btn icon-btn--small icon-btn--danger" aria-label={`Remove ${label}`} disabled={busy} onClick={() => onChange(null)}>
-            <X size={14} /> Remove
-          </button>
-        )}
-        {options.length > 0 && (
-          <select
-            className="kit-slot-choose"
-            aria-label={`${label}: choose from uploaded`}
-            value=""
-            disabled={busy}
-            onChange={(e) => {
-              if (e.target.value) onChange(e.target.value);
-            }}
-          >
-            <option value="">Choose from uploaded…</option>
-            {options.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.width}x{a.height})
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="ha-slot-actions">
+          {asset ? (
+            <Button variant="secondary" size="sm" aria-label={`Replace ${label}`} disabled={busy} icon={<Replace size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
+              Replace
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" disabled={busy} icon={<UploadCloud size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
+              Upload image
+            </Button>
+          )}
+          {options.length > 0 && (
+            <select
+              className="ui-input ui-select"
+              aria-label={`${label}: choose from uploaded`}
+              value=""
+              disabled={busy}
+              onChange={(e) => {
+                if (e.target.value) onChange(e.target.value);
+              }}
+            >
+              <option value="">Choose from uploaded…</option>
+              {options.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.width}x{a.height})
+                </option>
+              ))}
+            </select>
+          )}
+          {asset && (
+            <button type="button" className="ha-quiet ha-quiet--danger" aria-label={`Remove ${label}`} disabled={busy} onClick={() => onChange(null)}>
+              <X size={14} aria-hidden="true" /> Remove
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -587,160 +698,171 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   );
 
   return (
-    <form className="brand-kit brand-kit--editing" onSubmit={save} aria-label={kit ? `Brand kit ${kit.name}` : 'New brand kit'}>
-      <div className="brand-section-head">
-        <h3>{kit ? `Edit ${kit.name}` : 'New brand kit'}</h3>
-        <button type="button" className="icon-btn icon-btn--small" aria-label="Close without saving" onClick={onClose}>
-          <X size={14} /> Close
+    <form className="ha-kit-editor" onSubmit={save} aria-label={kit ? `Brand kit ${kit.name}` : 'New brand kit'}>
+      <div className="ha-kit-bar">
+        <button type="button" className="ha-quiet" aria-label="Close without saving" onClick={onClose}>
+          &larr; Brand kits
         </button>
-      </div>
-
-      <label htmlFor={`${idPrefix}-name`}>Kit name</label>
-      <input id={`${idPrefix}-name`} required maxLength={80} value={form.name} placeholder="e.g. Main channel" onChange={(e) => set('name', e.target.value)} />
-
-      <div className="kit-orientation" role="tablist" aria-label="Kit orientation">
-        {BRAND_ORIENTATIONS.map((o) => (
-          <button
-            key={o}
-            type="button"
-            role="tab"
-            id={`${idPrefix}-tab-${o}`}
-            aria-selected={orientation === o}
-            aria-controls={`${idPrefix}-panel`}
-            className={orientation === o ? 'active' : ''}
-            onClick={() => setOrientation(o)}
-          >
-            {BRAND_ORIENTATION_LABEL[o]} {o === 'landscape' ? 'landscape' : 'vertical'}
+        <span className="ha-sp" />
+        {kit && (
+          <button type="button" className="ha-quiet ha-quiet--danger" disabled={busy} onClick={() => void remove()}>
+            <Trash2 size={14} aria-hidden="true" /> Delete kit
           </button>
-        ))}
+        )}
+        <Button type="submit" busy={busy} disabled={!form.name.trim() || !dirty}>
+          {kit ? 'Save kit' : 'Create kit'}
+        </Button>
       </div>
 
-      <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-tab-${orientation}`} className="kit-orientation-panel" data-orientation={orientation}>
-        <p className="field-hint" data-testid="kit-orientation-note">
-          {orientation === 'landscape'
-            ? 'Used by 16:9 (landscape) streams.'
-            : 'Used by 9:16 (vertical) streams. A vertical stream uses only this set; if it has no logo here the 16:9 logo is used. Wallpaper and ads are not borrowed from the 16:9 set.'}
-        </p>
+      <div className="ha-row ha-row--wrap" style={{ alignItems: 'flex-end', gap: 24 }}>
+        <div style={{ flex: '1 1 260px', maxWidth: 420 }}>
+          <Input id={`${idPrefix}-name`} label="Kit name" required maxLength={80} value={form.name} placeholder="e.g. Main channel" onChange={(e) => set('name', e.target.value)} />
+        </div>
+        <div>
+          <span className="ui-field-label" style={{ display: 'block', marginBottom: 6 }}>
+            Shape
+          </span>
+          <div className="ha-seg" role="tablist" aria-label="Kit orientation">
+            {BRAND_ORIENTATIONS.map((o) => (
+              <button
+                key={o}
+                type="button"
+                role="tab"
+                id={`${idPrefix}-tab-${o}`}
+                aria-selected={orientation === o}
+                aria-controls={`${idPrefix}-panel`}
+                onClick={() => setOrientation(o)}
+              >
+                {BRAND_ORIENTATION_LABEL[o]}
+                <span className="ui-sr-only"> {o === 'landscape' ? 'landscape' : 'vertical'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        <KitPreview kit={form} assets={assets} orientation={orientation} />
-        <p className="field-hint">A preview of the look. The studio draws it at full size.</p>
-
-        <SlotPicker
-          {...slotCommon}
-          slot="logo"
-          label="Logo"
-          assetId={form[f.logo] ?? null}
-          onChange={(id) => set(f.logo, id)}
-        />
-        {orientation === 'portrait' && !form.logoAssetIdPortrait && effective.logoAssetId && <p className="field-hint">No 9:16 logo: vertical streams use the 16:9 logo.</p>}
-        <SlotPicker
-          {...slotCommon}
-          slot="wallpaper"
-          label="Wallpaper"
-          assetId={form[f.wallpaper] ?? null}
-          onChange={(id) => set(f.wallpaper, id)}
-        />
-        <p className="field-hint">Size: {sizeText(spec.wallpaper)} for {BRAND_ORIENTATION_LABEL[orientation]}.</p>
-
-        <fieldset className="kit-ads" data-testid="kit-ads">
-          <legend>Ads</legend>
-          <p className="field-hint">
-            Up to three ads on the broadcast picture, one in each place. Studio hosts can still switch them off or replace them per stream.
+      <div className="ha-kit-cols">
+        <div role="tabpanel" id={`${idPrefix}-panel`} aria-labelledby={`${idPrefix}-tab-${orientation}`} className="ha-slots" data-orientation={orientation}>
+          <p className="ha-hint" style={{ marginTop: 0 }} data-testid="kit-orientation-note">
+            {orientation === 'landscape'
+              ? 'Used by 16:9 (landscape) streams.'
+              : 'Used by 9:16 (vertical) streams. A vertical stream uses only this set; if it has no logo here the 16:9 logo is used. Wallpaper and ads are not borrowed from the 16:9 set.'}
           </p>
-          {adsAllowed === null ? (
-            <p className="field-hint">Checking your plan…</p>
-          ) : adsAllowed === false ? (
-            <>
-              <p className="notice" data-testid="kit-ads-free-notice">
-                <Lock size={14} /> Your own ads are on the plans without the “Powered by StreamBird” mark. Free streams carry a StreamBird ad instead.{' '}
-                <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
-              </p>
-              {(form.ads ?? []).length + (form.adsPortrait ?? []).length > 0 && (
-                <div data-testid="kit-ads-readonly">
-                  <p className="field-hint">This kit still has ads from when your plan allowed them. They are not used on this plan. You can remove them (this also frees their files for deletion).</p>
-                  <ul>
-                    {[...(form.ads ?? []).map((ad) => ({ ad, o: 'landscape' as const })), ...(form.adsPortrait ?? []).map((ad) => ({ ad, o: 'portrait' as const }))].map(({ ad, o }) => (
-                      <li key={`${o}-${ad.placement}`}>
-                        {AD_PLACEMENT_LABEL[ad.placement]}{o === 'portrait' ? ' (9:16)' : ''}: {assets.find((a) => a.id === ad.assetId)?.name ?? 'a file'} ({describeSchedule(ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' })})
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="icon-btn icon-btn--small icon-btn--danger"
-                    onClick={() => setForm((v) => ({ ...v, ads: [], adsPortrait: [] }))}
-                  >
-                    <Trash2 size={14} /> Remove ads
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            AD_PLACEMENTS.map((p) => (
-              <AdSlotEditor
-                key={p}
-                placement={p}
-                ad={ads.find((a) => a.placement === p) ?? null}
-                picker={slotCommon}
-                onChange={(ad) => set(f.ads, [...ads.filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
-              />
-            ))
-          )}
-        </fieldset>
-      </div>
 
-      <fieldset className="kit-shared" data-testid="kit-shared">
-        <legend>Both orientations</legend>
-        <label id={`${idPrefix}-pos`}>Logo position</label>
-        <div className="segmented" role="group" aria-labelledby={`${idPrefix}-pos`}>
-          {(['left', 'right'] as const).map((p) => (
-            <button key={p} type="button" className={form.logoPosition === p ? 'active' : ''} aria-pressed={form.logoPosition === p} onClick={() => set('logoPosition', p)}>
-              {p === 'left' ? 'Top left' : 'Top right'}
-            </button>
-          ))}
+          <SlotPicker {...slotCommon} slot="logo" label="Logo" assetId={form[f.logo] ?? null} onChange={(id) => set(f.logo, id)} />
+          {orientation === 'portrait' && !form.logoAssetIdPortrait && effective.logoAssetId && <p className="ha-hint">No 9:16 logo: vertical streams use the 16:9 logo.</p>}
+          <SlotPicker {...slotCommon} slot="wallpaper" label="Wallpaper" assetId={form[f.wallpaper] ?? null} onChange={(id) => set(f.wallpaper, id)} />
+          <p className="ha-hint" style={{ marginTop: 0 }}>
+            Size: {sizeText(spec.wallpaper)} for {BRAND_ORIENTATION_LABEL[orientation]}.
+          </p>
+
+          <fieldset className="ha-fieldset ha-slots" data-testid="kit-ads">
+            <legend>Ads</legend>
+            <p className="ha-hint" style={{ marginTop: 0 }}>
+              Up to three ads on the broadcast picture, one in each place. Studio hosts can still switch them off or replace them per stream.
+            </p>
+            {adsAllowed === null ? (
+              <p className="ha-hint">Checking your plan…</p>
+            ) : adsAllowed === false ? (
+              <>
+                <Notice tone="info" testId="kit-ads-free-notice">
+                  <Lock size={14} aria-hidden="true" style={{ verticalAlign: '-2px' }} /> Your own ads are on the plans without the “Powered by StreamBird” mark. Free streams carry a StreamBird ad instead.{' '}
+                  <Link to="/billing" className="chip-link chip-link--sm">
+                    See plans
+                  </Link>
+                </Notice>
+                {(form.ads ?? []).length + (form.adsPortrait ?? []).length > 0 && (
+                  <div data-testid="kit-ads-readonly">
+                    <p className="ha-hint">This kit still has ads from when your plan allowed them. They are not used on this plan. You can remove them (this also frees their files for deletion).</p>
+                    <ul style={{ listStyle: 'disc', paddingLeft: 20, margin: '8px 0' }}>
+                      {[...(form.ads ?? []).map((ad) => ({ ad, o: 'landscape' as const })), ...(form.adsPortrait ?? []).map((ad) => ({ ad, o: 'portrait' as const }))].map(({ ad, o }) => (
+                        <li key={`${o}-${ad.placement}`}>
+                          {AD_PLACEMENT_LABEL[ad.placement]}{o === 'portrait' ? ' (9:16)' : ''}: {assets.find((a) => a.id === ad.assetId)?.name ?? 'a file'} ({describeSchedule(ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' })})
+                        </li>
+                      ))}
+                    </ul>
+                    <Button variant="secondary" size="sm" icon={<Trash2 size={14} aria-hidden="true" />} onClick={() => setForm((v) => ({ ...v, ads: [], adsPortrait: [] }))}>
+                      Remove ads
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              AD_PLACEMENTS.map((p) => (
+                <AdSlotEditor
+                  key={p}
+                  placement={p}
+                  ad={ads.find((a) => a.placement === p) ?? null}
+                  picker={slotCommon}
+                  onChange={(ad) => set(f.ads, [...ads.filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
+                />
+              ))
+            )}
+          </fieldset>
         </div>
 
-        <label htmlFor={`${idPrefix}-size`}>Logo size: {form.logoSize}px</label>
-        <input id={`${idPrefix}-size`} type="range" min={16} max={600} value={form.logoSize} onChange={(e) => set('logoSize', parseInt(e.target.value, 10))} />
+        <aside className="ha-kit-aside" aria-label="Preview and look">
+          <Card as="div">
+            <h3 style={{ fontSize: 17 }}>Preview</h3>
+            <div style={{ marginTop: 12 }}>
+              <KitPreview kit={form} assets={assets} orientation={orientation} />
+            </div>
+            <p className="ha-hint">A preview of the look. The studio draws it at full size.</p>
+          </Card>
 
-        <label htmlFor={`${idPrefix}-dim`}>Darken wallpaper: {form.wallpaperDim}%</label>
-        <input id={`${idPrefix}-dim`} type="range" min={0} max={80} value={form.wallpaperDim} onChange={(e) => set('wallpaperDim', parseInt(e.target.value, 10))} />
+          <Card as="fieldset" className="ha-fieldset ha-stack" data-testid="kit-shared" style={{ gap: 20 }}>
+            <legend className="ha-legend">Look (both shapes)</legend>
+            <div>
+              <span className="ui-field-label" id={`${idPrefix}-pos`} style={{ display: 'block', marginBottom: 6 }}>
+                Logo position
+              </span>
+              <div className="ha-seg" role="group" aria-labelledby={`${idPrefix}-pos`}>
+                {(['left', 'right'] as const).map((p) => (
+                  <button key={p} type="button" aria-pressed={form.logoPosition === p} onClick={() => set('logoPosition', p)}>
+                    {p === 'left' ? 'Top left' : 'Top right'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="ui-field-label" htmlFor={`${idPrefix}-size`}>
+                Logo size: {form.logoSize}px
+              </label>
+              <input id={`${idPrefix}-size`} type="range" min={16} max={600} value={form.logoSize} onChange={(e) => set('logoSize', parseInt(e.target.value, 10))} />
+            </div>
+            <div>
+              <label className="ui-field-label" htmlFor={`${idPrefix}-dim`}>
+                Darken wallpaper: {form.wallpaperDim}%
+              </label>
+              <input id={`${idPrefix}-dim`} type="range" min={0} max={80} value={form.wallpaperDim} onChange={(e) => set('wallpaperDim', parseInt(e.target.value, 10))} />
+            </div>
+            <SelectField id={`${idPrefix}-lt`} label="Lower-third look" value={form.lowerThirdStyle} onChange={(e) => set('lowerThirdStyle', e.target.value as LowerThirdStyleId)}>
+              {(Object.keys(STYLE_LABEL) as LowerThirdStyleId[]).map((st) => (
+                <option key={st} value={st}>
+                  {STYLE_LABEL[st]}
+                </option>
+              ))}
+            </SelectField>
+            <ShrinkSwitch shrink={form.adsShrinkPicture !== false} onChange={(on) => set('adsShrinkPicture', on)} />
+          </Card>
 
-        <label htmlFor={`${idPrefix}-lt`}>Lower-third look</label>
-        <select id={`${idPrefix}-lt`} value={form.lowerThirdStyle} onChange={(e) => set('lowerThirdStyle', e.target.value as LowerThirdStyleId)}>
-          {(Object.keys(STYLE_LABEL) as LowerThirdStyleId[]).map((st) => <option key={st} value={st}>{STYLE_LABEL[st]}</option>)}
-        </select>
-
-        <ShrinkSwitch shrink={form.adsShrinkPicture !== false} onChange={(on) => set('adsShrinkPicture', on)} />
-      </fieldset>
-
-      <fieldset className="brand-channels">
-        <legend>Channels and pages using this kit</legend>
-        {connections.length === 0 ? (
-          <p className="field-hint">Connect a platform first (Connections).</p>
-        ) : (
-          connections.map((c) => (
-            <label key={c.id} className="checkbox-row">
-              <input type="checkbox" checked={chosen.has(c.id)} onChange={() => toggle(c.id)} /> <PlatformBadge platform={c.platform} /> {c.label}
+          <Card as="fieldset" className="ha-fieldset ha-stack" style={{ gap: 4 }}>
+            <legend className="ha-legend">Channels and pages using this kit</legend>
+            {connections.length === 0 ? (
+              <p className="ha-hint">Connect a platform first (Connections).</p>
+            ) : (
+              connections.map((c) => (
+                <label key={c.id} className="ha-check">
+                  <input type="checkbox" checked={chosen.has(c.id)} onChange={() => toggle(c.id)} /> <PlatformBadge platform={c.platform} /> {c.label}
+                </label>
+              ))
+            )}
+            <label className="ha-check" style={{ marginTop: 8 }}>
+              <input type="checkbox" checked={isDefault} disabled={kit?.isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Use as the account default
             </label>
-          ))
-        )}
-      </fieldset>
-
-      <label className="checkbox-row">
-        <input type="checkbox" checked={isDefault} disabled={kit?.isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Use as the account default
-      </label>
-      {kit?.isDefault && <p className="field-hint">To change the default, open the kit you want and tick this box there.</p>}
-
-      <div className="studio-toolbar">
-        <button type="submit" className="icon-btn" disabled={busy || !form.name.trim() || !dirty}>
-          {busy && <BirdBusy />} {kit ? 'Save kit' : 'Create kit'}
-        </button>
-        {kit && (
-          <button type="button" className="icon-btn icon-btn--danger" disabled={busy} onClick={() => void remove()}>
-            <Trash2 size={14} /> Delete kit
-          </button>
-        )}
+            {kit?.isDefault && <p className="ha-hint">To change the default, open the kit you want and tick this box there.</p>}
+          </Card>
+        </aside>
       </div>
     </form>
   );
@@ -762,7 +884,7 @@ function AdSlotEditor({
   const timed = ad?.mode === 'interval';
   const patch = (next: Partial<BrandKitAd>) => ad && onChange({ ...ad, ...next });
   return (
-    <div className="kit-ad-slot" role="group" aria-label={`${label} ad`} data-testid={`kit-ad-${placement}`}>
+    <div className="kit-ad-slot ha-ad-slot" role="group" aria-label={`${label} ad`} data-testid={`kit-ad-${placement}`}>
       <SlotPicker
         {...picker}
         slot={placement}
@@ -773,22 +895,22 @@ function AdSlotEditor({
         }
       />
       {ad && (
-        <>
-          <label className="checkbox-row">
+        <div className="ha-ad-controls">
+          <label className="ha-check">
             <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => patch({ enabled: e.target.checked })} /> On
           </label>
-          <div className="segmented" role="group" aria-label={`${label} ad: when`}>
-            <button type="button" className={!timed ? 'active' : ''} aria-pressed={!timed} onClick={() => patch({ mode: 'continuous', showSec: null, everySec: null })}>
+          <div className="ha-seg" role="group" aria-label={`${label} ad: when`}>
+            <button type="button" aria-pressed={!timed} onClick={() => patch({ mode: 'continuous', showSec: null, everySec: null })}>
               Always on
             </button>
-            <button type="button" className={timed ? 'active' : ''} aria-pressed={timed} onClick={() => patch({ mode: 'interval', showSec: ad.showSec ?? 15, everySec: ad.everySec ?? 180 })}>
+            <button type="button" aria-pressed={timed} onClick={() => patch({ mode: 'interval', showSec: ad.showSec ?? 15, everySec: ad.everySec ?? 180 })}>
               Now and then
             </button>
           </div>
           {ad.mode === 'interval' && ad.showSec && ad.everySec && (
             <AdIntervalFields label={label} schedule={{ mode: 'interval', showSec: ad.showSec, everySec: ad.everySec }} onChange={(sch) => sch.mode === 'interval' && patch({ showSec: sch.showSec, everySec: sch.everySec })} />
           )}
-        </>
+        </div>
       )}
     </div>
   );
