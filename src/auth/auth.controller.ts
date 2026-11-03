@@ -9,6 +9,7 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
@@ -18,6 +19,8 @@ import * as crypto from 'crypto';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './google-oauth.service';
 import { GoogleIdTokenService } from './google-id-token.service';
+import { AppHandoffService } from './app-handoff.service';
+import { GoogleAppRedeemDto } from './dto/google-app-redeem.dto';
 import { GoogleMobileLoginDto } from './dto/google-mobile-login.dto';
 import { FacebookLoginService } from './facebook-login.service';
 import { RequestCodeDto } from './dto/request-code.dto';
@@ -35,6 +38,7 @@ import { SetPhoneDto } from './dto/set-phone.dto';
 
 const SESSION_COOKIE_NAME = 'sb_session';
 const OAUTH_STATE_COOKIE_NAME = 'sb_oauth_state';
+const GOOGLE_APP_COOKIE_NAME = 'sb_google_app';
 const GOOGLE_OAUTH_BASE_PATH = '/api/auth/google';
 const FACEBOOK_LOGIN_BASE_PATH = '/api/auth/facebook';
 const FACEBOOK_LOGIN_STATE_COOKIE_NAME = 'sb_fb_login_state';
@@ -61,6 +65,7 @@ export class AuthController {
     private readonly facebookLogin: FacebookLoginService,
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
+    private readonly appHandoff: AppHandoffService,
   ) {}
 
   private cookieOptions(expiresAt?: Date) {
@@ -182,14 +187,39 @@ export class AuthController {
    */
   @Get('google')
   googleRedirect(@Res() res: Response): void {
-    const state = crypto.randomBytes(24).toString('base64url');
-    res.cookie(OAUTH_STATE_COOKIE_NAME, state, {
+    this.startGoogle(res);
+  }
+
+  /**
+   * Browser fallback for the Android app (Custom Tab) when native Credential Manager sign-in fails. Same as
+   * GET google, plus the app's PKCE challenge (base64url(SHA-256(verifier)), 43 chars) in a 10-minute
+   * `sb_google_app` cookie; the callback then hands the session to the app instead of the web. Uses the SAME
+   * registered redirect URI as the web flow. See AppHandoffService.
+   */
+  @Get('google/app')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  googleAppRedirect(@Query('challenge') challenge: string | undefined, @Res() res: Response): void {
+    if (typeof challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(challenge)) {
+      throw new BadRequestException('Invalid challenge');
+    }
+    res.cookie(GOOGLE_APP_COOKIE_NAME, challenge, this.googleCookieOptions());
+    this.startGoogle(res);
+  }
+
+  private googleCookieOptions() {
+    return {
       httpOnly: true,
       secure: this.config.get<boolean>('cookieSecure'),
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       path: GOOGLE_OAUTH_BASE_PATH,
       maxAge: 10 * 60_000,
-    });
+    };
+  }
+
+  private startGoogle(res: Response): void {
+    const state = crypto.randomBytes(24).toString('base64url');
+    res.cookie(OAUTH_STATE_COOKIE_NAME, state, this.googleCookieOptions());
     res.redirect(
       this.googleOAuth.buildAuthUrl(state, {
         redirectUri: this.config.get<string>('google.redirectUri') ?? '',
@@ -219,7 +249,14 @@ export class AuthController {
     @Res() res: Response,
   ): Promise<void> {
     const cookieState = req.cookies?.[OAUTH_STATE_COOKIE_NAME];
+    const appChallenge = req.cookies?.[GOOGLE_APP_COOKIE_NAME];
     res.clearCookie(OAUTH_STATE_COOKIE_NAME, { path: GOOGLE_OAUTH_BASE_PATH });
+    res.clearCookie(GOOGLE_APP_COOKIE_NAME, { path: GOOGLE_OAUTH_BASE_PATH });
+
+    if (appChallenge !== undefined) {
+      await this.googleAppCallback(appChallenge, code, state, cookieState, res);
+      return;
+    }
 
     if (!code || !state || !cookieState || state !== cookieState) {
       res.redirect('/login?error=google_oauth_failed');
@@ -245,6 +282,70 @@ export class AuthController {
     } catch {
       res.redirect('/login?error=google_oauth_failed');
     }
+  }
+
+  /** App flow of the callback: parks the session for the app and answers with the "Return to StreamBird" page. */
+  private async googleAppCallback(
+    challenge: unknown,
+    code: string | undefined,
+    state: string | undefined,
+    cookieState: string | undefined,
+    res: Response,
+  ): Promise<void> {
+    try {
+      if (typeof challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(challenge)) throw new Error('bad challenge');
+      if (!code || !state || !cookieState || state !== cookieState) throw new Error('state');
+      const profile = await this.googleOAuth.exchangeCodeForProfile(
+        code,
+        this.config.get<string>('google.redirectUri') ?? '',
+      );
+      if (!profile.emailVerified) throw new Error('unverified');
+      const { user, account, token, expiresAt } = await this.authService.loginWithGoogleProfile(profile.email, {});
+      const handoffCode = this.appHandoff.create(challenge, { token, expiresAt, userId: user.id, accountId: account.id });
+      this.sendAppPage(res, true, `streambird://auth?code=${handoffCode}`);
+    } catch {
+      this.sendAppPage(res, false, 'streambird://auth?error=google_failed');
+    }
+  }
+
+  private sendAppPage(res: Response, ok: boolean, href: string): void {
+    const message = ok
+      ? 'If the app did not open, tap the button.'
+      : 'Sign-in failed. Close this tab and try again or use the email code.';
+    const label = ok ? 'Open StreamBird' : 'Back to StreamBird';
+    const script = ok ? `<script>window.location=${JSON.stringify(href)};</script>` : '';
+    res
+      .status(200)
+      .type('text/html; charset=utf-8')
+      .set('Cache-Control', 'no-store')
+      .send(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+          `<meta name="referrer" content="no-referrer"><title>Return to StreamBird</title>` +
+          `<style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px;box-sizing:border-box;font-family:system-ui,sans-serif;background:#0f1115;color:#f2f3f5;text-align:center}` +
+          `a{display:block;padding:18px 36px;border-radius:12px;background:#6d5efc;color:#fff;font-size:20px;font-weight:600;text-decoration:none}p{margin:0;color:#b4b8c0}</style>` +
+          `</head><body><h1 style="margin:0;font-size:24px">Return to StreamBird</h1><p>${message}</p>` +
+          `<a href="${href}">${label}</a>${script}</body></html>`,
+      );
+  }
+
+  /**
+   * Last step of the app's browser fallback: the app trades the one-time code plus the PKCE verifier for the
+   * session (cookie + same JSON as verify-code). Every failure is the same generic 401; the code is burnt
+   * even when the verifier is wrong. Public, so throttled per IP.
+   */
+  @Post('google/app/redeem')
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async googleAppRedeem(
+    @Body() dto: GoogleAppRedeemDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const session = this.appHandoff.redeem(dto.code, dto.verifier);
+    const resolved = session ? await this.authService.resolveSession(session.token) : null;
+    if (!session || !resolved) throw new UnauthorizedException('Invalid sign-in');
+    this.setSessionCookie(res, session.token, session.expiresAt);
+    return this.toAuthResponse(resolved.user, resolved.account.id);
   }
 
   /**

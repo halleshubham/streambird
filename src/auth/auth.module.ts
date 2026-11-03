@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { GoogleOAuthService } from './google-oauth.service';
 import { GoogleIdTokenService } from './google-id-token.service';
+import { AppHandoffService } from './app-handoff.service';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { FacebookLoginService } from './facebook-login.service';
 import { SessionGuard } from '../common/guards/session.guard';
@@ -21,7 +22,7 @@ import { EmailModule } from '../email/email.module';
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, SessionGuard, GoogleOAuthService, GoogleIdTokenService, FacebookLoginService],
+  providers: [AuthService, SessionGuard, GoogleOAuthService, GoogleIdTokenService, AppHandoffService, FacebookLoginService],
   exports: [AuthService, SessionGuard, GoogleOAuthService],
 })
 export class AuthModule {}
