@@ -18,7 +18,7 @@
   color: var(--ink);
   letter-spacing: -0.01em;
 }
-.pub-page a {
+.pub-page a:not(.ui-btn):not(.pub-cta-primary):not(.pub-cta-secondary) {
   color: var(--brand-text);
 }
 
@@ -524,7 +524,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .pub-grid--plans {
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
 }
 .pub-feature-icon {
@@ -756,7 +756,8 @@
     font-size: 48px;
   }
   .pub-grid--features,
-  .pub-grid--steps {
+  .pub-grid--steps,
+  .pub-grid--plans {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .pub-legal-side {

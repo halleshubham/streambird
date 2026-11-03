@@ -107,7 +107,7 @@ test.describe('cookie consent', () => {
 test.describe('public pages', () => {
   test('login offers email, Google and Facebook sign-in', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'StreamBird' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
     await expect(page.getByRole('link', { name: /Sign in with Google/ })).toHaveAttribute('href', '/api/auth/google');
     await expect(page.getByRole('link', { name: /Continue with Facebook/ })).toHaveAttribute('href', '/api/auth/facebook');
     await expect(page.getByRole('button', { name: /Send login code/ })).toBeDisabled(); // nothing typed yet
@@ -117,7 +117,7 @@ test.describe('public pages', () => {
     await page.goto('/');
     const pricing = page.locator('#pricing');
     for (const name of ['Free', 'Lite', 'Starter', 'Pro', 'Business', 'Day Pass']) {
-      await expect(pricing.getByRole('heading', { name })).toBeVisible();
+      await expect(pricing.getByRole('heading', { name, exact: true })).toBeVisible();
     }
     await expect(pricing.getByRole('link', { name: 'Buy' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /support@shackyapps\.in/ }).first()).toHaveAttribute('href', /mailto:support@shackyapps\.in/);
@@ -2120,7 +2120,7 @@ test.describe('recording to this computer (Pro)', () => {
 });
 
 test.describe('UI polish', () => {
-  test('the currency switch is a proper segmented control and "See pricing" is a chip', async ({ page }) => {
+  test('the currency switch is a proper segmented control', async ({ page }) => {
     await page.goto('/');
     const group = page.getByRole('group', { name: 'Currency' });
     const usd = group.getByRole('button', { name: 'USD' });
@@ -2136,22 +2136,11 @@ test.describe('UI polish', () => {
       expect(box.width).toBeGreaterThan(60);
     }
     expect(await inr.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-
-    const chip = page.getByRole('link', { name: /See pricing/ });
-    await expect(chip).toHaveClass(/chip-link/);
-    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThan(20);
-    expect(await chip.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth))).toBeGreaterThan(0);
   });
 
-  test('home hero: animated headline cycling the platforms, a studio miniature, and no motion when reduced', async ({ page, browser }) => {
+  test('home hero: headline, a studio miniature, and no motion when reduced', async ({ page, browser }) => {
     await page.goto('/');
-    // Screen readers get one plain sentence; the animated copy is decoration.
-    await expect(page.getByRole('heading', { level: 1, name: 'Go live on YouTube, Facebook and Twitch from one browser tab.' })).toBeAttached();
-    const words = page.locator('.hero-word');
-    await expect(words).toHaveCount(3);
-    const timing = await words.evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, dur: getComputedStyle(e).animationDuration, delay: getComputedStyle(e).animationDelay })));
-    expect(timing.every((t) => t.name === 'hero-word' && t.dur === '9s')).toBe(true);
-    expect(timing.map((t) => t.delay)).toEqual(['0s', '3s', '6s']); // one platform at a time, in turn
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Go live once.');
 
     const studio = page.locator('.hero-studio');
     await expect(studio).toBeVisible();
@@ -2162,12 +2151,10 @@ test.describe('UI polish', () => {
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-    // prefers-reduced-motion: nothing animates and the first platform stays on screen.
+    // prefers-reduced-motion: nothing animates.
     const calm = await browser.newContext({ reducedMotion: 'reduce' });
     const still = await calm.newPage();
     await still.goto(`${APP}/`);
-    await expect(still.locator('.hero-word').first()).toHaveCSS('opacity', '1');
-    expect(await still.locator('.hero-word').first().evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     expect(await still.locator('.hero-studio').evaluate((e) => getComputedStyle(e).animationName)).toBe('none');
     await calm.close();
   });
