@@ -235,7 +235,13 @@ export function BrandPage() {
               {editing === k.id ? (
                 <KitEditor key={k.id} kit={k} {...editorProps} />
               ) : (
-                <KitSummary kit={k} assets={lib.items} channelNames={k.connectionIds.map(connectionName)} onEdit={() => setEditing(k.id)} />
+                <KitSummary
+                  kit={k}
+                  assets={lib.items}
+                  channelNames={k.connectionIds.map(connectionName)}
+                  onEdit={() => setEditing(k.id)}
+                  onDelete={() => void confirmAndDeleteKit(k, { onChanged: reload, onError: setError, onSaid: say })}
+                />
               )}
             </li>
           ))}
@@ -348,7 +354,28 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
   );
 }
 
-function KitSummary({ kit, assets, channelNames, onEdit }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void }) {
+/** Confirm, then delete a kit. Shared by the kit card's bin button and the editor's "Delete kit", so the wording and behaviour match. */
+async function confirmAndDeleteKit(
+  kit: BrandKit,
+  cb: { onChanged: () => Promise<void>; onError: (m: string | null) => void; onSaid: (m: string) => void },
+): Promise<void> {
+  const ok = await confirm({
+    title: `Delete "${kit.name}"?`,
+    body: 'Channels that use this kit go back to the account default. Your uploaded files stay in storage.',
+    confirmLabel: 'Delete kit',
+    destructive: true,
+  });
+  if (!ok) return;
+  try {
+    await assetsApi.deleteBrandKit(kit.id);
+    await cb.onChanged();
+    cb.onSaid(`Deleted "${kit.name}".`);
+  } catch (err) {
+    cb.onError(err instanceof ApiError ? err.message : 'Could not delete the brand kit.');
+  }
+}
+
+function KitSummary({ kit, assets, channelNames, onEdit, onDelete }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void; onDelete: () => void }) {
   const hasPortrait = !!(kit.logoAssetIdPortrait || kit.wallpaperAssetIdPortrait || (kit.adsPortrait ?? []).length > 0);
   return (
     <Card as="div" className="ha-kit-card">
@@ -367,6 +394,9 @@ function KitSummary({ kit, assets, channelNames, onEdit }: { kit: BrandKit; asse
       <div className="ha-row">
         <Button variant="secondary" aria-label={`Edit ${kit.name}`} icon={<Pencil size={14} aria-hidden="true" />} onClick={onEdit}>
           Edit
+        </Button>
+        <Button variant="secondary" className="ha-kit-delete" aria-label={`Delete kit ${kit.name}`} title="Delete this brand kit" onClick={onDelete}>
+          <Trash2 size={16} aria-hidden="true" />
         </Button>
       </div>
     </Card>
@@ -701,20 +731,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
 
   async function remove() {
     if (!kit) return;
-    const ok = await confirm({
-      title: `Delete "${kit.name}"?`,
-      body: 'Channels that use this kit go back to the account default. Your uploaded files stay in storage.',
-      confirmLabel: 'Delete kit',
-      destructive: true,
-    });
-    if (!ok) return;
-    try {
-      await assetsApi.deleteBrandKit(kit.id);
-      await onChanged();
-      onSaid(`Deleted "${kit.name}".`);
-    } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Could not delete the brand kit.');
-    }
+    await confirmAndDeleteKit(kit, { onChanged, onError, onSaid });
   }
 
   const toggle = (id: string) =>
