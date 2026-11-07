@@ -62,6 +62,7 @@ import { createPreset } from '../../api/presets';
 import { ApiError } from '../../api/client';
 import type { PresetConfig } from '../../types/api';
 import { confirm } from '../../components/ui';
+import { animatedNotice } from '../../studio/animatedImage';
 import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -169,6 +170,7 @@ export function HostStudioPage() {
     ending,
     screenSharing,
     branding,
+    logoStill,
     scenes,
     activeSceneName,
     destinations,
@@ -977,6 +979,11 @@ export function HostStudioPage() {
                       <ImageIcon size={14} /> Logo
                     </label>
                     <input id="logoInput" type="file" accept="image/*" onChange={(e) => actions.setLogoFile(e.target.files?.[0] ?? null)} />
+                    {animatedNotice(logoStill) && (
+                      <p className="field-hint" role="status" data-testid="logo-still-notice">
+                        {animatedNotice(logoStill)}
+                      </p>
+                    )}
 
                     <label id="logoPositionLabel">Logo position</label>
                     <div className="segmented" role="group" aria-labelledby="logoPositionLabel">
