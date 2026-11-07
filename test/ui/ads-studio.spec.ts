@@ -248,23 +248,6 @@ test.describe('ads on the canvas (a plan without the Powered-by mark)', () => {
       .toBe('blue+red');
   });
 
-  test('without ImageDecoder a GIF ad still shows its first frame', async ({ page, context }) => {
-    await page.addInitScript(() => {
-      delete (window as unknown as { ImageDecoder?: unknown }).ImageDecoder;
-    });
-    const gif = solidGif([[255, 0, 0], [0, 0, 255]], { width: 128, height: 24, delayMs: 100 });
-    const { api } = await signIn(context);
-    const id = await newStream(api);
-    await openStudio(page, id);
-    const { width: W, height: H } = await canvasSize(page);
-    const [lx, ly] = centre('lower_third', W, H);
-    await studioTab(page, 'Ads');
-    await addAd(page, 'lower_third', { name: 'spin.gif', mimeType: 'image/gif', buffer: gif });
-    await expect.poll(async () => isRed(await canvasPixel(page, lx, ly))).toBe(true);
-    await page.waitForTimeout(600);
-    expect(isRed(await canvasPixel(page, lx, ly))).toBe(true); // static first frame, never the second
-  });
-
   test('a file that is not a picture is refused with a message', async ({ page, context }) => {
     const { api } = await signIn(context);
     const id = await newStream(api);

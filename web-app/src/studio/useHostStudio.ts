@@ -8,7 +8,7 @@ import {
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy } from './poweredBy';
-import { decodeAnimatedLogo, type AnimatedLogo } from './animatedLogo';
+import { loadAnimatedLogo, type AnimatedFailReason, type AnimatedLogo } from './animatedLogo';
 import { kitSetFor } from './brandKitSet';
 import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
 import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
@@ -306,7 +306,7 @@ function saveAdFile(streamId: string, placement: AdPlacement, dataUrl: string | 
 /** Ads picked on this computer: pictures only, and not absurdly large (the canvas holds them in memory). */
 const MAX_AD_FILE_BYTES = 12 * 1024 * 1024;
 const AD_FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false, window: null, aspect: null };
+const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false, stillReason: null, window: null, aspect: null };
 const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
 // The host's green-screen background picture lives in its own key (a full quota must not drop the rest).
 const chromaBgKey = (streamId: string) => `streambird:studio:${streamId}:chromabg:v1`;
@@ -581,6 +581,8 @@ export function useHostStudio(streamId: string | undefined) {
   // (natural size, and the fallback when ImageDecoder is missing or the GIF is over the caps).
   const logoAnimRef = useRef<{ anim: AnimatedLogo; startedAt: number } | null>(null);
   const logoAnimTokenRef = useRef(0);
+  /** Why the GIF logo shows as a still picture on the broadcast (null: animating, or not a GIF). Drives the notice by the logo controls. */
+  const [logoStill, setLogoStill] = useState<AnimatedFailReason | null>(null);
   // Shown on the branded StreamBird slide that fills the canvas while nobody
   // is on camera -- see drawBrandSlide. The image is StreamBird's own logo,
   // not the host's custom overlay logo (brandingRef.logoImg).
@@ -2253,8 +2255,11 @@ export function useHostStudio(streamId: string | undefined) {
   function startLogoAnimation(blob: Blob) {
     const token = ++logoAnimTokenRef.current;
     logoAnimRef.current = null;
-    void decodeAnimatedLogo(blob, Math.max(256, brandingRef.current.logoSize * 2)).then((anim) => {
-      if (anim && token === logoAnimTokenRef.current) logoAnimRef.current = { anim, startedAt: performance.now() };
+    setLogoStill(null);
+    void loadAnimatedLogo(blob, Math.max(256, brandingRef.current.logoSize * 2)).then(({ image, reason }) => {
+      if (token !== logoAnimTokenRef.current) return;
+      if (image) logoAnimRef.current = { anim: image, startedAt: performance.now() };
+      else setLogoStill(reason ?? null);
     });
   }
 
@@ -2280,6 +2285,7 @@ export function useHostStudio(streamId: string | undefined) {
   function clearLogo() {
     logoAnimTokenRef.current += 1;
     logoAnimRef.current = null;
+    setLogoStill(null);
     brandingRef.current.logoImg = null;
     if (streamIdRef.current) savePersisted(streamIdRef.current, { logoDataUrl: null });
   }
@@ -3281,6 +3287,7 @@ export function useHostStudio(streamId: string | undefined) {
     ending,
     screenSharing,
     branding,
+    logoStill,
     scenes,
     activeSceneName,
     destinations,

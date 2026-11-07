@@ -19,6 +19,7 @@ import type { AdInfo } from '../studio/adLayer';
 import type { BrandKit } from '../types/api';
 import { kitSetFor } from '../studio/brandKitSet';
 import { slotHelp, type BrandOrientation } from '../studio/brandSizes';
+import { animatedNotice } from '../studio/animatedImage';
 
 interface Props {
   /** 'free' = the plan carries a StreamBird ad and cannot run its own. */
@@ -181,7 +182,7 @@ function AdCard({
       {noWindow && (
         <p className="field-hint error" role="status" data-testid="ad-nowindow-l_shape">{NO_WINDOW_WARNING}. It will cover the whole picture like a full-screen ad.</p>
       )}
-      {info.still && <p className="field-hint" data-testid={`ad-still-${placement}`}>This GIF could not be played as an animation here, so its first frame is shown as a still picture.</p>}
+      {info.still && animatedNotice(info.stillReason) && <p className="field-hint" role="status" data-testid={`ad-still-${placement}`}>{animatedNotice(info.stillReason)}</p>}
 
       <div className="segmented" role="group" aria-label={`${label} ad: file source`}>
         <button

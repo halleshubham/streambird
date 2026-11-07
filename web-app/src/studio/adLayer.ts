@@ -21,9 +21,9 @@ import {
   type AdSchedule,
   type AdSlot,
 } from './ads';
-import { decodeAnimatedImage, type AnimatedImage } from './animatedImage';
 import type { NormRect } from './adWindow';
 import { windowOfImage } from './adWindowDom';
+import { loadAnimatedImage, type AnimatedFailReason, type AnimatedImage } from './animatedImage';
 
 /**
  * Tests can pin the ad clock with `window.__SB_TEST_AD_ELAPSED__` (seconds), but only after they arm it with the
@@ -51,6 +51,7 @@ interface Runtime {
   anim: { image: AnimatedImage; startedAt: number } | null;
   /** A GIF whose animation was not (or could not be) decoded: it is drawn as a still picture. */
   still: boolean;
+  stillReason: AnimatedFailReason | null;
   animStarted: boolean;
   token: number;
   enabled: boolean;
@@ -81,6 +82,7 @@ const newRuntime = (): Runtime => ({
   blob: null,
   anim: null,
   still: false,
+  stillReason: null,
   animStarted: false,
   token: 0,
   enabled: true,
@@ -113,6 +115,8 @@ export interface AdInfo {
   manual: AdManual;
   /** An animated GIF that is being shown as a still picture (no animation support here, or too heavy). */
   still: boolean;
+  /** Why it is still (only meaningful while `still`). */
+  stillReason: AnimatedFailReason | null;
   /** l_shape only: the window found in the picture (0..1 of it); null with media = no clear window was found. */
   window: NormRect | null;
   /** width / height of the picture (for the thumbnail outline); null without a picture. */
@@ -139,7 +143,7 @@ export class AdLayer {
 
   info(p: AdPlacement): AdInfo {
     const r = this.rt[p];
-    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
+    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still, stillReason: r.stillReason, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
   }
 
   /** The Free plan draws only StreamBird's own ad, so custom GIFs are not even decoded there. */
@@ -245,10 +249,13 @@ export class AdLayer {
     if (!blob || blob.type !== 'image/gif') return;
     const area = adRect(p, w, h, 0);
     const token = r.token;
-    void decodeAnimatedImage(blob, Math.max(32, area.h), Math.max(32, area.w)).then((image) => {
+    void loadAnimatedImage(blob, Math.max(32, area.h), Math.max(32, area.w)).then(({ image, reason }) => {
       if (token !== r.token) return;
       if (image) r.anim = { image, startedAt: performance.now() };
-      else r.still = true;
+      else {
+        r.still = true;
+        r.stillReason = reason;
+      }
       this.onChange?.();
     });
   }
