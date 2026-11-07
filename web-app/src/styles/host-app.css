@@ -1748,3 +1748,13 @@
     flex: 1;
   }
 }
+
+/* The bin button beside Edit on a kit card: icon only, red icon, same 44 px touch target as the other buttons. */
+.ha-kit-delete {
+  color: var(--danger-text, #b4262b);
+  padding-inline: 12px;
+}
+.ha-kit-delete:hover,
+.ha-kit-delete:focus-visible {
+  background: color-mix(in srgb, var(--danger-text, #b4262b) 10%, transparent);
+}
