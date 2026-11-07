@@ -8,11 +8,14 @@ import { ApiError } from '../api/client';
 import { BirdLoader } from '../components/BirdLoader';
 import { BirdBusy } from '../components/BirdBusy';
 import { PlatformBadge } from '../components/PlatformBadge';
-import { AdIntervalFields, ShrinkSwitch } from '../components/AdsPanel';
+import { AdIntervalFields, L_SHAPE_NEEDS_SHRINK, NO_WINDOW_WARNING, ShrinkSwitch, WindowOutline } from '../components/AdsPanel';
+import type { NormRect } from '../studio/adWindow';
+import { windowOfUrl } from '../studio/adWindowDom';
 import { getMyLimits } from '../api/plans';
 import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, describeSchedule, type AdPlacement } from '../studio/ads';
 import {
   BRAND_FILE_LIMITS,
+  THUMBNAIL_LIMITS,
   BRAND_ORIENTATIONS,
   BRAND_ORIENTATION_LABEL,
   SLOT_SPECS,
@@ -28,7 +31,7 @@ import { Button, Card, EmptyState, Input, Modal, SelectField, buttonClass, confi
 import { Notice, PageHeader } from '../components/host/HostKit';
 
 const MB = 1024 * 1024;
-const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', ad: 'Ad', other: 'Other' };
+const KIND_LABEL: Record<AssetKind, string> = { logo: 'Logo', wallpaper: 'Wallpaper', background: 'Background picture', ad: 'Ad', thumbnail: 'Thumbnail', other: 'Other' };
 const STYLE_LABEL: Record<LowerThirdStyleId, string> = { bar: 'Solid', accent: 'Accent', glass: 'Glass' };
 
 /** A single file's size: KB under 1 MB so a small logo does not read "0.0 MB". */
@@ -47,6 +50,7 @@ const EMPTY_KIT: BrandKitInput = {
   wallpaperDim: 0,
   lowerThirdStyle: 'accent',
   adsShrinkPicture: true,
+  thumbnailAssetId: null,
   ads: [],
   adsPortrait: [],
 };
@@ -295,8 +299,12 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
   const wall = assets.find((a) => a.id === kit[f.wallpaper]);
   const ads = kit[f.ads] ?? [];
   const canvasH = orientation === 'portrait' ? 1920 : 720;
-  return (
-    <div className={`kit-preview${orientation === 'portrait' ? ' kit-preview--portrait' : ''}`} aria-hidden="true" data-testid="kit-preview" data-orientation={orientation}>
+  const frameAd = ads.find((a) => a.placement === 'l_shape');
+  const frame = useFrameWindow(frameAd && kit.adsShrinkPicture !== false ? frameAd.assetId : null);
+  const framed = !!frameAd && frame.state === 'ok' && !!frame.window;
+  const sceneStyle = framed && frame.window ? { left: `${frame.window.x * 100}%`, top: `${frame.window.y * 100}%`, width: `${frame.window.w * 100}%`, height: `${frame.window.h * 100}%` } : undefined;
+  const scene = (
+    <>
       {wall && <img className="kit-preview-wall" src={assetsApi.assetFileUrl(wall.id)} alt="" />}
       {wall && <div className="kit-preview-dim" style={{ opacity: kit.wallpaperDim / 100 }} />}
       {logo && (
@@ -307,8 +315,25 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
           style={{ height: `${Math.max(6, (kit.logoSize / canvasH) * 100)}%` }}
         />
       )}
+    </>
+  );
+  return (
+    <div className={`kit-preview${orientation === 'portrait' ? ' kit-preview--portrait' : ''}`} aria-hidden="true" data-testid="kit-preview" data-orientation={orientation}>
+      {framed && frameAd && (
+        <div className="kit-preview-ad kit-preview-ad--l_shape" data-testid="kit-preview-ad-l_shape">
+          <img src={assetsApi.assetFileUrl(frameAd.assetId)} alt="" />
+        </div>
+      )}
+      {framed ? (
+        <div className="kit-preview-scene" style={sceneStyle} data-testid="kit-preview-scene">
+          {scene}
+        </div>
+      ) : (
+        scene
+      )}
       {AD_PLACEMENTS.map((p) => {
         const ad = ads.find((a) => a.placement === p);
+        if (p === 'l_shape' && framed) return null; // drawn under the picture above
         return ad ? (
           <div key={p} className={`kit-preview-ad kit-preview-ad--${p}`} style={p === 'full_screen' ? { opacity: 0.75 } : undefined} data-testid={`kit-preview-ad-${p}`}>
             <img src={assetsApi.assetFileUrl(ad.assetId)} alt="" />
@@ -445,6 +470,9 @@ function AssetCard({ asset, onChanged, onError }: { asset: LibraryAsset; onChang
   );
 }
 
+/** A library file the platforms accept as a thumbnail: JPG or PNG, at most 2 MB, at least 640 px wide (the server checks the same). */
+const thumbnailFits = (a: LibraryAsset) => (a.contentType === 'image/jpeg' || a.contentType === 'image/png') && a.sizeBytes <= THUMBNAIL_LIMITS.maxBytes && a.width >= THUMBNAIL_LIMITS.minWidth;
+
 /** The kind a picture uploaded into a slot is stored as, and the kinds the "choose from uploaded" list offers. */
 const SLOT_KIND: Record<BrandSlot, { upload: AssetKind; choose: AssetKind[] }> = {
   logo: { upload: 'logo', choose: ['logo', 'other'] },
@@ -452,6 +480,8 @@ const SLOT_KIND: Record<BrandSlot, { upload: AssetKind; choose: AssetKind[] }> =
   lower_third: { upload: 'ad', choose: ['ad'] },
   side_third: { upload: 'ad', choose: ['ad'] },
   full_screen: { upload: 'ad', choose: ['ad'] },
+  l_shape: { upload: 'ad', choose: ['ad'] },
+  thumbnail: { upload: 'thumbnail', choose: ['thumbnail', 'other', 'wallpaper', 'background', 'ad', 'logo'] },
 };
 
 interface SlotPickerProps {
@@ -480,12 +510,16 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const allowGif = BRAND_FILE_LIMITS.gifSlots.includes(slot);
-  const accept = allowGif ? 'image/png,image/jpeg,image/webp,image/gif' : 'image/png,image/jpeg,image/webp';
+  const accept = slot === 'thumbnail' ? 'image/png,image/jpeg' : allowGif ? 'image/png,image/jpeg,image/webp,image/gif' : 'image/png,image/jpeg,image/webp';
 
   async function take(file: File | undefined) {
     if (fileRef.current) fileRef.current.value = '';
     if (!file) return;
     onError(null);
+    if (slot === 'thumbnail' && (file.size > THUMBNAIL_LIMITS.maxBytes || !['image/jpeg', 'image/png'].includes(file.type))) {
+      onError(`"${file.name}" can't be a thumbnail: use a JPG or PNG under ${THUMBNAIL_LIMITS.maxBytes / MB} MB (${fmtSize(file.size)} here).`);
+      return;
+    }
     if (file.size > BRAND_FILE_LIMITS.maxBytes) {
       onError(`"${file.name}" is ${fmtSize(file.size)}; the limit is ${BRAND_FILE_LIMITS.maxBytes / MB} MB. Export a smaller picture and try again.`);
       return;
@@ -510,7 +544,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
     void take(e.dataTransfer.files?.[0]);
   }
 
-  const options = assets.filter((a) => kinds.choose.includes(a.kind));
+  const options = assets.filter((a) => kinds.choose.includes(a.kind) && (slot !== 'thumbnail' || thumbnailFits(a)));
   const mismatch = asset ? aspectMismatch(asset.width, asset.height, spec) : false;
 
   return (
@@ -604,7 +638,7 @@ interface KitEditorProps {
 const sameSet = (a: Set<string>, b: string[]) => a.size === b.length && b.every((x) => a.has(x));
 const sameAds = (a: BrandKitAd[], b: BrandKitAd[]) => JSON.stringify([...a].sort(byPlacement)) === JSON.stringify([...b].sort(byPlacement));
 const byPlacement = (x: BrandKitAd, y: BrandKitAd) => x.placement.localeCompare(y.placement);
-const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture'] as const;
+const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId'] as const;
 
 /** One kit's editor (also the "new kit" form when `kit` is null): every graphic in place, per orientation, with a live preview. */
 function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, onLibraryChanged, onError, onSaid }: KitEditorProps) {
@@ -646,6 +680,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         wallpaperDim: form.wallpaperDim,
         lowerThirdStyle: form.lowerThirdStyle,
         adsShrinkPicture: form.adsShrinkPicture !== false,
+        thumbnailAssetId: form.thumbnailAssetId ?? null,
         ...(sendAds(form.ads ?? []) ? { ads: form.ads ?? [] } : {}),
         ...(sendAds(form.adsPortrait ?? []) ? { adsPortrait: form.adsPortrait ?? [] } : {}),
       };
@@ -759,7 +794,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
           <fieldset className="ha-fieldset ha-slots" data-testid="kit-ads">
             <legend>Ads</legend>
             <p className="ha-hint" style={{ marginTop: 0 }}>
-              Up to three ads on the broadcast picture, one in each place. Studio hosts can still switch them off or replace them per stream.
+              Up to four ads on the broadcast picture, one in each place (lower third, left third, full screen and an L-shaped frame). Studio hosts can still switch them off or replace them per stream.
             </p>
             {adsAllowed === null ? (
               <p className="ha-hint">Checking your plan…</p>
@@ -795,9 +830,19 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
                   ad={ads.find((a) => a.placement === p) ?? null}
                   picker={slotCommon}
                   onChange={(ad) => set(f.ads, [...ads.filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
+                  shrink={form.adsShrinkPicture !== false}
                 />
               ))
             )}
+          </fieldset>
+
+          <fieldset className="ha-fieldset ha-slots" data-testid="kit-thumbnail">
+            <legend>Stream thumbnail</legend>
+            <p className="ha-hint" style={{ marginTop: 0 }}>
+              Streams you create without a thumbnail of their own get this one, on YouTube (needs a verified channel) and, best effort, Facebook. One thumbnail for both shapes: vertical (9:16) streams use a 16:9 thumbnail too.
+              A thumbnail chosen for a single stream always wins.
+            </p>
+            <SlotPicker {...slotCommon} slot="thumbnail" label="Stream thumbnail" assetId={form.thumbnailAssetId ?? null} onChange={(id) => set('thumbnailAssetId', id)} />
           </fieldset>
         </div>
 
@@ -868,19 +913,51 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   );
 }
 
-/** One of a kit's three ad slots: the picture (uploaded in place), on/off and the schedule (stored in seconds). */
+/** Finds the window of a frame picture of the library (cached per asset). state: 'idle' = no picture, 'loading', 'ok', 'none' = no clear window. */
+function useFrameWindow(assetId: string | null): { state: 'idle' | 'loading' | 'ok' | 'none'; window: NormRect | null } {
+  const [result, setResult] = useState<{ id: string; window: NormRect | null } | null>(null);
+  useEffect(() => {
+    if (!assetId) return;
+    let live = true;
+    void windowOfUrl(assetsApi.assetFileUrl(assetId)).then((w) => {
+      if (live) setResult({ id: assetId, window: w });
+    });
+    return () => {
+      live = false;
+    };
+  }, [assetId]);
+  if (!assetId) return { state: 'idle', window: null };
+  if (!result || result.id !== assetId) return { state: 'loading', window: null };
+  return { state: result.window ? 'ok' : 'none', window: result.window };
+}
+
+/** A small picture of the frame with the detected window outlined. */
+function FrameWindowPreview({ assetId, window: w, state, orientation }: { assetId: string; window: NormRect | null; state: string; orientation: BrandOrientation }) {
+  return (
+    <div className={`kit-frame-preview${orientation === 'portrait' ? ' kit-frame-preview--portrait' : ''}`} data-testid="kit-frame-preview" data-state={state}>
+      <img src={assetsApi.assetFileUrl(assetId)} alt="" />
+      {w && <WindowOutline window={w} />}
+    </div>
+  );
+}
+
+/** One of a kit's four ad slots: the picture (uploaded in place), on/off and the schedule (stored in seconds). */
 function AdSlotEditor({
   placement,
   ad,
   picker,
   onChange,
+  shrink,
 }: {
   placement: AdPlacement;
   ad: BrandKitAd | null;
   picker: Omit<SlotPickerProps, 'slot' | 'label' | 'assetId' | 'onChange'>;
   onChange: (ad: BrandKitAd | null) => void;
+  /** The kit's "Shrink picture while ads show" switch: the L-shaped frame needs it on. */
+  shrink: boolean;
 }) {
   const label = AD_PLACEMENT_LABEL[placement];
+  const frame = useFrameWindow(placement === 'l_shape' ? (ad?.assetId ?? null) : null);
   const timed = ad?.mode === 'interval';
   const patch = (next: Partial<BrandKitAd>) => ad && onChange({ ...ad, ...next });
   return (
@@ -894,6 +971,27 @@ function AdSlotEditor({
           onChange(assetId ? { placement, assetId, enabled: ad?.enabled ?? true, mode: ad?.mode ?? 'continuous', showSec: ad?.showSec ?? null, everySec: ad?.everySec ?? null } : null)
         }
       />
+      {placement === 'l_shape' && ad && (
+        <div className="kit-frame-check" data-testid="kit-frame-check">
+          <FrameWindowPreview assetId={ad.assetId} window={frame.window} state={frame.state} orientation={picker.orientation} />
+          {frame.state === 'none' ? (
+            <p className="ha-slot-warn kit-slot-warning" role="status" data-testid="kit-frame-nowindow">
+              <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> {NO_WINDOW_WARNING}. It will cover the whole picture like a full-screen ad. Leave the window plain white (or transparent) and about as large as the picture should be.
+            </p>
+          ) : frame.state === 'ok' && frame.window ? (
+            <p className="ha-hint" data-testid="kit-frame-window" style={{ marginTop: 0 }}>
+              Window found: {Math.round(frame.window.w * 100)}% x {Math.round(frame.window.h * 100)}% of the frame. The live picture is placed there.
+            </p>
+          ) : (
+            <p className="ha-hint" style={{ marginTop: 0 }}>Looking for the window…</p>
+          )}
+          {!shrink && (
+            <p className="ha-slot-warn kit-slot-warning" role="status" data-testid="kit-frame-needs-shrink">
+              <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> {L_SHAPE_NEEDS_SHRINK}
+            </p>
+          )}
+        </div>
+      )}
       {ad && (
         <div className="ha-ad-controls">
           <label className="ha-check">

@@ -26,18 +26,29 @@
  *   Examples (show 15, every 180, cycle 195):  t=0..179.99 hidden · t=180 alpha 0 · t=180.15 alpha 0.5 ·
  *     t=180.3..194.7 alpha 1 · t=194.85 alpha 0.5 · t=195 -> next cycle, hidden again until t=375.
  *
- * Priority (`resolveAdAlphas`): while full_screen is visible it hides the other two: their alpha is multiplied
+ * Priority (`resolveAdAlphas`): while full_screen is visible it hides the others: their alpha is multiplied
  *   by (1 - alpha of full_screen), so they cross-fade away with it and are gone once it is at alpha 1.
- *   Draw order on the canvas (bottom to top): tiles, logo, ticker, name lower-third banner, then the ads
- *   lower_third, side_third, full_screen (so side_third draws above lower_third), and finally the Free plan's
+ *   The L-shaped frame (l_shape) is second: while it is visible lower_third and side_third are suppressed the same way
+ *   (their alpha is multiplied by (1 - alpha of l_shape), AFTER l_shape itself was reduced by full_screen).
+ *   Draw order on the canvas (bottom to top): background, wallpaper, THE L-SHAPED FRAME (a base layer: it is drawn
+ *   BEFORE the scene), the scene (tiles, logo, name lower-third banner, scaled into the frame's window), ticker, then
+ *   the ads lower_third, side_third, full_screen (so side_third draws above lower_third), and finally the Free plan's
  *   "Powered by StreamBird" mark, always on top.
+ *
+ * L-shaped frame (`l_shape`): the ad image is a FULL-FRAME graphic (a coloured column and/or band around a clear window,
+ *   e.g. a news channel's frame). It is drawn contain-fitted over the whole canvas (same orientation set as the other
+ *   ads: landscape set for 16:9 streams, portrait set for 9:16) and the scene is scaled, aspect kept, into the window.
+ *   The window is detected from the image itself (adWindow.ts `detectWindow`): the clear region (transparent or white)
+ *   around the image centre, as a 0..1 rectangle. If none is found the graphic is drawn as a full-screen overlay and
+ *   the scene is not shrunk. It needs the switch "Shrink picture while ads show": with it off the placement is disabled.
+ *   Window on the canvas = fitAd rect origin + window * fitAd size; scene = `lShapeSceneRect` (contain, centred).
  */
 
-export const AD_PLACEMENTS = ['lower_third', 'side_third', 'full_screen'] as const;
+export const AD_PLACEMENTS = ['lower_third', 'side_third', 'full_screen', 'l_shape'] as const;
 export type AdPlacement = (typeof AD_PLACEMENTS)[number];
 
-/** Draw order, first = bottom. */
-export const AD_DRAW_ORDER: readonly AdPlacement[] = AD_PLACEMENTS;
+/** Draw order of the overlay ads, first = bottom. l_shape is a base layer drawn under the scene (it is only an overlay when its graphic has no window). */
+export const AD_DRAW_ORDER: readonly AdPlacement[] = ['lower_third', 'side_third', 'l_shape', 'full_screen'];
 
 export const AD_FADE_SEC = 0.3;
 export const AD_SHOW_SEC_RANGE = { min: 1, max: 3600 } as const;
@@ -49,6 +60,7 @@ export const AD_PLACEMENT_LABEL: Record<AdPlacement, string> = {
   lower_third: 'Lower third',
   side_third: 'Left third',
   full_screen: 'Full screen',
+  l_shape: 'L-shaped frame',
 };
 
 export interface AdRect {
@@ -68,6 +80,7 @@ export function adRect(placement: AdPlacement, W: number, H: number, tickerBarHe
     case 'side_third':
       return { x: 0, y: 0, w: Math.round(W / 3), h: H };
     case 'full_screen':
+    case 'l_shape':
       return { x: 0, y: 0, w: W, h: H };
   }
 }
@@ -134,15 +147,18 @@ export function adTargetAlpha(elapsedSec: number, slot: AdSlot): number {
 export function resolveAdAlphas(
   elapsedSec: number,
   slots: readonly AdSlot[],
-  out: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0 },
+  out: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0, l_shape: 0 },
 ): Record<AdPlacement, number> {
   out.lower_third = 0;
   out.side_third = 0;
   out.full_screen = 0;
+  out.l_shape = 0;
   for (const slot of slots) out[slot.placement] = adTargetAlpha(elapsedSec, slot);
   const cover = out.full_screen;
-  out.lower_third *= 1 - cover;
-  out.side_third *= 1 - cover;
+  out.l_shape *= 1 - cover;
+  const frame = out.l_shape;
+  out.lower_third *= (1 - cover) * (1 - frame);
+  out.side_third *= (1 - cover) * (1 - frame);
   return out;
 }
 
@@ -222,9 +238,30 @@ export function adReserve(placement: AdPlacement, W: number, H: number, tickerBa
     case 'side_third':
       return { left: adRect('side_third', W, H).w, bottom: 0 };
     case 'full_screen':
+    case 'l_shape': // the frame has its own rule (`lShapeSceneRect`)
       return { left: 0, bottom: 0 };
   }
 }
+
+/**
+ * Where the scene goes inside an L-shaped frame's window (a rectangle in canvas pixels): the W x H scene, scaled to
+ * fit, aspect ratio kept, centred in the window (it may be smaller than the window when the shapes differ; the frame
+ * graphic shows around it). Never larger than the canvas.
+ */
+export function lShapeSceneRect(W: number, H: number, win: AdRect): AdRect {
+  if (!(win.w > 0) || !(win.h > 0)) return { x: 0, y: 0, w: W, h: H };
+  const scale = Math.min(1, win.w / W, win.h / H);
+  const w = W * scale;
+  const h = H * scale;
+  return { x: win.x + (win.w - w) / 2, y: win.y + (win.h - h) / 2, w, h };
+}
+
+/** The window (normalised 0..1 of the picture, see adWindow.ts) on the canvas, given where the picture is drawn (fitAd). */
+export function windowOnCanvas(fitted: AdRect, win: { x: number; y: number; w: number; h: number }): AdRect {
+  return { x: fitted.x + win.x * fitted.w, y: fitted.y + win.y * fitted.h, w: win.w * fitted.w, h: win.h * fitted.h };
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Contain-fits the W x H scene into what is left after the insets, centred both ways. Never larger than the canvas. */
 export function sceneRect(W: number, H: number, insets: SceneInsets): AdRect {
@@ -242,10 +279,12 @@ export interface AdShrinkInput {
   alpha: number;
   /** Where the ad picture is drawn; null = use the placement's whole area. */
   fitted?: AdRect | null;
+  /** l_shape only: the frame's window in canvas pixels (windowOnCanvas). Without it the ad does not shrink the scene. */
+  window?: AdRect | null;
 }
 
 /**
- * Where the scene is drawn while the given ads show (any subset of the three; missing = not showing). Returns the
+ * Where the scene is drawn while the given ads show (any subset of the four; missing = not showing). Returns the
  * whole canvas when nothing shrinks it. `tickerBarHeight` only matters for a lower_third without `fitted`.
  */
 export function sceneRectFor(W: number, H: number, ads: Partial<Record<AdPlacement, AdShrinkInput>>, tickerBarHeight = 0): AdRect {
@@ -259,5 +298,11 @@ export function sceneRectFor(W: number, H: number, ads: Partial<Record<AdPlaceme
     left = Math.max(left, full.left * k);
     bottom = Math.max(bottom, full.bottom * k);
   }
-  return left === 0 && bottom === 0 ? { x: 0, y: 0, w: W, h: H } : sceneRect(W, H, { left, bottom });
+  const base: AdRect = left === 0 && bottom === 0 ? { x: 0, y: 0, w: W, h: H } : sceneRect(W, H, { left, bottom });
+  const frame = ads.l_shape;
+  if (!frame || !(frame.alpha > 0) || !frame.window) return base;
+  // The frame eases the scene from wherever the other ads left it to the window, in step with its own fade.
+  const target = lShapeSceneRect(W, H, frame.window);
+  const k = shrinkEase(frame.alpha);
+  return { x: lerp(base.x, target.x, k), y: lerp(base.y, target.y, k), w: lerp(base.w, target.w, k), h: lerp(base.h, target.h, k) };
 }

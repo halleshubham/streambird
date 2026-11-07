@@ -13,6 +13,7 @@ import {
   resolveAdAlphas,
   sceneRectFor,
   stepAlpha,
+  windowOnCanvas,
   type AdManual,
   type AdPlacement,
   type AdRect,
@@ -21,6 +22,8 @@ import {
   type AdSlot,
 } from './ads';
 import { decodeAnimatedImage, type AnimatedImage } from './animatedImage';
+import type { NormRect } from './adWindow';
+import { windowOfImage } from './adWindowDom';
 
 /**
  * Tests can pin the ad clock with `window.__SB_TEST_AD_ELAPSED__` (seconds), but only after they arm it with the
@@ -42,7 +45,6 @@ export const MAX_AD_SIDE = 8192;
 const FREE_AD_RETRY_MS = 10_000;
 /** The placements that make room for themselves (full screen covers instead). */
 const SHRINKING: readonly AdPlacement[] = ['lower_third', 'side_third'];
-
 interface Runtime {
   img: HTMLImageElement | null;
   blob: Blob | null;
@@ -63,6 +65,10 @@ interface Runtime {
   /** Object URL of the picture, also used for the small thumbnail in the studio. Revoked on replace. */
   previewUrl: string | null;
   rect: AdRect;
+  /** l_shape only: the detected window as fractions of the picture (null = none found, see ads.ts). */
+  win: NormRect | null;
+  /** The window on the canvas (pixels), kept up to date by fit(). */
+  winPx: AdRect | null;
   keyW: number;
   keyH: number;
   keyBar: number;
@@ -87,6 +93,8 @@ const newRuntime = (): Runtime => ({
   name: null,
   previewUrl: null,
   rect: { x: 0, y: 0, w: 0, h: 0 },
+  win: null,
+  winPx: null,
   keyW: -1,
   keyH: -1,
   keyBar: -1,
@@ -105,14 +113,18 @@ export interface AdInfo {
   manual: AdManual;
   /** An animated GIF that is being shown as a still picture (no animation support here, or too heavy). */
   still: boolean;
+  /** l_shape only: the window found in the picture (0..1 of it); null with media = no clear window was found. */
+  window: NormRect | null;
+  /** width / height of the picture (for the thumbnail outline); null without a picture. */
+  aspect: number | null;
 }
 
 export type SetMediaResult = true | false | 'too-big';
 
 export class AdLayer {
-  private readonly rt: Record<AdPlacement, Runtime> = { lower_third: newRuntime(), side_third: newRuntime(), full_screen: newRuntime() };
+  private readonly rt: Record<AdPlacement, Runtime> = { lower_third: newRuntime(), side_third: newRuntime(), full_screen: newRuntime(), l_shape: newRuntime() };
   private readonly slotList: AdSlot[] = AD_DRAW_ORDER.map((placement) => ({ placement, enabled: false, schedule: { mode: 'continuous' } as AdSchedule, manual: null as AdManual }));
-  private readonly targets: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0 };
+  private readonly targets: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0, l_shape: 0 };
   private readonly freeSlot: AdSlot = { placement: 'lower_third', enabled: true, schedule: FREE_PLAN_AD_SCHEDULE, manual: null };
   private free: Runtime = newRuntime();
   private freeLoading = false;
@@ -127,7 +139,7 @@ export class AdLayer {
 
   info(p: AdPlacement): AdInfo {
     const r = this.rt[p];
-    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still };
+    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
   }
 
   /** The Free plan draws only StreamBird's own ad, so custom GIFs are not even decoded there. */
@@ -190,6 +202,7 @@ export class AdLayer {
     }
     if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     r.img = img;
+    r.win = p === 'l_shape' ? windowOfImage(img) : null;
     r.blob = blob;
     r.anim = null;
     r.still = false;
@@ -208,6 +221,7 @@ export class AdLayer {
     r.token += 1;
     if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     r.img = null;
+    r.win = null;
     r.blob = null;
     r.anim = null;
     r.still = false;
@@ -262,6 +276,7 @@ export class AdLayer {
     const ih = img.naturalHeight;
     if (r.keyW !== w || r.keyH !== h || r.keyBar !== tickerBar || r.keyIw !== iw || r.keyIh !== ih) {
       r.rect = fitAd(p, iw, ih, adRect(p, w, h, tickerBar));
+      r.winPx = r.win && r.rect.w > 0 ? windowOnCanvas(r.rect, r.win) : null;
       r.keyW = w;
       r.keyH = h;
       r.keyBar = tickerBar;
@@ -303,7 +318,8 @@ export class AdLayer {
     for (let i = 0; i < this.slotList.length; i++) {
       const slot = this.slotList[i];
       const r = this.rt[slot.placement];
-      slot.enabled = !!r.img && r.enabled;
+      // The L-shaped frame always resizes the picture, so it cannot run while "Shrink picture while ads show" is off.
+      slot.enabled = !!r.img && r.enabled && (slot.placement !== 'l_shape' || this.shrinkOn);
       slot.schedule = r.schedule;
       slot.manual = r.manual;
       if (slot.enabled || r.alpha > 0) any = true;
@@ -319,13 +335,33 @@ export class AdLayer {
     }
   }
 
-  /** Draws the ads (as stepped) over the finished picture. */
+  /**
+   * Draws the L-shaped frame (as stepped) as the BASE layer, under the scene. Call it after the background and
+   * wallpaper, before the scene. Does nothing when no frame with a window is showing.
+   */
+  paintBase(ctx: CanvasRenderingContext2D, now: number): void {
+    if (this.freePlan) return;
+    const r = this.rt.l_shape;
+    if (r.win) this.drawOne(ctx, r, now);
+  }
+
+  /** True while a frame with a window is visible: the scene is then drawn with its own background, inside the window. */
+  frameActive(): boolean {
+    if (this.freePlan) return false;
+    const r = this.rt.l_shape;
+    return !!r.img && !!r.win && r.alpha > 0.002;
+  }
+
+  /** Draws the ads (as stepped) over the finished picture. A frame with no window is drawn here, as a full-screen overlay. */
   paint(ctx: CanvasRenderingContext2D, now: number): void {
     if (this.freePlan) {
       this.drawOne(ctx, this.free, now);
       return;
     }
-    for (const p of AD_DRAW_ORDER) this.drawOne(ctx, this.rt[p], now);
+    for (const p of AD_DRAW_ORDER) {
+      if (p === 'l_shape' && this.rt.l_shape.win) continue; // drawn by paintBase
+      this.drawOne(ctx, this.rt[p], now);
+    }
   }
 
   /** step + paint in one call. */
@@ -359,7 +395,9 @@ export class AdLayer {
         input[p] = { alpha: r.img ? r.alpha : 0, fitted: r.rect };
       }
     }
-    if (!((input.lower_third?.alpha ?? 0) > 0.002 || (input.side_third?.alpha ?? 0) > 0.002)) return null;
+    const frame = this.rt.l_shape;
+    input.l_shape = { alpha: !this.freePlan && frame.img && frame.win ? frame.alpha : 0, fitted: frame.rect, window: frame.winPx };
+    if (!((input.lower_third?.alpha ?? 0) > 0.002 || (input.side_third?.alpha ?? 0) > 0.002 || (input.l_shape.alpha > 0.002 && !!input.l_shape.window))) return null;
     return sceneRectFor(w, h, input);
   }
 }

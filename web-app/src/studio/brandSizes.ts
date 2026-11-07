@@ -7,6 +7,8 @@
  *   lower_third  area = full width x round(H / 3)      -> landscape 1920 x 360 (16:3),  portrait 1080 x 640
  *   side_third   area = round(W / 3) x full height     -> landscape  640 x 1080 (a tall slice), portrait 360 x 1920
  *   full_screen  area = the whole frame
+ *   l_shape      area = the whole frame (a frame graphic with a clear window; the live picture goes into the window)
+ *   thumbnail    a stream thumbnail: 16:9, 1280 x 720, JPG/PNG up to 2 MB; shared by both orientations
  * A suggested size is what we recommend you export; any size with the same shape works (pictures are scaled to fit,
  * never cropped, except wallpapers, which fill the frame and are cropped around the focus point).
  */
@@ -16,8 +18,11 @@ export type BrandOrientation = 'landscape' | 'portrait';
 export const BRAND_ORIENTATIONS: readonly BrandOrientation[] = ['landscape', 'portrait'];
 export const BRAND_ORIENTATION_LABEL: Record<BrandOrientation, string> = { landscape: '16:9', portrait: '9:16' };
 
-export type BrandSlot = 'logo' | 'wallpaper' | 'lower_third' | 'side_third' | 'full_screen';
-export const BRAND_SLOTS: readonly BrandSlot[] = ['logo', 'wallpaper', 'lower_third', 'side_third', 'full_screen'];
+export type BrandSlot = 'logo' | 'wallpaper' | 'lower_third' | 'side_third' | 'full_screen' | 'l_shape' | 'thumbnail';
+export const BRAND_SLOTS: readonly BrandSlot[] = ['logo', 'wallpaper', 'lower_third', 'side_third', 'full_screen', 'l_shape', 'thumbnail'];
+
+/** The stream thumbnail limits the platforms (YouTube) set; the server checks the same (src/streams/thumbnail.util.ts). */
+export const THUMBNAIL_LIMITS = { maxBytes: 2 * 1024 * 1024, minWidth: 640 } as const;
 
 /** The canvas the studio draws at its best quality (1080p), per orientation. */
 export const CANVAS_SIZE: Record<BrandOrientation, { w: number; h: number }> = { landscape: { w: 1920, h: 1080 }, portrait: { w: 1080, h: 1920 } };
@@ -27,7 +32,7 @@ export const BRAND_FILE_LIMITS = {
   maxBytes: 4 * 1024 * 1024,
   maxSide: 8192,
   /** GIF (animated) is accepted for logos and ads only. */
-  gifSlots: ['logo', 'lower_third', 'side_third', 'full_screen'] as readonly BrandSlot[],
+  gifSlots: ['logo', 'lower_third', 'side_third', 'full_screen', 'l_shape'] as readonly BrandSlot[],
 } as const;
 
 /** A picture whose shape is off by more than this factor from the suggestion gets a (non-blocking) warning. */
@@ -55,6 +60,13 @@ const LOGO: SlotSpec = {
   hint: 'Square or wide PNG with a transparent background, about 512 x 512 (up to 1024 px).',
 };
 
+const THUMBNAIL: SlotSpec = {
+  label: 'Stream thumbnail',
+  size: { w: 1280, h: 720 },
+  ...around(1280, 720),
+  hint: '16:9, 1280 x 720. Vertical (9:16) streams use a 16:9 thumbnail too.',
+};
+
 export const SLOT_SPECS: Record<BrandOrientation, Record<BrandSlot, SlotSpec>> = {
   landscape: {
     logo: LOGO,
@@ -62,6 +74,8 @@ export const SLOT_SPECS: Record<BrandOrientation, Record<BrandSlot, SlotSpec>> =
     lower_third: { label: 'Lower third', size: { w: 1280, h: 240 }, ...around(1280, 240), hint: 'Wide banner, about 16:3 (1280 x 240). It sits in the bottom third of the picture.' },
     side_third: { label: 'Left third', size: { w: 640, h: 1080 }, ...around(640, 1080), hint: 'Tall slice, 640 x 1080. It fills the left third, full height.' },
     full_screen: { label: 'Full screen', size: { w: 1920, h: 1080 }, ...around(1920, 1080), hint: '16:9, 1920 x 1080. It covers the whole picture while it shows.' },
+    l_shape: { label: 'L-shaped frame', size: { w: 1920, h: 1080 }, ...around(1920, 1080), hint: 'Full frame, 16:9, 1920 x 1080: a coloured column and/or band around a plain white (or transparent) window, 16:9, where the live picture goes.' },
+    thumbnail: THUMBNAIL,
   },
   portrait: {
     logo: LOGO,
@@ -69,6 +83,8 @@ export const SLOT_SPECS: Record<BrandOrientation, Record<BrandSlot, SlotSpec>> =
     lower_third: { label: 'Lower third', size: { w: 1080, h: 360 }, ...around(1080, 360), hint: 'Banner about 3:1 (1080 x 360, at most 1080 x 640). It sits at the bottom of the tall picture.' },
     side_third: { label: 'Left third', size: { w: 360, h: 1920 }, ...around(360, 1920), hint: 'Narrow tall strip, 360 x 1920. It fills the left third, full height.' },
     full_screen: { label: 'Full screen', size: { w: 1080, h: 1920 }, ...around(1080, 1920), hint: '9:16, 1080 x 1920. It covers the whole picture while it shows.' },
+    l_shape: { label: 'L-shaped frame', size: { w: 1080, h: 1920 }, ...around(1080, 1920), hint: 'Full frame, 9:16, 1080 x 1920: a coloured band around a plain white (or transparent) window where the live picture goes.' },
+    thumbnail: THUMBNAIL,
   },
 };
 
@@ -87,6 +103,7 @@ export function aspectMismatch(width: number, height: number, spec: SlotSpec): b
 /** The helper line for a slot: shape advice plus the file limits. */
 export function slotHelp(orientation: BrandOrientation, slot: BrandSlot): string {
   const spec = SLOT_SPECS[orientation][slot];
+  if (slot === 'thumbnail') return `${spec.hint} JPG or PNG, under ${THUMBNAIL_LIMITS.maxBytes / 1024 / 1024} MB.`;
   const gif = BRAND_FILE_LIMITS.gifSlots.includes(slot) ? 'PNG, JPG, WebP or GIF' : 'PNG, JPG or WebP';
   return `${spec.hint} ${gif}, up to ${BRAND_FILE_LIMITS.maxBytes / 1024 / 1024} MB.`;
 }

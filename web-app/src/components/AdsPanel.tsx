@@ -43,10 +43,14 @@ interface Props {
 const WHERE: Record<AdPlacement, string> = {
   lower_third: 'The bottom third of the picture (above the ticker).',
   side_third: 'The left third of the picture, full height.',
-  full_screen: 'The whole picture. It hides the other two while it is on.',
+  full_screen: 'The whole picture. It hides the other ads while it is on.',
+  l_shape: 'A frame around the picture (a column and/or band with a clear window). The live picture shrinks into the window; lower and left third ads wait while it shows.',
 };
 
-/** The studio's Ads tab: up to three ads on the broadcast picture, each with its own file, schedule and manual control. */
+export const NO_WINDOW_WARNING = 'No clear window found in this graphic: the picture will not be placed';
+export const L_SHAPE_NEEDS_SHRINK = 'L-shaped ads always resize the picture. Turn on "Shrink picture while ads show" to use this ad.';
+
+/** The studio's Ads tab: up to four ads on the broadcast picture, each with its own file, schedule and manual control. */
 export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props) {
   if (plan === 'unknown') return <div className="panel" aria-busy="true" />;
   if (plan === 'free') {
@@ -61,7 +65,7 @@ export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props
         </p>
         <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
         <p className="field-hint">
-          Paid plans and day passes remove it and let you run your own ads (a lower third, a left third or the full screen) from a file or your brand kit.{' '}
+          Paid plans and day passes remove it and let you run your own ads (a lower third, a left third, the full screen or an L-shaped frame) from a file or your brand kit.{' '}
           <Link to="/billing" className="chip-link chip-link--sm">See plans</Link>
         </p>
       </div>
@@ -80,7 +84,7 @@ export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props
         <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
       </div>
       {AD_PLACEMENTS.map((p) => (
-        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} />
+        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} shrink={shrink} />
       ))}
     </div>
   );
@@ -93,7 +97,7 @@ export function ShrinkSwitch({ shrink, onChange }: { shrink: boolean; onChange: 
       <label className="ad-shrink-row">
         <input type="checkbox" checked={shrink} aria-label="Shrink picture while ads show" onChange={(e) => onChange(e.target.checked)} /> Shrink picture while ads show
       </label>
-      <p className="field-hint">The live picture is made smaller to fit beside or above a lower-third or left-third ad, so nothing important is hidden. Full-screen ads always cover the picture.</p>
+      <p className="field-hint">The live picture is made smaller to fit beside or above a lower-third or left-third ad, so nothing important is hidden. L-shaped frame ads always resize the picture into their window (they need this switch on). Full-screen ads always cover the picture.</p>
     </div>
   );
 }
@@ -104,17 +108,21 @@ function AdCard({
   info,
   kitAd,
   actions,
+  shrink,
 }: {
   placement: AdPlacement;
   orientation: BrandOrientation;
   info: AdInfo;
   kitAd: BrandKit['ads'][number] | null;
   actions: Props['actions'];
+  shrink: boolean;
 }) {
   const label = AD_PLACEMENT_LABEL[placement];
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const timed = info.schedule.mode === 'interval';
+  const frameBlocked = placement === 'l_shape' && !shrink; // an L-shaped frame cannot run with the picture-shrink switch off
+  const noWindow = placement === 'l_shape' && info.hasMedia && !info.window;
   const manualNote = info.manual === 'shown' ? 'Showing now (by hand)' : info.manual === 'hidden' ? 'Hidden (by hand)' : info.hasMedia ? describeSchedule(info.schedule) : 'No picture yet';
 
   async function pick(file: File | undefined) {
@@ -148,7 +156,16 @@ function AdCard({
 
       <div className="ad-media">
         <div className={`ad-thumb ad-thumb--${placement}`} aria-hidden="true">
-          {info.previewUrl ? <img src={info.previewUrl} alt="" /> : <ImagePlus size={20} />}
+          {placement === 'l_shape' && info.previewUrl && info.window && info.aspect ? (
+            <span className="ad-thumb-frame" style={{ aspectRatio: String(info.aspect) }}>
+              <img src={info.previewUrl} alt="" />
+              <WindowOutline window={info.window} />
+            </span>
+          ) : info.previewUrl ? (
+            <img src={info.previewUrl} alt="" />
+          ) : (
+            <ImagePlus size={20} />
+          )}
         </div>
         <div className="ad-media-info">
           <span className="ad-file-name" title={info.name ?? undefined}>
@@ -158,6 +175,12 @@ function AdCard({
         </div>
       </div>
 
+      {placement === 'l_shape' && frameBlocked && (
+        <p className="field-hint" role="status" data-testid="ad-lshape-needs-shrink">{L_SHAPE_NEEDS_SHRINK}</p>
+      )}
+      {noWindow && (
+        <p className="field-hint error" role="status" data-testid="ad-nowindow-l_shape">{NO_WINDOW_WARNING}. It will cover the whole picture like a full-screen ad.</p>
+      )}
       {info.still && <p className="field-hint" data-testid={`ad-still-${placement}`}>This GIF could not be played as an animation here, so its first frame is shown as a still picture.</p>}
 
       <div className="segmented" role="group" aria-label={`${label} ad: file source`}>
@@ -212,10 +235,10 @@ function AdCard({
       </div>
 
       <div className="studio-toolbar ad-manual">
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled || frameBlocked} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
           <Eye size={14} /> Show now
         </button>
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled || frameBlocked} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
           <EyeOff size={14} /> Hide
         </button>
         {info.manual && (
@@ -225,9 +248,20 @@ function AdCard({
         )}
       </div>
       <p className="field-hint" role="status" data-testid={`ad-status-${placement}`}>
-        {info.hasMedia && !info.enabled ? 'Switched off' : manualNote}
+        {frameBlocked && info.hasMedia ? 'Off while the picture does not shrink' : info.hasMedia && !info.enabled ? 'Switched off' : manualNote}
       </p>
     </div>
+  );
+}
+
+/** The detected window drawn as an outline over a frame picture's thumbnail (fractions of the picture). Percent-positioned, so it needs no size. */
+export function WindowOutline({ window: w }: { window: { x: number; y: number; w: number; h: number } }) {
+  return (
+    <span
+      className="ad-window-outline"
+      data-testid="ad-window-outline"
+      style={{ left: `${w.x * 100}%`, top: `${w.y * 100}%`, width: `${w.w * 100}%`, height: `${w.h * 100}%` }}
+    />
   );
 }
 
