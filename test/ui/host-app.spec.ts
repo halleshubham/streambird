@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { APP, apiHeaders, patchFreePlan, signIn, solidPng } from './helpers';
+import { APP, acceptConfirm, apiHeaders, cancelConfirm, confirmDialog, patchFreePlan, signIn, solidPng } from './helpers';
 
 /**
  * The redesigned host-app pages (Dashboard, Upcoming, New stream, Stream detail, Connections, Brand, Billing, Team):
@@ -326,6 +326,44 @@ test.describe('brand', () => {
       await expect(page.getByTestId('toast-host')).toContainText('File renamed');
       await expect(page.getByRole('button', { name: 'Delete acme-mark' })).toBeVisible();
       await noSidewaysScroll(page);
+    });
+
+    test('each kit card has a bin button beside Edit: Cancel keeps the kit, confirming deletes it; fits the phone', async ({ page, context }) => {
+      const { api } = await signIn(context);
+      for (const name of ['Morning show', 'Evening show']) {
+        const r = await api.post(`${APP}/api/brand-kits`, { data: { name }, headers: apiHeaders });
+        expect(r.ok()).toBeTruthy();
+      }
+      for (const vp of [DESKTOP, PHONE]) {
+        await page.setViewportSize(vp);
+        await page.goto('/brand');
+        const edit = page.getByRole('button', { name: 'Edit Morning show' });
+        const bin = page.getByRole('button', { name: 'Delete Morning show' });
+        await expect(edit).toBeVisible();
+        await expect(bin).toBeVisible();
+        // Beside Edit: same row, to its right, and a real touch target.
+        const [e, b] = [await edit.boundingBox(), await bin.boundingBox()];
+        expect(Math.abs(e!.y - b!.y)).toBeLessThan(8);
+        expect(b!.x).toBeGreaterThan(e!.x + e!.width - 1);
+        expect(b!.width).toBeGreaterThanOrEqual(40);
+        expect(b!.height).toBeGreaterThanOrEqual(40);
+        await noSidewaysScroll(page);
+      }
+      await page.setViewportSize(DESKTOP);
+      await page.goto('/brand');
+      await page.getByRole('button', { name: 'Delete Morning show' }).click();
+      await expect(confirmDialog(page)).toContainText('Channels that use this kit go back to the account default');
+      await cancelConfirm(page);
+      await expect(page.getByRole('heading', { name: 'Morning show' })).toBeVisible();
+      expect((await (await api.get(`${APP}/api/brand-kits`)).json()).length).toBe(2);
+
+      await page.getByRole('button', { name: 'Delete Morning show' }).click();
+      await acceptConfirm(page);
+      await expect(page.getByRole('status').filter({ hasText: 'Deleted "Morning show"' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Morning show' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Evening show' })).toBeVisible();
+      const left = (await (await api.get(`${APP}/api/brand-kits`)).json()) as { name: string }[];
+      expect(left.map((k) => k.name)).toEqual(['Evening show']);
     });
   });
 });
