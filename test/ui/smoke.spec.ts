@@ -1764,7 +1764,7 @@ test.describe('animated GIF logo', () => {
     await seesBothFrames(page);
   });
 
-  test('without ImageDecoder the first frame is shown, with no errors', async ({ page, context }) => {
+  test('without ImageDecoder the built-in GIF decoder still animates the logo, with no errors and no notice', async ({ page, context }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.addInitScript(() => { delete (window as unknown as { ImageDecoder?: unknown }).ImageDecoder; });
@@ -1775,9 +1775,8 @@ test.describe('animated GIF logo', () => {
     expect(await page.evaluate(() => typeof (window as unknown as { ImageDecoder?: unknown }).ImageDecoder)).toBe('undefined');
     await studioTab(page, 'Look');
     await page.locator('#logoInput').setInputFiles({ name: 'spin.gif', mimeType: 'image/gif', buffer: GIF });
-    await expect.poll(async () => redish(await logoPx(page)), { timeout: 10_000 }).toBe(true); // frame 1
-    await page.waitForTimeout(700); // several frame delays later it is still the static first frame
-    expect(redish(await logoPx(page))).toBe(true);
+    await seesBothFrames(page);
+    await expect(page.getByTestId('logo-still-notice')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
