@@ -206,7 +206,7 @@ async function openStudio(page: Page, id: string) {
   await studioTab(page, 'Look');
   // A solid BLUE logo marks the scene: its pixels tell where the scene is drawn.
   await page.locator('#logoInput').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: solidPng(0, 0, 255, 64, 64) });
-  await expect.poll(async () => (await blueBox(page))?.w ?? 0).toBeGreaterThan(80);
+  await expect.poll(async () => near((await blueBox(page))?.w ?? 0, 90, 3)).toBe(true); // fully faded in (the logo is drawn 90 px tall)
 }
 const blueBox = (page: Page) =>
   page.evaluate(() => {
@@ -231,6 +231,22 @@ const blueBox = (page: Page) =>
     return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 2, h: y1 - y0 + 2 };
   });
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
+/** The logo box once it has stopped moving (two reads in a row agree): under load a read can land mid-fade. */
+type Box = { x: number; y: number; w: number; h: number };
+async function settledBox(page: Page): Promise<Box> {
+  let last = '';
+  let out = null as Box | null;
+  await expect
+    .poll(async () => {
+      out = await blueBox(page);
+      const key = JSON.stringify(out);
+      const same = out !== null && key === last;
+      last = key;
+      return same;
+    })
+    .toBe(true);
+  return out as unknown as Box;
+}
 async function addFrame(page: Page, spec: Parameters<typeof framePng>[0], name = 'frame.png') {
   await studioTab(page, 'Ads');
   await page.locator('#adFile-l_shape').setInputFiles({ name, mimeType: 'image/png', buffer: framePng(spec) });
@@ -245,7 +261,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
     const { width: W, height: H } = await canvasSize(page);
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, FRAME);
     const win = { x: 0.2 * W, y: 0, w: 0.8 * W, h: 0.8 * H }; // the sample window on this canvas
@@ -254,10 +270,12 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     await expect(page.getByTestId('ad-nowindow-l_shape')).toHaveCount(0);
     // The logo (part of the scene) moved into the window, scaled by 0.8 and offset by the window origin.
     const scale = win.w / W;
-    await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * scale, 3)).toBe(true);
-    const box = (await blueBox(page))!;
-    expect(near(box.x, win.x + before.x * scale, 3)).toBe(true);
-    expect(near(box.y, win.y + before.y * scale, 3)).toBe(true);
+    await expect
+      .poll(async () => {
+        const b = await blueBox(page);
+        return !!b && near(b.w, before.w * scale, 3) && near(b.x, win.x + before.x * scale, 3) && near(b.y, win.y + before.y * scale, 3);
+      })
+      .toBe(true);
     // Frame colours outside the window: left column and bottom band.
     const red = (p: [number, number, number]) => p[0] > 150 && p[1] < 60 && p[2] < 60;
     expect(red(await canvasPixel(page, win.x / 2, H / 2))).toBe(true);
@@ -278,7 +296,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
     const { width: W } = await canvasSize(page);
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, { ...FRAME, window: 'clear' });
     await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * 0.8, 3)).toBe(true);
@@ -289,7 +307,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api, 'portrait'));
     const { width: W, height: H } = await canvasSize(page);
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, PORTRAIT_FRAME);
     // Window = x 0..W, y 0..900/1280 H: the 9:16 scene is contained in it, aspect kept, centred.
@@ -343,7 +361,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
     const { width: W, height: H } = await canvasSize(page);
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, FRAME);
     await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * 0.8, 3)).toBe(true);
@@ -363,7 +381,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
     const { width: W, height: H } = await canvasSize(page);
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, { ...FRAME, window: [30, 120, 30] }); // the "window" is dark green: not clear
     await expect(page.getByTestId('ad-nowindow-l_shape')).toContainText('No clear window found in this graphic: the picture will not be placed');
@@ -376,7 +394,7 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
   test('schedule: hidden first, then eased in while the picture shrinks into the window, and eased out again', async ({ page, context }) => {
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
-    const before = (await blueBox(page))!;
+    const before = await settledBox(page);
     await pinAdClock(page, 0);
     await addFrame(page, FRAME);
     await page.getByRole('group', { name: 'L-shaped frame ad' }).getByRole('button', { name: 'Now and then' }).click(); // 15 s shown every 180 s, hidden first
