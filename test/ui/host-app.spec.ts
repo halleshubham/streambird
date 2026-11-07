@@ -338,7 +338,7 @@ test.describe('brand', () => {
         await page.setViewportSize(vp);
         await page.goto('/brand');
         const edit = page.getByRole('button', { name: 'Edit Morning show' });
-        const bin = page.getByRole('button', { name: 'Delete Morning show' });
+        const bin = page.getByRole('button', { name: 'Delete kit Morning show' });
         await expect(edit).toBeVisible();
         await expect(bin).toBeVisible();
         // Beside Edit: same row, to its right, and a real touch target.
@@ -351,13 +351,13 @@ test.describe('brand', () => {
       }
       await page.setViewportSize(DESKTOP);
       await page.goto('/brand');
-      await page.getByRole('button', { name: 'Delete Morning show' }).click();
+      await page.getByRole('button', { name: 'Delete kit Morning show' }).click();
       await expect(confirmDialog(page)).toContainText('Channels that use this kit go back to the account default');
       await cancelConfirm(page);
       await expect(page.getByRole('heading', { name: 'Morning show' })).toBeVisible();
       expect((await (await api.get(`${APP}/api/brand-kits`)).json()).length).toBe(2);
 
-      await page.getByRole('button', { name: 'Delete Morning show' }).click();
+      await page.getByRole('button', { name: 'Delete kit Morning show' }).click();
       await acceptConfirm(page);
       await expect(page.getByRole('status').filter({ hasText: 'Deleted "Morning show"' })).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Morning show' })).toHaveCount(0);

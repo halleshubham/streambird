@@ -370,7 +370,7 @@ function KitSummary({ kit, assets, channelNames, onEdit, onDelete }: { kit: Bran
         <Button variant="secondary" aria-label={`Edit ${kit.name}`} icon={<Pencil size={14} aria-hidden="true" />} onClick={onEdit}>
           Edit
         </Button>
-        <Button variant="secondary" className="ha-kit-delete" aria-label={`Delete ${kit.name}`} title="Delete this brand kit" onClick={onDelete}>
+        <Button variant="secondary" className="ha-kit-delete" aria-label={`Delete kit ${kit.name}`} title="Delete this brand kit" onClick={onDelete}>
           <Trash2 size={16} aria-hidden="true" />
         </Button>
       </div>
