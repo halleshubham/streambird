@@ -539,7 +539,7 @@ export class StreamSchedulingService {
             status: DestinationStatus.READY,
             errorMessage: null,
           });
-          const image = await this.loadThumbnail(stream.id);
+          const image = (await this.loadThumbnail(stream.id)) ?? (await this.streamsService.kitThumbnailFor(stream.accountId, conn))?.image ?? null;
           if (image) warnings.push(...(await this.applyThumbnail([row], image)));
         } catch (err) {
           const message = (err as Error).message;

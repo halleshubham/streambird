@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-export const AD_PLACEMENTS = ['lower_third', 'side_third', 'full_screen'] as const;
+export const AD_PLACEMENTS = ['lower_third', 'side_third', 'full_screen', 'l_shape'] as const;
 export type AdPlacement = (typeof AD_PLACEMENTS)[number];
 export const BRAND_ORIENTATIONS = ['landscape', 'portrait'] as const;
 /** Which set of a kit's materials: landscape = 16:9 streams, portrait = 9:16 (same words as LiveStream.orientation). */

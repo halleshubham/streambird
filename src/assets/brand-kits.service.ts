@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { BrandKit } from './entities/brand-kit.entity';
@@ -7,6 +7,7 @@ import type { AdMode, AdPlacement, BrandOrientation } from './entities/brand-kit
 import { AssetsService } from './assets.service';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AccountsService } from '../accounts/accounts.service';
+import { MAX_THUMBNAIL_BYTES, MIN_THUMBNAIL_WIDTH, ThumbnailImage, parseThumbnail } from '../streams/thumbnail.util';
 import { BrandKitAdDto, CreateBrandKitDto, UpdateBrandKitDto } from './dto/brand-kit.dto';
 
 /** One ad as the API returns it. Continuous ads carry null schedule numbers. */
@@ -26,7 +27,7 @@ export interface BrandKitAdView {
  */
 export type BrandKitView = BrandKit & { connectionIds: string[]; ads: BrandKitAdView[]; adsPortrait: BrandKitAdView[] };
 
-const PLACEMENT_ORDER: AdPlacement[] = ['lower_third', 'side_third', 'full_screen'];
+const PLACEMENT_ORDER: AdPlacement[] = ['lower_third', 'side_third', 'full_screen', 'l_shape'];
 const toAdView = (a: BrandKitAd): BrandKitAdView => ({ placement: a.placement, assetId: a.assetId, enabled: a.enabled, mode: a.mode, showSec: a.showSec, everySec: a.everySec });
 
 /**
@@ -35,6 +36,8 @@ const toAdView = (a: BrandKitAd): BrandKitAdView => ({ placement: a.placement, a
  */
 @Injectable()
 export class BrandKitsService {
+  private readonly logger = new Logger(BrandKitsService.name);
+
   constructor(
     @InjectRepository(BrandKit) private readonly kits: Repository<BrandKit>,
     @InjectRepository(BrandKitAd) private readonly kitAds: Repository<BrandKitAd>,
@@ -87,7 +90,7 @@ export class BrandKitsService {
       throw new ForbiddenException('Your own ads are on the paid plans. Free streams carry a StreamBird ad instead -- upgrade to run yours.');
     }
     if (new Set(ads.map((a) => a.placement)).size !== ads.length) {
-      throw new BadRequestException('Each kit can have one ad per place (lower third, left third, full screen).');
+      throw new BadRequestException('Each kit can have one ad per place (lower third, left third, full screen, L-shaped frame).');
     }
     const out: BrandKitAdView[] = [];
     for (const ad of ads) {
@@ -125,6 +128,44 @@ export class BrandKitsService {
     }
   }
 
+  /**
+   * The kit's stream thumbnail must be a file of the account that the platforms accept: JPG or PNG (no GIF/WebP), at most
+   * 2 MB, at least 640 px wide (the same limits as a thumbnail uploaded for one stream). Checked from the stored metadata.
+   */
+  private async checkThumbnail(accountId: string, assetId: string | null | undefined): Promise<void> {
+    if (!assetId) return;
+    const asset = await this.assets.findOwned(accountId, assetId).catch(() => null);
+    if (!asset) throw new BadRequestException('The thumbnail must be a file from your library.');
+    if (asset.contentType !== 'image/jpeg' && asset.contentType !== 'image/png') throw new BadRequestException('The thumbnail must be a JPG or PNG image.');
+    if (asset.sizeBytes > MAX_THUMBNAIL_BYTES) throw new BadRequestException(`The thumbnail is too large -- the limit is ${MAX_THUMBNAIL_BYTES / 1024 / 1024} MB.`);
+    if (asset.width < MIN_THUMBNAIL_WIDTH) throw new BadRequestException(`The thumbnail is too small -- it must be at least ${MIN_THUMBNAIL_WIDTH}px wide (1280x720 is recommended).`);
+  }
+
+  /**
+   * The brand-kit thumbnail a stream destination gets when the stream has no thumbnail of its own.
+   * Kit = `override` when given (null = "no kit": nothing), else the connection's kit, else the account default kit
+   * (the same choice the studio makes for the look). A kit without a thumbnail gives none: it does not fall through to
+   * another kit. Never throws: an unreadable file is logged and treated as "none" (going live must not wait on it).
+   */
+  async thumbnailForConnection(
+    accountId: string,
+    connectionBrandKitId: string | null,
+    override?: string | null,
+  ): Promise<{ image: ThumbnailImage; kitId: string; kitName: string } | null> {
+    if (override === null) return null;
+    try {
+      const kitId = override ?? connectionBrandKitId;
+      let resolved = kitId ? await this.kits.findOne({ where: { id: kitId, accountId } }) : null;
+      if (!resolved && !override) resolved = await this.kits.findOne({ where: { accountId, isDefault: true } });
+      if (!resolved?.thumbnailAssetId) return null;
+      const { data } = await this.assets.read(accountId, resolved.thumbnailAssetId);
+      return { image: parseThumbnail(data), kitId: resolved.id, kitName: resolved.name };
+    } catch (err) {
+      this.logger.warn(`Could not read the brand kit thumbnail for account ${accountId}: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
   /** A foreign-key or unique violation from a race (file deleted, two saves at once) is the caller's conflict, not a server error. */
   private async guard<T>(work: () => Promise<T>): Promise<T> {
     try {
@@ -140,6 +181,7 @@ export class BrandKitsService {
   async create(accountId: string, dto: CreateBrandKitDto): Promise<BrandKitView> {
     await this.assertAllowed(accountId);
     await this.checkAssets(accountId, dto);
+    await this.checkThumbnail(accountId, dto.thumbnailAssetId);
     const ads = await this.checkAds(accountId, dto.ads ?? []); // null/omitted = no ads
     const adsPortrait = await this.checkAds(accountId, dto.adsPortrait ?? []);
     const saved = await this.guard(() => this.dataSource.transaction(async (m) => {
@@ -156,6 +198,7 @@ export class BrandKitsService {
           logoSize: dto.logoSize ?? 90,
           wallpaperAssetId: dto.wallpaperAssetId ?? null,
           wallpaperAssetIdPortrait: dto.wallpaperAssetIdPortrait ?? null,
+          thumbnailAssetId: dto.thumbnailAssetId ?? null,
           adsShrinkPicture: dto.adsShrinkPicture ?? true,
           wallpaperDim: dto.wallpaperDim ?? 0,
           lowerThirdStyle: dto.lowerThirdStyle ?? 'accent',
@@ -195,12 +238,14 @@ export class BrandKitsService {
       const kit = await repo.createQueryBuilder('k').setLock('pessimistic_write').where({ id, accountId }).getOne();
       if (!kit) throw new NotFoundException('Brand kit not found.');
       await this.checkAssets(accountId, dto);
+      await this.checkThumbnail(accountId, dto.thumbnailAssetId);
       const ads = dto.ads == null ? undefined : await this.checkAds(accountId, dto.ads);
       const adsPortrait = dto.adsPortrait == null ? undefined : await this.checkAds(accountId, dto.adsPortrait);
       if (dto.name !== undefined) kit.name = dto.name.trim();
       if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
       if (dto.logoAssetIdPortrait !== undefined) kit.logoAssetIdPortrait = dto.logoAssetIdPortrait;
       if (dto.wallpaperAssetIdPortrait !== undefined) kit.wallpaperAssetIdPortrait = dto.wallpaperAssetIdPortrait;
+      if (dto.thumbnailAssetId !== undefined) kit.thumbnailAssetId = dto.thumbnailAssetId;
       if (dto.adsShrinkPicture !== undefined) kit.adsShrinkPicture = dto.adsShrinkPicture;
       if (dto.logoPosition !== undefined) kit.logoPosition = dto.logoPosition;
       if (dto.logoSize !== undefined) kit.logoSize = dto.logoSize;

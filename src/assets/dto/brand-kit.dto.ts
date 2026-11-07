@@ -56,15 +56,19 @@ export class CreateBrandKitDto {
   @IsOptional() @IsIn(['bar', 'accent', 'glass'])
   lowerThirdStyle?: 'bar' | 'accent' | 'glass';
 
+  /** The kit's stream thumbnail (a JPG/PNG file of the library). null clears it, omitted leaves it unchanged. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsUUID()
+  thumbnailAssetId?: string | null;
+
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
 
-  /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
-  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   ads?: BrandKitAdDto[] | null;
 
   /** Same, for the portrait (9:16) set. `ads` is the landscape set. */
-  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   adsPortrait?: BrandKitAdDto[] | null;
 
   /** Shrink the live picture into the space an ad leaves free while it shows. */
@@ -100,15 +104,19 @@ export class UpdateBrandKitDto {
   @IsOptional() @IsIn(['bar', 'accent', 'glass'])
   lowerThirdStyle?: 'bar' | 'accent' | 'glass';
 
+  /** The kit's stream thumbnail (a JPG/PNG file of the library). null clears it, omitted leaves it unchanged. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsUUID()
+  thumbnailAssetId?: string | null;
+
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
 
-  /** Replace-all: the kit's ads become exactly this list (max 3, one per placement). Omitted = unchanged; [] = none. */
-  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   ads?: BrandKitAdDto[] | null;
 
   /** Same, for the portrait (9:16) set. `ads` is the landscape set. */
-  @IsOptional() @IsArray() @ArrayMaxSize(3) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   adsPortrait?: BrandKitAdDto[] | null;
 
   /** Shrink the live picture into the space an ad leaves free while it shows. */

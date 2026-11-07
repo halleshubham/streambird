@@ -22,10 +22,14 @@ import { MediaMtxService } from '../relay/mediamtx.service';
 import { StudioSessionsService } from '../studio/studio-sessions.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { withTimeout } from '../common/with-timeout';
+import { BrandKitsService } from '../assets/brand-kits.service';
+import type { ThumbnailImage } from './thumbnail.util';
 
 /** How long ending a stream waits on each outside call before giving up on it (see StreamsService.end). */
 const PLATFORM_END_TIMEOUT_MS = 12_000;
 const CLEANUP_TIMEOUT_MS = 8_000;
+/** The brand kit thumbnail is sent while going live; give it this long at most. */
+const KIT_THUMBNAIL_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class StreamsService {
@@ -49,6 +53,7 @@ export class StreamsService {
     private readonly mediaMtx: MediaMtxService,
     private readonly studioSessions: StudioSessionsService,
     private readonly accountsService: AccountsService,
+    private readonly brandKits: BrandKitsService,
   ) {}
 
   /**
@@ -107,12 +112,68 @@ export class StreamsService {
     const studioSession = await this.studioSessions.createForStream(stream);
     stream.studioSessionId = studioSession.id;
 
-    return this.provision(stream, connections, {
+    const started = await this.provision(stream, connections, {
       title: dto.title,
       description: dto.description,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
       visibility: dto.visibility,
     });
+    // Go live now: a stream without a thumbnail of its own (the client uploads its own right after this call returns,
+    // and lands later) gets its destination's brand kit thumbnail. Never blocks or fails going live.
+    if (started.status === StreamStatus.LIVE && dto.thumbnailBrandKitId !== null) {
+      const applied = await this.applyKitThumbnailsAfterCreate(started, connections, dto.thumbnailBrandKitId);
+      Object.assign(started, applied);
+    }
+    return started;
+  }
+
+  /**
+   * The brand kit thumbnail for one destination: `override` (kit id; null = none) else the connection's kit, else the
+   * account default kit. See BrandKitsService.thumbnailForConnection. Public: scheduling uses it too.
+   */
+  kitThumbnailFor(accountId: string, conn: PlatformConnection, override?: string | null) {
+    return this.brandKits.thumbnailForConnection(accountId, conn.brandKitId ?? null, override);
+  }
+
+  /** Sends each destination's kit thumbnail to its broadcast; best effort, bounded in time, failures come back as warnings. */
+  private async applyKitThumbnailsAfterCreate(
+    stream: LiveStream,
+    connections: PlatformConnection[],
+    override: string | undefined,
+  ): Promise<{ thumbnailKit?: { id: string; name: string } | null; thumbnailWarnings?: string[] }> {
+    const warnings: string[] = [];
+    let kit: { id: string; name: string } | null = null;
+    try {
+      if (await this.thumbnails.findOne({ where: { liveStreamId: stream.id }, select: ['liveStreamId'] })) return {}; // an explicit thumbnail always wins
+      await withTimeout(
+        Promise.all(
+          stream.destinations
+            .filter((d) => d.platformBroadcastId)
+            .map(async (d) => {
+              const conn = connections.find((c) => c.id === d.platformConnectionId);
+              if (!conn) return;
+              const provider = this.resolveProvider(conn);
+              if (!provider.setBroadcastThumbnail) return;
+              const found = await this.kitThumbnailFor(stream.accountId, conn, override);
+              if (!found) return;
+              kit = kit ?? { id: found.kitId, name: found.kitName };
+              try {
+                await provider.setBroadcastThumbnail(conn, d.platformBroadcastId!, found.image);
+                this.logger.log(`Brand kit "${found.kitName}" thumbnail set on ${conn.platform} broadcast ${d.platformBroadcastId} (stream ${stream.id})`);
+              } catch (err) {
+                this.logger.warn(`Could not set the brand kit thumbnail for stream ${stream.id} on ${conn.platform}: ${(err as Error).message}`);
+                warnings.push(`${conn.platform} (${conn.label}): couldn't set the brand kit thumbnail (${(err as Error).message}).`);
+              }
+            }),
+        ),
+        KIT_THUMBNAIL_TIMEOUT_MS,
+        'Setting the brand kit thumbnail',
+      );
+    } catch (err) {
+      this.logger.warn(`Brand kit thumbnail for stream ${stream.id} skipped: ${(err as Error).message}`);
+      warnings.push(`The brand kit thumbnail could not be sent (${(err as Error).message}).`);
+    }
+    return { thumbnailKit: kit, ...(warnings.length ? { thumbnailWarnings: warnings } : {}) };
   }
 
   /**
@@ -312,8 +373,7 @@ export class StreamsService {
     reuse: Map<string, unknown>,
   ): Promise<void> {
     const row = await this.thumbnails.findOne({ where: { liveStreamId: stream.id } });
-    if (!row) return;
-    const image = { contentType: row.contentType as 'image/jpeg' | 'image/png', data: row.data, width: row.width, height: row.height };
+    const explicit: ThumbnailImage | null = row ? { contentType: row.contentType as 'image/jpeg' | 'image/png', data: row.data, width: row.width, height: row.height } : null;
 
     await Promise.all(
       stream.destinations
@@ -324,6 +384,9 @@ export class StreamsService {
           const provider = this.resolveProvider(conn);
           if (!provider.thumbnailAppliesWhenLive || !provider.setBroadcastThumbnail) return;
           try {
+            // The host's own thumbnail wins; without one, this destination's brand kit (else the default kit) supplies it.
+            const image = explicit ?? (await this.kitThumbnailFor(stream.accountId, conn))?.image;
+            if (!image) return;
             await provider.setBroadcastThumbnail(conn, d.platformBroadcastId!, image);
           } catch (err) {
             this.logger.warn(`Could not set the thumbnail for stream ${stream.id} on ${conn.platform}: ${(err as Error).message}`);

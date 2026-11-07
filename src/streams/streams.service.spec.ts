@@ -1,3 +1,4 @@
+import { BrandKitsService } from '../assets/brand-kits.service';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
@@ -107,6 +108,7 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
         { provide: getRepositoryToken(StreamThumbnail), useValue: thumbnailRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
+        { provide: BrandKitsService, useValue: { thumbnailForConnection: jest.fn(async () => null) } },
         { provide: RELAY_PROVIDER, useValue: relay },
         {
           provide: MediaMtxService,

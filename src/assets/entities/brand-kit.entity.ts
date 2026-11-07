@@ -24,6 +24,10 @@ export class BrandKit {
   @Column({ type: 'uuid', nullable: true })
   wallpaperAssetIdPortrait!: string | null;
 
+  /** The stream thumbnail (JPG/PNG, 16:9 recommended) given to streams created without their own. One for both orientations. */
+  @Column({ type: 'uuid', nullable: true })
+  thumbnailAssetId!: string | null;
+
   /** Shrink the live picture into the space an ad leaves free, while that ad shows (default on). */
   @Column({ default: true })
   adsShrinkPicture!: boolean;
