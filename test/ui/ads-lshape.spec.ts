@@ -428,6 +428,71 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
   });
 });
 
+test.describe('L-shaped frame in the brand kit editor and from a kit in the studio', () => {
+  test.beforeEach(async ({ browser }) => patchFreePlan(browser, { watermark: false, assetStorageMb: 5 }));
+  test.afterEach(async ({ browser }) => patchFreePlan(browser, { watermark: true, assetStorageMb: 0 }));
+
+  test('a fourth slot: sizes per shape, window found with an outline, a warning when there is none, and the shrink switch explained', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await page.goto('/brand');
+    await page.getByRole('button', { name: 'New brand kit' }).click();
+    const form = page.getByRole('form', { name: 'New brand kit' });
+    await form.getByLabel('Kit name').fill('News frame');
+    const slot = form.getByTestId('kit-ad-l_shape');
+    await expect(slot).toBeVisible();
+    await expect(form.getByTestId('slot-size-l_shape')).toHaveText('Suggested 1920 x 1080');
+    await expect(form.getByTestId('slot-help-l_shape')).toContainText('plain white');
+    await expect(form.getByTestId('kit-ads')).toContainText('Up to four ads');
+
+    // The founder's sample shape: the window is found (80% x 80%), outlined in a small preview, and the kit preview puts the scene in it.
+    await form.getByLabel('L-shaped frame ad file').setInputFiles({ name: 'frame.png', mimeType: 'image/png', buffer: framePng(FRAME) });
+    await expect(slot).toContainText('frame');
+    await expect(form.getByTestId('kit-frame-window')).toContainText('Window found: 80% x 80%');
+    await expect(form.getByTestId('kit-frame-preview').getByTestId('ad-window-outline')).toBeVisible();
+    await expect(form.getByTestId('kit-frame-nowindow')).toHaveCount(0);
+    await expect(form.getByTestId('kit-preview-scene')).toBeVisible();
+    await expect(form.getByTestId('kit-frame-needs-shrink')).toHaveCount(0);
+
+    // A graphic with no clear window: a non-blocking warning (the file is still accepted).
+    await form.getByLabel('L-shaped frame ad file').setInputFiles({ name: 'solid.png', mimeType: 'image/png', buffer: solidPng(200, 20, 20, 1280, 720) });
+    await expect(form.getByTestId('kit-frame-nowindow')).toContainText('No clear window found in this graphic: the picture will not be placed');
+    await form.getByLabel('L-shaped frame ad file').setInputFiles({ name: 'frame.png', mimeType: 'image/png', buffer: framePng(FRAME) });
+    await expect(form.getByTestId('kit-frame-window')).toBeVisible();
+
+    // "Shrink picture while ads show" off: the editor says L-shaped ads always resize the picture.
+    await form.getByLabel('Shrink picture while ads show').uncheck();
+    await expect(form.getByTestId('kit-frame-needs-shrink')).toContainText('L-shaped ads always resize the picture');
+    await form.getByLabel('Shrink picture while ads show').check();
+    await expect(form.getByTestId('kit-frame-needs-shrink')).toHaveCount(0);
+
+    // The 9:16 tab is its own set with its own suggestion.
+    await form.getByRole('tab', { name: '9:16 vertical' }).click();
+    await expect(form.getByTestId('slot-size-l_shape')).toHaveText('Suggested 1080 x 1920');
+    await form.getByRole('tab', { name: '16:9 landscape' }).click();
+
+    await form.getByRole('button', { name: 'Create kit' }).click();
+    await expect(page.getByText('Created "News frame".')).toBeVisible();
+    const kit = (await (await api.get(`${APP}/api/brand-kits`)).json())[0];
+    expect(kit.ads.map((a: { placement: string }) => a.placement)).toEqual(['l_shape']);
+    expect(kit.adsPortrait).toEqual([]);
+
+    // The studio applies the default kit: the frame is up and the scene sits in its window.
+    const id = await newStream(api);
+    await page.goto(`/streams/${id}/studio`);
+    await page.locator('canvas.studio-canvas').waitFor();
+    const { width: W, height: H } = await canvasSize(page);
+    await expect
+      .poll(async () => {
+        const p = await canvasPixel(page, 0.1 * W, H / 2);
+        return p[0] > 150 && p[1] < 60 && p[2] < 60; // the frame's red column
+      })
+      .toBe(true);
+    await studioTab(page, 'Ads');
+    await expect(page.getByTestId('ad-card-l_shape')).toContainText('From the brand kit');
+    await expect(page.getByTestId('ad-window-outline')).toBeVisible();
+  });
+});
+
 test.describe('L-shaped frame: the ad is paid-only and old data still loads', () => {
   test('the Free plan keeps its StreamBird banner and no frame card is offered', async ({ page, context }) => {
     const { api } = await signIn(context);

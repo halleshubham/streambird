@@ -225,7 +225,7 @@ export function StreamDetailPage() {
           </ul>
         </Card>
 
-        {stream.status === 'live' && <LiveThumbnailPanel streamId={stream.id} />}
+        {stream.status === 'live' && <LiveThumbnailPanel streamId={stream.id} connectionIds={stream.destinations.map((d) => d.platformConnectionId)} />}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import { seedStudioFromPreset } from '../studio/useHostStudio';
 import { MAX_PRESET_NAME, QUALITY_ORDER, QUALITY_SHORT, lookLabel, optionsSummary } from '../lib/presets';
 import { createStream, scheduleStream, uploadScheduleThumbnail, uploadStreamThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
+import { KitThumbnailNote } from '../components/KitThumbnailNote';
 import { rememberThumbnailNotice } from '../lib/thumbnailNotice';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
@@ -68,6 +69,8 @@ export function CreateStreamPage() {
   const qualityChoices = QUALITY_ORDER.filter((q) => QUALITY_ORDER.indexOf(q) <= QUALITY_ORDER.indexOf(maxQuality));
   const effectiveQuality = qualityChoices.includes(quality) ? quality : (qualityChoices[qualityChoices.length - 1] ?? 'hd');
   const tickerActive = tickerOn && tickerText.trim().length > 0;
+  // The brand kit thumbnail follows the kit chosen for the look (only when going live now): '' = automatic, 'none' = no kit.
+  const kitThumbnailChoice: string | null | undefined = mode === 'now' ? (kitChoice === 'none' ? null : kitChoice || undefined) : undefined;
   // Quality, kit and ticker are studio settings, so they only matter when going live now; a scheduled stream sets them when it starts.
   const summary =
     mode === 'schedule'
@@ -191,7 +194,11 @@ export function CreateStreamPage() {
         visibility,
         orientation,
         destinationConnectionIds: [...selected],
+        // A thumbnail picked here is uploaded below and replaces the kit's; "No brand kit" means no kit thumbnail either.
+        ...(thumbnail ? { thumbnailBrandKitId: null } : kitThumbnailChoice !== undefined ? { thumbnailBrandKitId: kitThumbnailChoice } : {}),
       });
+      // The brand kit's thumbnail is sent while going live; a platform refusing it shows up as the usual thumbnail notice in the studio.
+      if (stream.thumbnailWarnings?.length) rememberThumbnailNotice(stream.id, stream.thumbnailWarnings);
       // Upload in the background: the broadcast already exists, and going live must
       // not wait on (or fail because of) a thumbnail. A failure can be retried from
       // the stream's page.
@@ -456,6 +463,7 @@ export function CreateStreamPage() {
                   Thumbnail (optional)
                 </span>
                 <ThumbnailPicker file={thumbnail} onChange={setThumbnail} />
+                <KitThumbnailNote connectionIds={[...selected]} choice={kitThumbnailChoice} replaced={!!thumbnail} />
                 <p className="ha-hint">JPG or PNG, up to 2 MB, 1280×720 (16:9) recommended. Sent to YouTube (needs a verified channel) and, best effort, to Facebook. Twitch doesn't take a thumbnail from here.</p>
               </div>
 

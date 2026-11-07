@@ -20,6 +20,7 @@ import { BirdLoader } from './BirdLoader';
 import { GuestEmailsField } from './GuestEmailsField';
 import { PlatformTile, Notice } from './host/HostKit';
 import { thumbnailProblem } from './ThumbnailPicker';
+import { KitThumbnailNote } from './KitThumbnailNote';
 import { DURATION_OPTIONS, formatWhen, parseEmails, toLocalInputValue } from '../lib/schedule';
 import type { ScheduleDetail } from '../types/api';
 import { BirdBusy } from './BirdBusy';
@@ -372,6 +373,7 @@ export function ScheduledStreamPanel({
                   No thumbnail yet
                 </div>
               )}
+              {!detail.hasThumbnail && <KitThumbnailNote connectionIds={detail.destinations.map((d) => d.platformConnectionId)} />}
               <div className="ha-actions">
                 <Button variant="secondary" busy={busy === 'thumb'} disabled={busy !== null} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => thumbInput.current?.click()}>
                   {detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}

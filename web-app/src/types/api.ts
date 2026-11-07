@@ -142,6 +142,10 @@ export interface Stream {
   expectedDurationMinutes: number | null;
   cancelledAt: string | null;
   destinations: Destination[];
+  /** Go live now only: the brand kit whose thumbnail was sent to the destinations (null/absent = none). */
+  thumbnailKit?: { id: string; name: string } | null;
+  /** Go live now only: platforms that refused the brand kit's thumbnail (going live was not affected). */
+  thumbnailWarnings?: string[];
 }
 
 export interface ScheduleGuest {
