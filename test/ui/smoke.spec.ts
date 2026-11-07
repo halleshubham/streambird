@@ -915,9 +915,9 @@ test.describe('brand library and kits', () => {
       await form.getByLabel('Logo file').setInputFiles({ name: 'notes.png', mimeType: 'image/png', buffer: Buffer.from('definitely not a picture') });
       await expect(page.getByRole('alert')).toContainText('PNG, JPG or WebP');
       await expect(form.getByTestId('kit-slot-logo')).toHaveAttribute('data-has-file', 'false');
-      // A file over the 4 MB limit is refused before it is sent, with the limit named.
-      await form.getByLabel('Logo file').setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(4 * 1024 * 1024 + 10, 1) });
-      await expect(page.getByRole('alert')).toContainText('the limit is 4 MB');
+      // A file over the 8 MB limit is refused before it is sent, with the limit named.
+      await form.getByLabel('Logo file').setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 10, 1) });
+      await expect(page.getByRole('alert')).toContainText('the limit is 8 MB');
     });
   });
 });

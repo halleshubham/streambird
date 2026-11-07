@@ -28,6 +28,14 @@ export class BrandKit {
   @Column({ type: 'uuid', nullable: true })
   thumbnailAssetId!: string | null;
 
+  /** Default stream title for streams that use this kit and were created without their own (copied onto the stream). Max 200, like a stream title. */
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  title!: string | null;
+
+  /** Default stream description, same rule as `title`. Max 5000, like a stream description. */
+  @Column({ type: 'text', nullable: true })
+  description!: string | null;
+
   /** Shrink the live picture into the space an ad leaves free, while that ad shows (default on). */
   @Column({ default: true })
   adsShrinkPicture!: boolean;

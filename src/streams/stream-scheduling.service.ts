@@ -93,11 +93,20 @@ export interface ScheduleDetail {
   emailFailures?: string[];
   /** Present on responses that touched the platforms: what couldn't be created/updated/removed there. */
   platformWarnings?: string[];
+  /** Schedule response only: the title / description was blank in the request and came from this brand kit's defaults. */
+  titleFromKit?: boolean;
+  descriptionFromKit?: boolean;
+  titleKit?: { id: string; name: string } | null;
+  descriptionKit?: { id: string; name: string } | null;
 }
 
 interface DetailExtras {
   emailFailures?: string[];
   platformWarnings?: string[];
+  titleFromKit?: boolean;
+  descriptionFromKit?: boolean;
+  titleKit?: { id: string; name: string } | null;
+  descriptionKit?: { id: string; name: string } | null;
 }
 
 /**
@@ -127,12 +136,15 @@ export class StreamSchedulingService {
     this.assertValidTimezone(dto.timezone);
     await this.streamsService.assertDestinationCount(account.id, new Set(dto.destinationConnectionIds).size);
     const connections = await this.loadOwnedConnections(account.id, dto.destinationConnectionIds);
+    // A blank title/description takes the default of the destinations' brand kit (first destination, in request order, that has one).
+    const ordered = dto.destinationConnectionIds.map((id) => connections.find((c) => c.id === id)).filter((c): c is PlatformConnection => !!c);
+    const text = await this.streamsService.resolveText(account.id, dto, ordered);
 
     const stream = await this.liveStreams.save(
       this.liveStreams.create({
         accountId: account.id,
-        title: dto.title.trim(),
-        description: dto.description?.trim() || null,
+        title: text.title,
+        description: text.description,
         scheduledAt,
         timezone: dto.timezone,
         expectedDurationMinutes: dto.durationMinutes ?? null,
@@ -175,7 +187,14 @@ export class StreamSchedulingService {
     }
 
     const failures = await this.sendInvites(account, stream, invites, 'invite', !!dto.invitePassword);
-    return this.buildDetail(account, stream.id, { emailFailures: failures, platformWarnings });
+    return this.buildDetail(account, stream.id, {
+      emailFailures: failures,
+      platformWarnings,
+      titleFromKit: !!text.titleKit,
+      descriptionFromKit: !!text.descriptionKit,
+      titleKit: text.titleKit,
+      descriptionKit: text.descriptionKit,
+    });
   }
 
   guestCounts(liveStreamIds: string[]): Promise<Map<string, number>> {
@@ -711,6 +730,9 @@ export class StreamSchedulingService {
       ),
       ...(extras.emailFailures ? { emailFailures: extras.emailFailures } : {}),
       ...(extras.platformWarnings ? { platformWarnings: extras.platformWarnings } : {}),
+      ...(extras.titleFromKit !== undefined
+        ? { titleFromKit: extras.titleFromKit, descriptionFromKit: !!extras.descriptionFromKit, titleKit: extras.titleKit ?? null, descriptionKit: extras.descriptionKit ?? null }
+        : {}),
     };
   }
 }

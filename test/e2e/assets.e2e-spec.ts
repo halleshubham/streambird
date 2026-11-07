@@ -79,7 +79,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
     expect((await upload(client, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), 'logo')).status).toBe(400);
     expect((await upload(client, fakePng(9000, 10), 'logo')).status).toBe(400);
     expect((await upload(client, Buffer.alloc(0), 'logo')).status).toBe(400);
-    expect((await upload(client, fakePng(10, 10, 4.5 * 1024 * 1024), 'logo')).status).toBe(400);
+    expect((await upload(client, fakePng(10, 10, 8 * 1024 * 1024 + 1), 'logo')).status).toBe(400);
     expect((await upload(client, fakePng(10, 10), 'poster')).status).toBe(400); // unknown kind
 
     // Another account cannot see or fetch it.
@@ -90,6 +90,31 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
 
     expect((await client.del(`/assets/${created.body.id}`)).status).toBe(204);
     expect((await client.getBytes(`/assets/${created.body.id}/file`)).status).toBe(404);
+  });
+
+  it('brand images may be up to 8 MB per file (5 MB and exactly 8 MB pass, 8 MB + 1 byte is refused); the thumbnail kind stays at 2 MB', async () => {
+    await admin.patch('/superadmin/plans/free', { assetStorageMb: 60 });
+    const { client } = await h.signIn();
+    const MB = 1024 * 1024;
+    const five = await upload(client, fakePng(1920, 1080, 5 * MB), 'wallpaper', 'Five');
+    expect(five.status).toBe(201);
+    expect(five.body.sizeBytes).toBe(5 * MB);
+    const eight = await upload(client, fakePng(1920, 1080, 8 * MB), 'logo', 'Eight');
+    expect(eight.status).toBe(201);
+    expect(eight.body.sizeBytes).toBe(8 * MB);
+    const ad = await upload(client, fakePng(1920, 1080, 8 * MB), 'ad', 'Eight ad');
+    expect(ad.status).toBe(201);
+    // Every brand kind has the same cap, with the friendly message (multer's own cap sits 1 MB above).
+    for (const kind of ['logo', 'wallpaper', 'ad']) {
+      const over = await upload(client, fakePng(1920, 1080, 8 * MB + 1), kind);
+      expect(over.status).toBe(400);
+      expect(msg(over.body)).toBe('The image is too large -- the limit is 8 MB per file.');
+    }
+    // YouTube's limit still applies to the thumbnail kind: 3 MB is refused there.
+    const thumb = await upload(client, fakePng(1280, 720, 3 * MB), 'thumbnail');
+    expect(thumb.status).toBe(400);
+    expect(msg(thumb.body)).toMatch(/2 MB/);
+    for (const r of [five, eight, ad]) expect((await client.del(`/assets/${r.body.id}`)).status).toBe(204);
   });
 
   it('an animated GIF is accepted as a logo or an ad (served as image/gif) and refused for every other kind', async () => {

@@ -1325,6 +1325,13 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.ha-kit-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  min-width: 0;
+}
 .ha-kit-cols {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);

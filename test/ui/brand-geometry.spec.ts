@@ -134,7 +134,7 @@ test.describe('shared size constants', () => {
         const ratio = spec.size.w / spec.size.h;
         expect(ratio).toBeGreaterThanOrEqual(spec.ratioMin);
         expect(ratio).toBeLessThanOrEqual(spec.ratioMax);
-        expect(slotHelp(o, slot)).toContain(slot === 'thumbnail' ? '2 MB' : '4 MB'); // the thumbnail has YouTube's own, stricter limit
+        expect(slotHelp(o, slot)).toContain(slot === 'thumbnail' ? '2 MB' : '8 MB'); // the thumbnail has YouTube's own, stricter limit
       }
     }
   });
@@ -160,7 +160,7 @@ test.describe('shared size constants', () => {
     expect(SLOT_SPECS.portrait.lower_third.size.h).toBeLessThanOrEqual(lowerP.h);
     const sideP = adRect('side_third', 1080, 1920);
     expect(SLOT_SPECS.portrait.side_third.size).toEqual({ w: sideP.w, h: sideP.h });
-    expect(BRAND_FILE_LIMITS.maxBytes).toBe(4 * 1024 * 1024);
+    expect(BRAND_FILE_LIMITS.maxBytes).toBe(8 * 1024 * 1024);
   });
 
   test('the shape warning fires for a far-off picture and stays quiet for a close one', () => {

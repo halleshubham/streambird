@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CalendarClock, ChevronDown, Radio, Save } from 'lucide-react';
@@ -11,6 +11,7 @@ import { MAX_PRESET_NAME, QUALITY_ORDER, QUALITY_SHORT, lookLabel, optionsSummar
 import { createStream, scheduleStream, uploadScheduleThumbnail, uploadStreamThumbnail } from '../api/streams';
 import { ThumbnailPicker } from '../components/ThumbnailPicker';
 import { KitThumbnailNote } from '../components/KitThumbnailNote';
+import { kitDefaultText } from '../lib/kitText';
 import { rememberThumbnailNotice } from '../lib/thumbnailNotice';
 import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
@@ -71,6 +72,19 @@ export function CreateStreamPage() {
   const tickerActive = tickerOn && tickerText.trim().length > 0;
   // The brand kit thumbnail follows the kit chosen for the look (only when going live now): '' = automatic, 'none' = no kit.
   const kitThumbnailChoice: string | null | undefined = mode === 'now' ? (kitChoice === 'none' ? null : kitChoice || undefined) : undefined;
+  // The brand kit's default title/description (the same kit choice and the same rule as the server: first destination, in the order picked, whose kit has one).
+  const kitText = useMemo(() => kitDefaultText([...selected], kits, kitThumbnailChoice), [selected, kits, kitThumbnailChoice]);
+  // Prefill follows the kit only while the person has not typed: typing marks the field as theirs, emptying it hands it back.
+  const titleTyped = useRef(false);
+  const descriptionTyped = useRef(false);
+  useEffect(() => {
+    if (!titleTyped.current) setTitle(kitText.title ?? '');
+  }, [kitText.title]);
+  useEffect(() => {
+    if (!descriptionTyped.current) setDescription(kitText.description ?? '');
+  }, [kitText.description]);
+  const titleKitNote = kitText.titleKit && title.trim() === kitText.title ? kitText.titleKit.name : null;
+  const descriptionKitNote = kitText.descriptionKit && description.trim() === kitText.description ? kitText.descriptionKit.name : null;
   // Quality, kit and ticker are studio settings, so they only matter when going live now; a scheduled stream sets them when it starts.
   const summary =
     mode === 'schedule'
@@ -158,8 +172,8 @@ export function CreateStreamPage() {
         }
 
         const detail = await scheduleStream({
-          title: title.trim() || 'Untitled stream',
-          description: description.trim() || undefined,
+          title: title.trim() || kitText.title || 'Untitled stream',
+          description: description.trim() || kitText.description || undefined,
           visibility,
           orientation,
           scheduledAt: when.toISOString(),
@@ -189,8 +203,8 @@ export function CreateStreamPage() {
       }
 
       const stream = await createStream({
-        title: title.trim() || 'Untitled stream',
-        description: description.trim() || undefined,
+        title: title.trim() || kitText.title || 'Untitled stream',
+        description: description.trim() || kitText.description || undefined,
         visibility,
         orientation,
         destinationConnectionIds: [...selected],
@@ -287,7 +301,19 @@ export function CreateStreamPage() {
       <Card as="div" style={{ padding: 32 }}>
         <form onSubmit={handleSubmit} className="ha-form" style={{ gap: 28 }}>
           {tabs}
-          <Input id="title" label="Title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Untitled stream" className="ha-title-input" />
+          <Input
+            id="title"
+            label="Title"
+            type="text"
+            value={title}
+            onChange={(e) => {
+              titleTyped.current = e.target.value !== '';
+              setTitle(e.target.value);
+            }}
+            placeholder="Untitled stream"
+            className="ha-title-input"
+            hint={titleKitNote ? <span data-testid="title-kit-note">From brand kit {titleKitNote}. Edit it to change it for this stream only.</span> : undefined}
+          />
 
           <fieldset className="ha-fieldset">
             <legend>Stream to</legend>
@@ -343,7 +369,18 @@ export function CreateStreamPage() {
               </span>
             </button>
             <div id="more-options-panel" className="ha-more-body" hidden={!moreOpen}>
-              <TextArea id="description" label="Description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's this stream about?" rows={3} />
+              <TextArea
+                id="description"
+                label="Description"
+                value={description}
+                onChange={(e) => {
+                  descriptionTyped.current = e.target.value !== '';
+                  setDescription(e.target.value);
+                }}
+                placeholder="What's this stream about?"
+                rows={3}
+                hint={descriptionKitNote ? <span data-testid="description-kit-note">From brand kit {descriptionKitNote}. Edit it to change it for this stream only.</span> : undefined}
+              />
 
               <SelectField
                 id="visibility"

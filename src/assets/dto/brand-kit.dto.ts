@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 import { AD_PLACEMENTS } from '../entities/brand-kit-ad.entity';
 import type { AdMode, AdPlacement } from '../entities/brand-kit-ad.entity';
@@ -27,6 +27,13 @@ export class BrandKitAdDto {
   everySec?: number;
 }
 
+
+/** Same limits as a stream's own title and description (CreateStreamDto). */
+export const MAX_KIT_TITLE = 200;
+export const MAX_KIT_DESCRIPTION = 5000;
+
+/** Trims a string; a blank one becomes null (= cleared). Anything that is not a string is left for the validators to refuse. */
+const trimOrNull = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() || null : value);
 
 export class CreateBrandKitDto {
   @IsString() @MinLength(1) @MaxLength(80)
@@ -62,6 +69,14 @@ export class CreateBrandKitDto {
 
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
+
+  /** Default stream title for streams using this kit. Trimmed; blank or null = none. */
+  @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default title must be text.' }) @MaxLength(MAX_KIT_TITLE, { message: `The default title can be at most ${MAX_KIT_TITLE} characters.` })
+  title?: string | null;
+
+  /** Default stream description for streams using this kit. Trimmed; blank or null = none. */
+  @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default description must be text.' }) @MaxLength(MAX_KIT_DESCRIPTION, { message: `The default description can be at most ${MAX_KIT_DESCRIPTION} characters.` })
+  description?: string | null;
 
   /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
@@ -110,6 +125,14 @@ export class UpdateBrandKitDto {
 
   @IsOptional() @IsBoolean()
   isDefault?: boolean;
+
+  /** Default stream title for streams using this kit. Trimmed; blank or null = none. */
+  @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default title must be text.' }) @MaxLength(MAX_KIT_TITLE, { message: `The default title can be at most ${MAX_KIT_TITLE} characters.` })
+  title?: string | null;
+
+  /** Default stream description for streams using this kit. Trimmed; blank or null = none. */
+  @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default description must be text.' }) @MaxLength(MAX_KIT_DESCRIPTION, { message: `The default description can be at most ${MAX_KIT_DESCRIPTION} characters.` })
+  description?: string | null;
 
   /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)

@@ -14,13 +14,14 @@ export function getStreamStatus(id: string): Promise<StreamStatusResponse> {
 }
 
 export function createStream(dto: {
-  title: string;
+  /** Optional when the stream's brand kit has a default title; blank/omitted takes it (else the server answers 400). */
+  title?: string;
   description?: string;
   scheduledAt?: string;
   visibility?: 'public' | 'unlisted' | 'private';
   orientation?: 'landscape' | 'portrait';
   destinationConnectionIds: string[];
-  /** Which brand kit's thumbnail a stream without its own gets: omitted = the destination's kit, else the account default; a kit id = that kit; null = none. */
+  /** Which brand kit a stream uses, for its thumbnail (when it has none of its own) and for a blank title/description: omitted = the destination's kit, else the account default; a kit id = that kit; null = none. */
   thumbnailBrandKitId?: string | null;
 }): Promise<Stream> {
   return api.post('/streams', dto);

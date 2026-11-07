@@ -55,3 +55,6 @@ Google Cloud project `1083454847771` (OAuth consent screen, **Data access scopes
 - `git push --delete <branch>` is refused by the git proxy (HTTP 403) and the GitHub tools have no delete-branch action → ask the user to delete merged branches in the GitHub UI.
 - Force-push / `--amend` after pushing may be denied; fix a bad pushed commit by a new commit or a fresh branch + PR.
 - Outbound HTTPS goes through a proxy (CA bundle in `/root/.ccr/`); do not disable TLS verification. Headless Google sign-in from the sandbox is silently refused — do not try to automate Google logins (record demos locally).
+
+## Upload size on the way to Nest
+Brand-image uploads are `multipart/form-data` handled by multer in `AssetsController` (limit `MAX_ASSET_BYTES` + 1 MB slack = 9 MB; the `thumbnail` kind and stream thumbnails stay at 2 MB). The app sets no global body-parser size limit for multipart (the JSON parser default, 100 KB, only applies to JSON), and the repo ships no reverse-proxy config for the app. Traefik (Coolify) has no request-body limit by default; if a front proxy/CDN is ever added it must allow bodies of at least 9 MB on `/api/assets` (nginx `client_max_body_size 10m`, Cloudflare free plan allows 100 MB).

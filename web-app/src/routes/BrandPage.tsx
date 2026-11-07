@@ -27,7 +27,7 @@ import {
 } from '../studio/brandSizes';
 import { kitSetFor } from '../studio/brandKitSet';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
-import { Button, Card, EmptyState, Input, Modal, SelectField, buttonClass, confirm, toast } from '../components/ui';
+import { Button, Card, EmptyState, Input, Modal, SelectField, TextArea, buttonClass, confirm, toast } from '../components/ui';
 import { Notice, PageHeader } from '../components/host/HostKit';
 
 const MB = 1024 * 1024;
@@ -51,9 +51,15 @@ const EMPTY_KIT: BrandKitInput = {
   lowerThirdStyle: 'accent',
   adsShrinkPicture: true,
   thumbnailAssetId: null,
+  title: null,
+  description: null,
   ads: [],
   adsPortrait: [],
 };
+
+/** The limits of a stream's own title and description (the server checks the same, src/assets/dto/brand-kit.dto.ts). */
+const MAX_KIT_TITLE = 200;
+const MAX_KIT_DESCRIPTION = 5000;
 
 /** Which form field holds each material of each orientation (landscape = the fields older clients know). */
 const FIELDS: Record<BrandOrientation, { logo: 'logoAssetId' | 'logoAssetIdPortrait'; wallpaper: 'wallpaperAssetId' | 'wallpaperAssetIdPortrait'; ads: 'ads' | 'adsPortrait' }> = {
@@ -687,6 +693,8 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   const dirty =
     !kit ||
     PLAIN_KEYS.some((k) => form[k] !== initial[k]) ||
+    (form.title ?? '').trim() !== (initial.title ?? '').trim() ||
+    (form.description ?? '').trim() !== (initial.description ?? '').trim() ||
     !sameAds(form.ads ?? [], initial.ads ?? []) ||
     !sameAds(form.adsPortrait ?? [], initial.adsPortrait ?? []) ||
     isDefault !== kit.isDefault ||
@@ -711,6 +719,8 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         lowerThirdStyle: form.lowerThirdStyle,
         adsShrinkPicture: form.adsShrinkPicture !== false,
         thumbnailAssetId: form.thumbnailAssetId ?? null,
+        title: form.title?.trim() || null,
+        description: form.description?.trim() || null,
         ...(sendAds(form.ads ?? []) ? { ads: form.ads ?? [] } : {}),
         ...(sendAds(form.adsPortrait ?? []) ? { adsPortrait: form.adsPortrait ?? [] } : {}),
       };
@@ -791,6 +801,31 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="ha-kit-text" data-testid="kit-text">
+        <p className="ha-hint" style={{ marginTop: 0 }}>
+          Used for new streams that don't have their own title/description. You can change it on each stream.
+        </p>
+        <Input
+          id={`${idPrefix}-title`}
+          label="Default title"
+          maxLength={MAX_KIT_TITLE}
+          value={form.title ?? ''}
+          placeholder="e.g. Friday night show"
+          onChange={(e) => set('title', e.target.value)}
+          hint={<span data-testid="kit-title-count">{(form.title ?? '').length} / {MAX_KIT_TITLE}</span>}
+        />
+        <TextArea
+          id={`${idPrefix}-description`}
+          label="Default description"
+          rows={3}
+          maxLength={MAX_KIT_DESCRIPTION}
+          value={form.description ?? ''}
+          placeholder="What your streams are about, links, schedule…"
+          onChange={(e) => set('description', e.target.value)}
+          hint={<span data-testid="kit-description-count">{(form.description ?? '').length} / {MAX_KIT_DESCRIPTION}</span>}
+        />
       </div>
 
       <div className="ha-kit-cols">

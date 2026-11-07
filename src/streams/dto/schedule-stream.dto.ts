@@ -24,10 +24,11 @@ const normalizeEmails = ({ value }: { value: unknown }) =>
   Array.isArray(value) ? value.map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : v)) : value;
 
 export class ScheduleStreamDto {
+  /** Optional when the destinations' brand kit has a default title (blank or omitted = take it); otherwise 400 "A title is required". */
+  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(200)
-  title!: string;
+  title?: string;
 
   @IsOptional()
   @IsString()

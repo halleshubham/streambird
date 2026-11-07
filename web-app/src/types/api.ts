@@ -146,6 +146,11 @@ export interface Stream {
   thumbnailKit?: { id: string; name: string } | null;
   /** Go live now only: platforms that refused the brand kit's thumbnail (going live was not affected). */
   thumbnailWarnings?: string[];
+  /** Create responses: the title / description was left blank and came from this brand kit's defaults. */
+  titleFromKit?: boolean;
+  descriptionFromKit?: boolean;
+  titleKit?: { id: string; name: string } | null;
+  descriptionKit?: { id: string; name: string } | null;
 }
 
 export interface ScheduleGuest {
@@ -163,6 +168,11 @@ export interface ScheduleDetail {
   visibility: 'public' | 'unlisted' | 'private' | null;
   orientation: 'landscape' | 'portrait';
   status: StreamStatus;
+  /** Schedule responses: the title / description was left blank and came from this brand kit's defaults. */
+  titleFromKit?: boolean;
+  descriptionFromKit?: boolean;
+  titleKit?: { id: string; name: string } | null;
+  descriptionKit?: { id: string; name: string } | null;
   scheduledAt: string;
   timezone: string;
   durationMinutes: number | null;
@@ -546,6 +556,9 @@ export interface BrandKitAd {
 export interface BrandKit {
   id: string;
   name: string;
+  /** Default title / description for streams that use this kit and were created without their own (copied onto the stream). null = none. */
+  title: string | null;
+  description: string | null;
   /** Landscape (16:9) logo / wallpaper / ads. These are also the only fields older clients know. */
   logoAssetId: string | null;
   /** Portrait (9:16) logo / wallpaper / ads. */
@@ -574,6 +587,9 @@ export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPositio
   wallpaperAssetIdPortrait?: string | null;
   adsShrinkPicture?: boolean;
   thumbnailAssetId?: string | null;
+  /** Omitted = unchanged on update; null or blank = cleared. */
+  title?: string | null;
+  description?: string | null;
   isDefault?: boolean;
   ads?: BrandKitAd[];
   adsPortrait?: BrandKitAd[];

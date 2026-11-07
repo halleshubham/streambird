@@ -496,4 +496,41 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0033 adds nullable brand_kits.title / description (null for every existing kit), accepts the old insert shape, and is re-runnable', async () => {
+    const live = `sb_mig_${Date.now()}_kt`;
+    const a = new PgClient({ connectionString: adminUrl });
+    await a.connect();
+    await a.query(`CREATE DATABASE ${live}`);
+    await a.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0032', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0033: a default kit and a plain one, no text columns yet.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('kit-text-acct', 'hkt', 'pro', 30) RETURNING id`)).rows[0].id;
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, is_default) VALUES ($1, 'Main', true) RETURNING id`, [acct])).rows[0].id;
+      await expect(db.query(`SELECT title FROM brand_kits`)).rejects.toThrow();
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0033%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: IF NOT EXISTS keeps it fine
+
+      // The existing kit is unchanged and has no default text.
+      expect((await db.query(`SELECT name, is_default, title, description FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ name: 'Main', is_default: true, title: null, description: null });
+      // The old release's insert shape (no text columns) still works, and the new columns hold the API limits.
+      await db.query(`INSERT INTO brand_kits (account_id, name) VALUES ($1, 'Old shape')`, [acct]);
+      await db.query(`UPDATE brand_kits SET title = $2, description = $3 WHERE id = $1`, [kit, 'x'.repeat(200), 'y'.repeat(5000)]);
+      expect((await db.query(`SELECT length(title) AS t, length(description) AS d FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ t: 200, d: 5000 });
+      await expect(db.query(`UPDATE brand_kits SET title = $2 WHERE id = $1`, [kit, 'x'.repeat(201)])).rejects.toThrow(); // varchar(200)
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

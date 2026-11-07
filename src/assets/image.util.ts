@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
-export const MAX_ASSET_BYTES = 4 * 1024 * 1024;
+/** Per-file cap for every brand image (logo, wallpaper, ad, portrait variants). The `thumbnail` kind keeps YouTube's 2 MB (streams/thumbnail.util.ts), checked first. */
+export const MAX_ASSET_BYTES = 8 * 1024 * 1024;
 export const MAX_ASSET_SIDE = 8192;
 
 export interface ParsedImage {
