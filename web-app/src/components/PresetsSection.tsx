@@ -6,6 +6,7 @@ import { createStream } from '../api/streams';
 import { ApiError } from '../api/client';
 import { PresetForm } from './PresetForm';
 import { destinationList, presetOptionsLine } from '../lib/presets';
+import { kitDefaultText } from '../lib/kitText';
 import { seedStudioFromPreset } from '../studio/useHostStudio';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, StreamPreset } from '../types/api';
 import { Badge, Button, confirm, toast } from './ui';
@@ -66,7 +67,9 @@ export function PresetsSection({
     setStarting('default');
     setError(null);
     try {
-      const stream = await createStream({ title: 'Untitled stream', orientation: 'landscape', destinationConnectionIds: defaultConfig.destinationIds ?? [] });
+      // The brand kit's default title is the server's to apply (a blank title takes it); 'Untitled stream' only when no kit has one.
+      const hasKitTitle = !!kitDefaultText(defaultConfig.destinationIds ?? [], kits).title;
+      const stream = await createStream({ ...(hasKitTitle ? {} : { title: 'Untitled stream' }), orientation: 'landscape', destinationConnectionIds: defaultConfig.destinationIds ?? [] });
       navigate(`/streams/${stream.id}/studio`, { state: { autoCamera: true, offerPreset: defaultConfig } });
     } catch (e) {
       fail(e, 'Could not start this stream.');

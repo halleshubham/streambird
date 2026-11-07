@@ -262,6 +262,22 @@ test.describe('subsampling', () => {
     expect(total(mergeDelays(keep, delays))).toBe(5000);
   });
 
+  test('the caps are frame/memory based, not file-size based: an 8 MB GIF with thousands of frames still degrades gracefully', () => {
+    // A heavily compressed 8 MB GIF can hold thousands of small frames: kept frames and bytes stay within budget, timing is preserved.
+    const delays = Array(4000).fill(40);
+    const small = planSubsample(delays, 480 * 270 * 4)!;
+    expect(small.keep.length).toBeLessThanOrEqual(MAX_ANIMATED_FRAMES);
+    expect(small.keep.length * 480 * 270 * 4).toBeLessThanOrEqual(MAX_ANIMATED_BYTES);
+    expect(total(small.delays)).toBe(160000);
+    // The same file at full 1080p is cut down to what fits in memory instead of being given up on.
+    const big = planSubsample(delays, 1920 * 1080 * 4)!;
+    expect(big.keep.length).toBe(Math.floor(MAX_ANIMATED_BYTES / (1920 * 1080 * 4)));
+    expect(total(big.delays)).toBe(160000);
+    // A canvas so large that not even two frames fit gets the "too large" notice, which stays accurate for any file size.
+    expect(planSubsample(delays, MAX_ANIMATED_BYTES)).toBeNull();
+    expect(animatedNotice('too-large')).toContain('too large even after being reduced');
+  });
+
   test('not even two frames fit, or only one frame exists: null', () => {
     expect(planKeep(50, MAX_ANIMATED_BYTES)).toBeNull();
     expect(planKeep(50, MAX_ANIMATED_BYTES / 2 + 1)).toBeNull();

@@ -25,6 +25,13 @@ export class StreamResponseDto {
   /** Go-live-now only: platforms that refused the brand kit's thumbnail (going live was not affected). */
   @Expose() thumbnailWarnings?: string[];
 
+  /** Create and schedule responses: the title / description was blank in the request and came from a brand kit's defaults. */
+  @Expose() titleFromKit?: boolean;
+  @Expose() descriptionFromKit?: boolean;
+  /** The kit those defaults came from (null/absent when they did not come from a kit). */
+  @Expose() titleKit?: { id: string; name: string } | null;
+  @Expose() descriptionKit?: { id: string; name: string } | null;
+
   @Expose()
   @Type(() => DestinationResponseDto)
   destinations!: DestinationResponseDto[];

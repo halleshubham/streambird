@@ -39,7 +39,7 @@ describe('parseImage', () => {
   it('refuses empty, oversized, unknown and too-big-in-pixels files', () => {
     expect(() => parseImage(undefined)).toThrow();
     expect(() => parseImage(Buffer.from('<svg/>'))).toThrow(/PNG, JPG or WebP/);
-    expect(() => parseImage(Buffer.concat([png(10, 10), Buffer.alloc(4 * 1024 * 1024)]))).toThrow(/too large/);
+    expect(() => parseImage(Buffer.concat([png(10, 10), Buffer.alloc(8 * 1024 * 1024)]))).toThrow(/too large/);
     expect(() => parseImage(png(9000, 10))).toThrow(/too big/);
   });
   describe('GIF (logos and ads only)', () => {
@@ -61,7 +61,7 @@ describe('parseImage', () => {
       expect(() => parseImage(gif('GIF89a', 9000, 10), { allowGif: true })).toThrow(/too big/);
       expect(() => parseImage(gif('GIF89a', 0, 10), { allowGif: true })).toThrow(/damaged/);
       expect(() => parseImage(Buffer.from('GIF89a'), { allowGif: true })).toThrow(/damaged/);
-      expect(() => parseImage(Buffer.concat([gif('GIF89a', 10, 10), Buffer.alloc(4 * 1024 * 1024)]), { allowGif: true })).toThrow(/too large/);
+      expect(() => parseImage(Buffer.concat([gif('GIF89a', 10, 10), Buffer.alloc(8 * 1024 * 1024)]), { allowGif: true })).toThrow(/too large/);
       expect(() => parseImage(Buffer.from('GIF90a-not-a-gif-at-all'), { allowGif: true })).toThrow(/PNG, JPG or WebP/);
     });
   });

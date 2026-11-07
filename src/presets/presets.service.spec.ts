@@ -124,16 +124,30 @@ describe('PresetsService', () => {
     // A destination saved earlier that has since been disconnected is skipped, not fatal.
     rows.push({ id: 'old', accountId: A, name: 'Old', config: { destinationIds: [C1, C2], orientation: 'portrait' }, lastUsedAt: null } as StreamPreset);
     const r = await svc.start(A, 'old', {});
-    expect(streams.create).toHaveBeenCalledWith(A, { title: 'Old', orientation: 'portrait', destinationConnectionIds: [C1] });
+    // No title typed and none stored: the kit default (if any) is resolved by the stream, the preset name is the last fallback.
+    expect(streams.create).toHaveBeenCalledWith(A, { title: undefined, orientation: 'portrait', destinationConnectionIds: [C1] }, { fallbackTitle: 'Old' });
     expect(r.preset.warnings.join(' ')).toMatch(/no longer connected/);
     expect(rows[0].lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it("start hands the preset's brand kit choice to the stream (kit id, or null for no kit); automatic when the preset has none", async () => {
+    const { svc, streams } = build();
+    const withKit = await svc.create(A, { name: 'Kit', config: { brandKitId: KIT } as any });
+    await svc.start(A, withKit.id, {});
+    expect(streams.create).toHaveBeenLastCalledWith(A, expect.objectContaining({ thumbnailBrandKitId: KIT }), { fallbackTitle: 'Kit' });
+    const noKit = await svc.create(A, { name: 'Bare', config: { brandKitId: null } as any });
+    await svc.start(A, noKit.id, {});
+    expect(streams.create).toHaveBeenLastCalledWith(A, expect.objectContaining({ thumbnailBrandKitId: null }), { fallbackTitle: 'Bare' });
+    const auto = await svc.create(A, { name: 'Auto', config: {} as any });
+    await svc.start(A, auto.id, {});
+    expect(streams.create.mock.calls[streams.create.mock.calls.length - 1][1]).not.toHaveProperty('thumbnailBrandKitId');
   });
 
   it('start with no saved destinations uses every connected one; with none connected it is refused', async () => {
     const { svc, streams } = build();
     const p = await svc.create(A, { name: 'All', config: {} as any });
     await svc.start(A, p.id, { title: 'Custom' });
-    expect(streams.create).toHaveBeenCalledWith(A, { title: 'Custom', orientation: 'landscape', destinationConnectionIds: [C1, C2] });
+    expect(streams.create).toHaveBeenCalledWith(A, { title: 'Custom', orientation: 'landscape', destinationConnectionIds: [C1, C2] }, { fallbackTitle: 'All' });
     const empty = build({ conns: { [A]: [] } });
     const q = await empty.svc.create(A, { name: 'None', config: {} as any });
     await expect(empty.svc.start(A, q.id, {})).rejects.toBeInstanceOf(UnprocessableEntityException);

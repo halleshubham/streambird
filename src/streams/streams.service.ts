@@ -1,5 +1,6 @@
 import { withPoweredBy } from './powered-by';
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -77,7 +78,33 @@ export class StreamsService {
     return provider;
   }
 
-  async create(accountId: string, dto: CreateStreamDto): Promise<LiveStream> {
+  /**
+   * The title and description a new stream is stored with. An explicit one in the request wins (trimmed); a blank or
+   * omitted one falls back to the brand kit's default (BrandKitsService.defaultTextFor / pickKitText: the first
+   * destination, in request order, whose kit has one); the title then falls back to `opts.fallbackTitle` (a preset's name),
+   * and if there is still none the request is refused: 400 "A title is required". Copied onto the stream, never linked.
+   * `connections` must be in request order. Public: scheduling uses it too.
+   */
+  async resolveText(
+    accountId: string,
+    input: { title?: string | null; description?: string | null },
+    connections: ReadonlyArray<Pick<PlatformConnection, 'brandKitId'>>,
+    kitChoice?: string | null,
+    opts: { fallbackTitle?: string } = {},
+  ): Promise<{ title: string; description: string | null; titleKit: { id: string; name: string } | null; descriptionKit: { id: string; name: string } | null }> {
+    const own = { title: input.title?.trim() || null, description: input.description?.trim() || null };
+    const kit = own.title && own.description ? null : await this.brandKits.defaultTextFor(accountId, connections, kitChoice);
+    const title = own.title ?? kit?.title ?? opts.fallbackTitle?.trim() ?? null;
+    if (!title) throw new BadRequestException('A title is required.');
+    return {
+      title,
+      description: own.description ?? kit?.description ?? null,
+      titleKit: own.title ? null : kit?.titleKit ?? null,
+      descriptionKit: own.description ? null : kit?.descriptionKit ?? null,
+    };
+  }
+
+  async create(accountId: string, dto: CreateStreamDto, opts: { fallbackTitle?: string } = {}): Promise<LiveStream> {
     // Checked before anything else -- a blocked account shouldn't even
     // reach the point of creating a LiveStream row or touching a
     // provider's API. Never blocks a stream that's already running (see
@@ -95,10 +122,14 @@ export class StreamsService {
       );
     }
 
+    // In request order: the first destination whose kit has a default title/description supplies it (resolveText).
+    const ordered = dto.destinationConnectionIds.map((id) => connections.find((c) => c.id === id)!);
+    const text = await this.resolveText(accountId, dto, ordered, dto.thumbnailBrandKitId, opts);
+
     const stream = this.liveStreams.create({
       accountId,
-      title: dto.title,
-      description: dto.description ?? null,
+      title: text.title,
+      description: text.description,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
       visibility: dto.visibility ?? null,
       orientation: dto.orientation ?? 'landscape',
@@ -113,8 +144,8 @@ export class StreamsService {
     stream.studioSessionId = studioSession.id;
 
     const started = await this.provision(stream, connections, {
-      title: dto.title,
-      description: dto.description,
+      title: text.title,
+      description: text.description ?? undefined,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
       visibility: dto.visibility,
     });
@@ -124,6 +155,12 @@ export class StreamsService {
       const applied = await this.applyKitThumbnailsAfterCreate(started, connections, dto.thumbnailBrandKitId);
       Object.assign(started, applied);
     }
+    Object.assign(started, {
+      titleFromKit: !!text.titleKit,
+      descriptionFromKit: !!text.descriptionKit,
+      titleKit: text.titleKit,
+      descriptionKit: text.descriptionKit,
+    });
     return started;
   }
 

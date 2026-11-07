@@ -29,7 +29,7 @@ test.describe('unified brand kit editor', () => {
     await expect(form.getByRole('tab', { name: '16:9 landscape' })).toHaveAttribute('aria-selected', 'true');
     await expect(form.getByTestId('slot-size-logo')).toHaveText('Suggested 512 x 512');
     await expect(form.getByTestId('slot-help-logo')).toContainText('transparent');
-    await expect(form.getByTestId('slot-help-logo')).toContainText('up to 4 MB');
+    await expect(form.getByTestId('slot-help-logo')).toContainText('up to 8 MB');
     await expect(form.getByTestId('slot-size-wallpaper')).toHaveText('Suggested 1920 x 1080');
     await expect(form.getByTestId('slot-size-lower_third')).toHaveText('Suggested 1280 x 240');
     await expect(form.getByTestId('slot-size-side_third')).toHaveText('Suggested 640 x 1080');

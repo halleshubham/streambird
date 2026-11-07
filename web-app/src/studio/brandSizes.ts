@@ -29,7 +29,7 @@ export const CANVAS_SIZE: Record<BrandOrientation, { w: number; h: number }> = {
 
 /** File limits the server enforces for every library file (src/assets/image.util.ts). */
 export const BRAND_FILE_LIMITS = {
-  maxBytes: 4 * 1024 * 1024,
+  maxBytes: 8 * 1024 * 1024,
   maxSide: 8192,
   /** GIF (animated) is accepted for logos and ads only. */
   gifSlots: ['logo', 'lower_third', 'side_third', 'full_screen', 'l_shape'] as readonly BrandSlot[],

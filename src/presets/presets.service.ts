@@ -115,11 +115,20 @@ export class PresetsService {
     if (destinationIds.length === 0) {
       throw new UnprocessableEntityException('Connect a YouTube, Facebook or Twitch destination before you go live.');
     }
-    const stream = await this.streams.create(accountId, {
-      title: dto.title?.trim() || preset.name,
-      orientation: resolved.effectiveConfig.orientation ?? 'landscape',
-      destinationConnectionIds: destinationIds,
-    });
+    // Title: the one typed for this start, else the default title of the preset's brand kit (or of the destinations' kits when
+    // the preset has none chosen), else the preset's name. A preset stores no title of its own. The kit choice also picks the
+    // default description and the kit thumbnail: brandKitId omitted = automatic, null = "no kit", an id = that kit.
+    const kitChoice = resolved.effectiveConfig.brandKitId;
+    const stream = await this.streams.create(
+      accountId,
+      {
+        title: dto.title?.trim() || undefined,
+        orientation: resolved.effectiveConfig.orientation ?? 'landscape',
+        destinationConnectionIds: destinationIds,
+        ...(kitChoice !== undefined ? { thumbnailBrandKitId: kitChoice } : {}),
+      },
+      { fallbackTitle: preset.name },
+    );
     // Stamp the use only once the stream exists, so a refused start (hours, destinations) does not reorder the list.
     preset.lastUsedAt = new Date();
     await this.presets.save(preset);

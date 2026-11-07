@@ -50,3 +50,6 @@ Short "why" records. When code looks odd, check here before "fixing" it. Add a l
 
 ## Known gaps / ideas not built
 LinkedIn provider; refunds, GST invoices, proration; server-side max-quality enforcement; TURN self-hosting; separate docs page for the new studio layouts/styles/vertical; CI ffmpeg-install timeout/retry; remove stale README "Status" section; complete `.env.example`.
+
+- Brand image uploads are capped at 8 MB (`MAX_ASSET_BYTES`, multer +1 MB slack); the `thumbnail` kind and stream thumbnails stay 2 MB (YouTube), checked first. Animated GIF caps (`animatedImage.ts`) are frame/memory based, not file-size based, so 8 MB GIFs degrade (subsample, then the "too large" notice) the same way.
+- Clearing a prefilled description on the new-stream form still gets the kit description (a blank means "use the default" in the API contract).

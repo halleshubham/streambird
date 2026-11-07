@@ -95,11 +95,26 @@ function build() {
     youtube: makeProvider('youtube', true),
     twitch: makeProvider('twitch', false),
   };
+  const kitText: { title: string | null; description: string | null } = { title: null, description: null };
   const streamsService = {
     end: jest.fn(async () => undefined),
     assertDestinationCount: jest.fn(async () => undefined),
     resolveProvider: (conn: any) => providers[conn.platform],
     platformDescription: jest.fn(async (_accountId: string, d: string | null | undefined) => d ?? undefined),
+    // The real rule is unit-tested in streams.service.spec.ts / kit-text.spec.ts; here it is the explicit text, trimmed (or the kit's, when set by a test).
+    kitText,
+    resolveText: jest.fn(async (_a: string, input: { title?: string; description?: string }) => {
+      const own = { title: input.title?.trim() || null, description: input.description?.trim() || null };
+      const kit = kitText;
+      const title = own.title ?? kit.title;
+      if (!title) throw new BadRequestException('A title is required.');
+      return {
+        title,
+        description: own.description ?? kit.description,
+        titleKit: !own.title && kit.title ? { id: 'k1', name: 'Kit' } : null,
+        descriptionKit: !own.description && kit.description ? { id: 'k1', name: 'Kit' } : null,
+      };
+    }),
   };
   const email = { sendStreamInvite: jest.fn(async () => undefined) };
 
@@ -137,6 +152,21 @@ const baseDto = () => ({
 });
 
 describe('StreamSchedulingService', () => {
+  it('a blank title/description takes the brand kit defaults (and says so); an explicit one wins; no title and no kit text is a 400', async () => {
+    const { service, streams, streamsService } = build();
+    Object.assign(streamsService.kitText, { title: 'Kit title', description: 'Kit description' });
+    const fromKit = await service.schedule(ACCOUNT, { ...baseDto(), title: '   ' });
+    expect(fromKit).toMatchObject({ title: 'Kit title', description: 'Kit description', titleFromKit: true, descriptionFromKit: true, titleKit: { name: 'Kit' } });
+    const explicit = await service.schedule(ACCOUNT, { ...baseDto(), title: ' Mine ', description: ' My text ' });
+    expect(explicit).toMatchObject({ title: 'Mine', description: 'My text', titleFromKit: false, descriptionFromKit: false, titleKit: null });
+    // Copied, not linked: a later kit edit does not touch what was stored.
+    Object.assign(streamsService.kitText, { title: 'Edited', description: null });
+    expect([...streams.values()].map((x) => x.title)).toEqual(['Kit title', 'Mine']);
+    Object.assign(streamsService.kitText, { title: null, description: null });
+    const { title: _t, ...noTitle } = baseDto();
+    await expect(service.schedule(ACCOUNT, noTitle)).rejects.toThrow('A title is required.');
+  });
+
   it('schedules without provisioning anything: SCHEDULED stream, pending destinations, general link and one invite per unique email', async () => {
     const { service, streams, dests, studioSessions, email } = build();
 

@@ -8,6 +8,7 @@ import { AssetsService } from './assets.service';
 import { PlatformConnection } from '../platform-connections/entities/platform-connection.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { MAX_THUMBNAIL_BYTES, MIN_THUMBNAIL_WIDTH, ThumbnailImage, parseThumbnail } from '../streams/thumbnail.util';
+import { KitTextPick, pickKitText } from './kit-text';
 import { BrandKitAdDto, CreateBrandKitDto, UpdateBrandKitDto } from './dto/brand-kit.dto';
 
 /** One ad as the API returns it. Continuous ads carry null schedule numbers. */
@@ -166,6 +167,23 @@ export class BrandKitsService {
     }
   }
 
+  /**
+   * The default title/description a new stream takes from its kit when the request leaves them blank. `destinations` are the
+   * stream's destinations IN REQUEST ORDER; see pickKitText for the rule. `override` is the stream's kit choice
+   * (thumbnailBrandKitId: omitted = automatic, null = no kit, id = that kit). Never throws: going live must not wait on it.
+   */
+  async defaultTextFor(accountId: string, destinations: ReadonlyArray<Pick<PlatformConnection, 'brandKitId'>>, override?: string | null): Promise<KitTextPick> {
+    const none: KitTextPick = { title: null, description: null, titleKit: null, descriptionKit: null };
+    if (override === null) return none;
+    try {
+      const kits = await this.kits.find({ where: { accountId }, select: ['id', 'name', 'isDefault', 'title', 'description'] });
+      return pickKitText(kits, destinations.map((d) => d.brandKitId ?? null), override);
+    } catch (err) {
+      this.logger.warn(`Could not read the brand kit text for account ${accountId}: ${(err as Error).message}`);
+      return none;
+    }
+  }
+
   /** A foreign-key or unique violation from a race (file deleted, two saves at once) is the caller's conflict, not a server error. */
   private async guard<T>(work: () => Promise<T>): Promise<T> {
     try {
@@ -192,6 +210,8 @@ export class BrandKitsService {
         repo.create({
           accountId,
           name: dto.name.trim(),
+          title: dto.title ?? null,
+          description: dto.description ?? null,
           logoAssetId: dto.logoAssetId ?? null,
           logoAssetIdPortrait: dto.logoAssetIdPortrait ?? null,
           logoPosition: dto.logoPosition ?? 'left',
@@ -242,6 +262,8 @@ export class BrandKitsService {
       const ads = dto.ads == null ? undefined : await this.checkAds(accountId, dto.ads);
       const adsPortrait = dto.adsPortrait == null ? undefined : await this.checkAds(accountId, dto.adsPortrait);
       if (dto.name !== undefined) kit.name = dto.name.trim();
+      if (dto.title !== undefined) kit.title = dto.title;
+      if (dto.description !== undefined) kit.description = dto.description;
       if (dto.logoAssetId !== undefined) kit.logoAssetId = dto.logoAssetId;
       if (dto.logoAssetIdPortrait !== undefined) kit.logoAssetIdPortrait = dto.logoAssetIdPortrait;
       if (dto.wallpaperAssetIdPortrait !== undefined) kit.wallpaperAssetIdPortrait = dto.wallpaperAssetIdPortrait;

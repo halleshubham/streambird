@@ -1,7 +1,7 @@
 import { BrandKitsService } from '../assets/brand-kits.service';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, UnprocessableEntityException } from '@nestjs/common';
 import { StreamsService } from './streams.service';
 import { LiveStream } from './entities/live-stream.entity';
 import { LiveStreamDestination } from './entities/live-stream-destination.entity';
@@ -84,6 +84,8 @@ describe('StreamsService', () => {
     const destinationRepo = inMemoryRepo<LiveStreamDestination>();
     const connectionRepo = inMemoryRepo<PlatformConnection>();
     const relay = new FakeRelayProvider();
+    const noKitText = { title: null, description: null, titleKit: null, descriptionKit: null };
+    const kitText = jest.fn(async (..._args: unknown[]): Promise<any> => noKitText);
     const thumbnailRows = new Map<string, any>();
     const thumbnailRepo = { findOne: jest.fn(async ({ where }: any) => thumbnailRows.get(where.liveStreamId) ?? null) };
 
@@ -108,7 +110,7 @@ describe('StreamsService', () => {
         { provide: getRepositoryToken(PlatformConnection), useValue: connectionRepo },
         { provide: getRepositoryToken(StreamThumbnail), useValue: thumbnailRepo },
         { provide: STREAM_PROVIDERS, useValue: providers },
-        { provide: BrandKitsService, useValue: { thumbnailForConnection: jest.fn(async () => null) } },
+        { provide: BrandKitsService, useValue: { thumbnailForConnection: jest.fn(async () => null), defaultTextFor: kitText } },
         { provide: RELAY_PROVIDER, useValue: relay },
         {
           provide: MediaMtxService,
@@ -145,6 +147,7 @@ describe('StreamsService', () => {
       liveStreamRepo,
       destinationRepo,
       thumbnailRows,
+      kitText,
       relay,
       mediaMtx: moduleRef.get(MediaMtxService),
       studioSessions: moduleRef.get(StudioSessionsService),
@@ -155,6 +158,67 @@ describe('StreamsService', () => {
   function makeConnection(id: string, platform: Platform, accountId = 'acc_1'): PlatformConnection {
     return { id, platform, accountId, externalAccountId: `${platform}-ext` } as PlatformConnection;
   }
+
+  describe('default title and description from the brand kit', () => {
+    const KIT = { id: 'kit1', name: 'Acme' };
+    async function setup() {
+      const ctx = await build([fakeProvider(Platform.YOUTUBE, 'succeed')]);
+      const c1 = makeConnection('c1', Platform.YOUTUBE);
+      ctx.connectionRepo.rows.set(c1.id, c1);
+      return ctx;
+    }
+
+    it('an explicit title and description win and the kit is not even read', async () => {
+      const { service, kitText } = await setup();
+      const stream: any = await service.create('acc_1', { title: '  Mine ', description: ' Own text ', destinationConnectionIds: ['c1'] });
+      expect(stream).toMatchObject({ title: 'Mine', description: 'Own text', titleFromKit: false, descriptionFromKit: false, titleKit: null });
+      expect(kitText).not.toHaveBeenCalled();
+    });
+
+    it('a blank or omitted title/description takes the kit defaults, copied onto the stream, and the response says so', async () => {
+      const { service, kitText, liveStreamRepo } = await setup();
+      kitText.mockResolvedValue({ title: 'Kit title', description: 'Kit about', titleKit: KIT, descriptionKit: KIT });
+      const stream: any = await service.create('acc_1', { title: '   ', destinationConnectionIds: ['c1'] });
+      expect(stream).toMatchObject({ title: 'Kit title', description: 'Kit about', titleFromKit: true, descriptionFromKit: true, titleKit: KIT, descriptionKit: KIT });
+      expect(kitText).toHaveBeenCalledWith('acc_1', [expect.objectContaining({ id: 'c1' })], undefined);
+      expect([...liveStreamRepo.rows.values()][0]).toMatchObject({ title: 'Kit title', description: 'Kit about' });
+      // A later kit edit changes nothing already stored.
+      kitText.mockResolvedValue({ title: 'Edited', description: null, titleKit: KIT, descriptionKit: null });
+      expect([...liveStreamRepo.rows.values()][0].title).toBe('Kit title');
+    });
+
+    it('the title and the description are resolved independently (explicit title, kit description)', async () => {
+      const { service, kitText } = await setup();
+      kitText.mockResolvedValue({ title: 'Kit title', description: 'Kit about', titleKit: KIT, descriptionKit: KIT });
+      const stream: any = await service.create('acc_1', { title: 'Own', destinationConnectionIds: ['c1'] });
+      expect(stream).toMatchObject({ title: 'Own', description: 'Kit about', titleFromKit: false, descriptionFromKit: true, titleKit: null });
+    });
+
+    it('passes the explicit kit choice (thumbnailBrandKitId) on to the rule; null means no kit', async () => {
+      const { service, kitText } = await setup();
+      await service.create('acc_1', { title: 'x', description: undefined, thumbnailBrandKitId: 'kit1', destinationConnectionIds: ['c1'] });
+      expect(kitText).toHaveBeenCalledWith('acc_1', expect.any(Array), 'kit1');
+      kitText.mockClear();
+      await service.create('acc_1', { title: 'y', thumbnailBrandKitId: null, destinationConnectionIds: ['c1'] });
+      expect(kitText).toHaveBeenCalledWith('acc_1', expect.any(Array), null);
+    });
+
+    it('no title anywhere is a 400 "A title is required"; a preset name is the last fallback', async () => {
+      const { service, liveStreamRepo } = await setup();
+      await expect(service.create('acc_1', { destinationConnectionIds: ['c1'] })).rejects.toThrow('A title is required.');
+      await expect(service.create('acc_1', { title: '  ', destinationConnectionIds: ['c1'] })).rejects.toBeInstanceOf(BadRequestException);
+      expect(liveStreamRepo.rows.size).toBe(0); // nothing was created
+      const stream: any = await service.create('acc_1', { destinationConnectionIds: ['c1'] }, { fallbackTitle: 'My preset' });
+      expect(stream.title).toBe('My preset');
+    });
+
+    it('destinations are handed to the rule in request order, whatever order the database returns them in', async () => {
+      const { service, connectionRepo, kitText } = await build([fakeProvider(Platform.YOUTUBE, 'succeed'), fakeProvider(Platform.TWITCH, 'succeed')]);
+      for (const c of [makeConnection('c1', Platform.YOUTUBE), makeConnection('c2', Platform.TWITCH)]) connectionRepo.rows.set(c.id, c);
+      await service.create('acc_1', { title: 'x', destinationConnectionIds: ['c2', 'c1'] });
+      expect((kitText.mock.calls[0][1] as Array<{ id: string }>).map((c) => c.id)).toEqual(['c2', 'c1']);
+    });
+  });
 
   it('goes live when at least one of several destinations succeeds (partial failure)', async () => {
     const { service, connectionRepo } = await build([
