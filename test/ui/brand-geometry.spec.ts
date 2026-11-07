@@ -134,7 +134,7 @@ test.describe('shared size constants', () => {
         const ratio = spec.size.w / spec.size.h;
         expect(ratio).toBeGreaterThanOrEqual(spec.ratioMin);
         expect(ratio).toBeLessThanOrEqual(spec.ratioMax);
-        expect(slotHelp(o, slot)).toContain('4 MB');
+        expect(slotHelp(o, slot)).toContain(slot === 'thumbnail' ? '2 MB' : '4 MB'); // the thumbnail has YouTube's own, stricter limit
       }
     }
   });

@@ -20,6 +20,10 @@ export class StreamResponseDto {
   @Expose() timezone!: string | null;
   @Expose() expectedDurationMinutes!: number | null;
   @Expose() cancelledAt!: Date | null;
+  /** Go-live-now only: set when the brand kit's thumbnail was sent to the destinations while creating the stream. */
+  @Expose() thumbnailKit?: { id: string; name: string } | null;
+  /** Go-live-now only: platforms that refused the brand kit's thumbnail (going live was not affected). */
+  @Expose() thumbnailWarnings?: string[];
 
   @Expose()
   @Type(() => DestinationResponseDto)

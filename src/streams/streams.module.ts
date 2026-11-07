@@ -15,6 +15,7 @@ import { ProvidersModule } from '../providers/providers.module';
 import { RelayModule } from '../relay/relay.module';
 import { CommonModule } from '../common/common.module';
 import { StudioModule } from '../studio/studio.module';
+import { AssetsModule } from '../assets/assets.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { StudioModule } from '../studio/studio.module';
     RelayModule,
     CommonModule, // ApiKeyGuard, StreamCreateThrottlerGuard
     EmailModule,
+    AssetsModule, // BrandKitsService: the brand kit's thumbnail for streams created without their own
     // Circular: StudioModule's signaling gateway calls back into
     // StreamsService.end() when a host disconnects for good (see
     // StudioSignalingGateway's doc comment on that).

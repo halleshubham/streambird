@@ -29,6 +29,6 @@ import { CommonModule } from '../common/common.module';
       },
     },
   ],
-  exports: [AssetsService],
+  exports: [AssetsService, BrandKitsService],
 })
 export class AssetsModule {}

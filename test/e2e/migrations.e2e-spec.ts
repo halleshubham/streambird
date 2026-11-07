@@ -404,4 +404,96 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0031 widens the ad placement to l_shape without touching existing ads, and is re-runnable', async () => {
+    const live = `e2e_migrate_lshape_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0030', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0031: a kit with ads in two placements and both orientations.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('lshape-acct', 'hlshape', 'pro', 30) RETURNING id`)).rows[0].id;
+      const ad = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'ad', 'ad', 'image/png', 10, 1, 1, 'ls1') RETURNING id`, [acct])).rows[0].id;
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, is_default) VALUES ($1, 'Main', true) RETURNING id`, [acct])).rows[0].id;
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation) VALUES ($1, 'lower_third', $2, 'landscape'), ($1, 'full_screen', $2, 'portrait')`, [kit, ad]);
+      // The old CHECK refuses the new value.
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'l_shape', $2)`, [kit, ad])).rejects.toThrow();
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0031%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: still fine
+
+      // Existing ads are untouched.
+      expect((await db.query(`SELECT placement, orientation FROM brand_kit_ads WHERE brand_kit_id = $1 ORDER BY placement`, [kit])).rows).toEqual([
+        { placement: 'full_screen', orientation: 'portrait' },
+        { placement: 'lower_third', orientation: 'landscape' },
+      ]);
+      // l_shape is accepted, once per orientation; other placements are still refused; the old release's inserts still work.
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'l_shape', $2)`, [kit, ad]);
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation) VALUES ($1, 'l_shape', $2, 'portrait')`, [kit, ad]);
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'l_shape', $2)`, [kit, ad])).rejects.toThrow(); // unique per orientation
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'top_band', $2)`, [kit, ad])).rejects.toThrow();
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'side_third', $2)`, [kit, ad]);
+      await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
+
+  it('0032 adds brand_kits.thumbnail_asset_id (null for every existing kit), the thumbnail asset kind, and a deleted file just empties the slot', async () => {
+    const live = `e2e_migrate_thumb_${Date.now()}`;
+    const admin = new PgClient({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${live}`);
+    await admin.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0031', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0032: a default kit with a logo, and a stream thumbnail already stored the per-stream way.
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('thumb-acct', 'hthumb', 'pro', 30) RETURNING id`)).rows[0].id;
+      const logo = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'logo', 'logo', 'image/png', 10, 1, 1, 'th1') RETURNING id`, [acct])).rows[0].id;
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, logo_asset_id, is_default) VALUES ($1, 'Main', $2, true) RETURNING id`, [acct, logo])).rows[0].id;
+      await expect(db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'thumbnail', 't', 'image/png', 10, 1280, 720, 'th2')`, [acct])).rejects.toThrow(); // kind not known yet
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // re-run: no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0032%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply: IF NOT EXISTS keeps it fine
+
+      // The existing kit is unchanged and has no thumbnail.
+      expect((await db.query(`SELECT logo_asset_id, thumbnail_asset_id, is_default FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ logo_asset_id: logo, thumbnail_asset_id: null, is_default: true });
+      // The old release's insert shape (no thumbnail column) still works.
+      await db.query(`INSERT INTO brand_kits (account_id, name) VALUES ($1, 'Old shape')`, [acct]);
+
+      const thumb = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'thumbnail', 't', 'image/png', 10, 1280, 720, 'th3') RETURNING id`, [acct])).rows[0].id;
+      await db.query(`UPDATE brand_kits SET thumbnail_asset_id = $2 WHERE id = $1`, [kit, thumb]);
+      expect((await db.query(`SELECT thumbnail_asset_id FROM brand_kits WHERE id = $1`, [kit])).rows[0].thumbnail_asset_id).toBe(thumb);
+      // The index exists, and the other kinds still work.
+      expect((await db.query(`SELECT count(*)::int AS n FROM pg_indexes WHERE indexname = 'brand_kits_thumbnail_asset_idx'`)).rows[0].n).toBe(1);
+      await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'ad', 'ad', 'image/png', 10, 1, 1, 'th4')`, [acct]);
+      await expect(db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'poster', 'p', 'image/png', 10, 1, 1, 'th5')`, [acct])).rejects.toThrow();
+      // A foreign key that points nowhere is refused; deleting the file (the API refuses while used, the database is the safety net) empties the slot instead of failing.
+      await expect(db.query(`UPDATE brand_kits SET thumbnail_asset_id = gen_random_uuid() WHERE id = $1`, [kit])).rejects.toThrow();
+      await db.query(`DELETE FROM assets WHERE id = $1`, [thumb]);
+      expect((await db.query(`SELECT thumbnail_asset_id FROM brand_kits WHERE id = $1`, [kit])).rows[0].thumbnail_asset_id).toBeNull();
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

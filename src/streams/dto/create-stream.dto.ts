@@ -9,6 +9,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateStreamDto {
@@ -34,6 +35,15 @@ export class CreateStreamDto {
   @IsOptional()
   @IsIn(['landscape', 'portrait'])
   orientation?: 'landscape' | 'portrait';
+
+  /**
+   * Which brand kit's thumbnail a stream without its own thumbnail gets: omitted = the destination's kit, else the
+   * account default kit; a kit id = that kit; null = none (e.g. the host chose "No brand kit" or uploads their own).
+   */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsUUID()
+  thumbnailBrandKitId?: string | null;
 
   @IsArray()
   @ArrayMinSize(1)

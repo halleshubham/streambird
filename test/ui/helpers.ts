@@ -74,6 +74,66 @@ export function solidPng(r: number, g: number, b: number, width = 16, height = w
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+/** A RGBA PNG built by hand from a per-pixel function (zlib + CRC), for pictures with a known layout (a frame with a window). */
+export function rgbaPng(width: number, height: number, px: (x: number, y: number) => [number, number, number, number]): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf: Buffer) => {
+    let c = 0xffffffff;
+    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6; // RGBA
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const o = y * (width * 4 + 1);
+    raw[o] = 0;
+    for (let x = 0; x < width; x++) {
+      const [r, g, b, a] = px(x, y);
+      raw[o + 1 + x * 4] = r;
+      raw[o + 2 + x * 4] = g;
+      raw[o + 3 + x * 4] = b;
+      raw[o + 4 + x * 4] = a;
+    }
+  }
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+export interface FrameSpec {
+  width: number;
+  height: number;
+  /** The window, in pixels: [x0, y0, x1, y1) */
+  win: [number, number, number, number];
+  /** The colour of the frame around the window (and the column / band). */
+  frame: [number, number, number];
+  /** 'white' = plain white, 'clear' = transparent, or a colour (= no clear window). */
+  window?: 'white' | 'clear' | [number, number, number];
+}
+/** A frame graphic like a news channel's: a coloured frame around a plain window. Frame 1280x720 with win [256,0,1280,576] is the founder's sample shape. */
+export const framePng = (f: FrameSpec): Buffer =>
+  rgbaPng(f.width, f.height, (x, y) => {
+    const inside = x >= f.win[0] && x < f.win[2] && y >= f.win[1] && y < f.win[3];
+    if (!inside) return [f.frame[0], f.frame[1], f.frame[2], 255];
+    if (f.window === 'clear') return [0, 0, 0, 0];
+    if (Array.isArray(f.window)) return [f.window[0], f.window[1], f.window[2], 255];
+    return [255, 255, 255, 255];
+  });
+
 /** The colour of the studio canvas at a point (the canvas keeps its 2D context, so this reads what viewers get). */
 export const canvasPixel = (page: Page, x: number, y: number) =>
   page.evaluate(

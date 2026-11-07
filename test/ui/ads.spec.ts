@@ -168,18 +168,18 @@ test.describe('ad priority and manual control', () => {
 
   test('full screen hides the other two while it is visible (cross-fading at its edges); side third draws above lower third', () => {
     const slots = [slot('lower_third', CONT), slot('side_third', CONT), slot('full_screen', FULL_AT_30)];
-    expect(resolveAdAlphas(10, slots)).toEqual({ lower_third: 1, side_third: 1, full_screen: 0 });
-    expect(resolveAdAlphas(35, slots)).toEqual({ lower_third: 0, side_third: 0, full_screen: 1 });
+    expect(resolveAdAlphas(10, slots)).toEqual({ lower_third: 1, side_third: 1, full_screen: 0, l_shape: 0 });
+    expect(resolveAdAlphas(35, slots)).toEqual({ lower_third: 0, side_third: 0, full_screen: 1, l_shape: 0 });
     const mid = resolveAdAlphas(30.15, slots); // full screen half-faded in
     expect(mid.full_screen).toBeCloseTo(0.5, 6);
     expect(mid.lower_third).toBeCloseTo(0.5, 6);
     expect(mid.side_third).toBeCloseTo(0.5, 6);
-    expect(resolveAdAlphas(45, slots)).toEqual({ lower_third: 1, side_third: 1, full_screen: 0 });
-    expect(AD_DRAW_ORDER).toEqual(['lower_third', 'side_third', 'full_screen']);
+    expect(resolveAdAlphas(45, slots)).toEqual({ lower_third: 1, side_third: 1, full_screen: 0, l_shape: 0 });
+    expect(AD_DRAW_ORDER).toEqual(['lower_third', 'side_third', 'l_shape', 'full_screen']); // l_shape is a base layer under the scene (drawn by paintBase) unless it has no window
   });
 
   test('a missing or switched-off ad is 0; manual Show now / Hide beat the schedule but not the on/off switch', () => {
-    expect(resolveAdAlphas(0, [])).toEqual({ lower_third: 0, side_third: 0, full_screen: 0 });
+    expect(resolveAdAlphas(0, [])).toEqual({ lower_third: 0, side_third: 0, full_screen: 0, l_shape: 0 });
     expect(adTargetAlpha(0, slot('lower_third', FULL_AT_30))).toBe(0); // hidden by schedule
     expect(adTargetAlpha(0, slot('lower_third', FULL_AT_30, { manual: 'shown' }))).toBe(1);
     expect(adTargetAlpha(35, slot('lower_third', FULL_AT_30, { manual: 'hidden' }))).toBe(0);
@@ -187,7 +187,7 @@ test.describe('ad priority and manual control', () => {
     expect(adTargetAlpha(35, slot('lower_third', CONT, { enabled: false, manual: 'shown' }))).toBe(0);
     // A manually shown full screen also covers the others.
     const a = resolveAdAlphas(0, [slot('lower_third', CONT), slot('full_screen', FULL_AT_30, { manual: 'shown' })]);
-    expect(a).toEqual({ lower_third: 0, side_third: 0, full_screen: 1 });
+    expect(a).toEqual({ lower_third: 0, side_third: 0, full_screen: 1, l_shape: 0 });
   });
 
   test('stepAlpha fades manual changes over 300 ms', () => {

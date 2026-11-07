@@ -4,9 +4,10 @@ import { ApiError } from '../api/client';
 import { streamThumbnailUrl, uploadStreamThumbnail } from '../api/streams';
 import { Button, Card } from './ui';
 import { thumbnailProblem } from './ThumbnailPicker';
+import { KitThumbnailNote } from './KitThumbnailNote';
 
 /** Add/replace the thumbnail of a live (or otherwise not-yet-ended, non-scheduled) stream. */
-export function LiveThumbnailPanel({ streamId }: { streamId: string }) {
+export function LiveThumbnailPanel({ streamId, connectionIds = [] }: { streamId: string; connectionIds?: readonly string[] }) {
   const input = useRef<HTMLInputElement>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [hasImage, setHasImage] = useState(true); // optimistic; the <img> onError flips it
@@ -42,6 +43,7 @@ export function LiveThumbnailPanel({ streamId }: { streamId: string }) {
             No thumbnail yet
           </div>
         )}
+        {!hasImage && <KitThumbnailNote connectionIds={connectionIds} tense="is" />}
         <div className="ha-actions">
           <Button variant="secondary" busy={busy} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => input.current?.click()}>
             {hasImage ? 'Replace thumbnail' : 'Upload thumbnail'}

@@ -142,6 +142,10 @@ export interface Stream {
   expectedDurationMinutes: number | null;
   cancelledAt: string | null;
   destinations: Destination[];
+  /** Go live now only: the brand kit whose thumbnail was sent to the destinations (null/absent = none). */
+  thumbnailKit?: { id: string; name: string } | null;
+  /** Go live now only: platforms that refused the brand kit's thumbnail (going live was not affected). */
+  thumbnailWarnings?: string[];
 }
 
 export interface ScheduleGuest {
@@ -501,7 +505,7 @@ export interface AdminBilling {
   payments: AdminPayment[];
 }
 
-export type AssetKind = 'logo' | 'wallpaper' | 'background' | 'other' | 'ad';
+export type AssetKind = 'logo' | 'wallpaper' | 'background' | 'other' | 'ad' | 'thumbnail';
 
 export interface LibraryAsset {
   id: string;
@@ -527,7 +531,7 @@ export interface AssetLibrary {
 
 export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
 
-export type AdPlacementId = 'lower_third' | 'side_third' | 'full_screen';
+export type AdPlacementId = 'lower_third' | 'side_third' | 'full_screen' | 'l_shape';
 
 /** One advertisement of a brand kit (one per placement). Continuous ads carry null schedule numbers; times are in seconds. */
 export interface BrandKitAd {
@@ -555,6 +559,8 @@ export interface BrandKit {
   isDefault: boolean;
   /** Shrink the live picture into the space an ad leaves free while it shows. */
   adsShrinkPicture: boolean;
+  /** The kit's stream thumbnail (a JPG/PNG library file, 16:9 recommended); one for both orientations. null = none. */
+  thumbnailAssetId: string | null;
   /** The channels/pages (platform connections) using this kit. */
   connectionIds: string[];
   /** Landscape ads: at most one ad per placement. */
@@ -567,6 +573,7 @@ export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPositio
   logoAssetIdPortrait?: string | null;
   wallpaperAssetIdPortrait?: string | null;
   adsShrinkPicture?: boolean;
+  thumbnailAssetId?: string | null;
   isDefault?: boolean;
   ads?: BrandKitAd[];
   adsPortrait?: BrandKitAd[];

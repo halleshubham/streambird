@@ -20,6 +20,8 @@ export function createStream(dto: {
   visibility?: 'public' | 'unlisted' | 'private';
   orientation?: 'landscape' | 'portrait';
   destinationConnectionIds: string[];
+  /** Which brand kit's thumbnail a stream without its own gets: omitted = the destination's kit, else the account default; a kit id = that kit; null = none. */
+  thumbnailBrandKitId?: string | null;
 }): Promise<Stream> {
   return api.post('/streams', dto);
 }

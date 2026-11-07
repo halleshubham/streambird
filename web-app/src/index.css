@@ -3869,6 +3869,9 @@ video.chroma-preview {
 .ad-file-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ad-thumb { flex: none; width: 96px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; color: var(--text); background: repeating-conic-gradient(#8881 0% 25%, transparent 0% 50%) 50% / 12px 12px; }
 .ad-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ad-thumb-frame { position: relative; display: block; height: 100%; max-width: 100%; }
+.ad-thumb-frame img { width: 100%; height: 100%; object-fit: fill; }
+.ad-window-outline { position: absolute; border: 2px solid #ff3b6b; box-shadow: 0 0 0 1px #fff8; box-sizing: border-box; pointer-events: none; }
 .ad-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 .ad-card .segmented { flex-wrap: wrap; border-radius: 16px; align-self: flex-start; max-width: 100%; }
 .ad-card .segmented button { padding: 8px 14px; }
@@ -3890,6 +3893,15 @@ video.chroma-preview {
 .kit-preview-ad--lower_third { left: 0; right: 0; bottom: 0; height: 33.333%; }
 .kit-preview-ad--side_third { left: 0; top: 0; bottom: 0; width: 33.333%; align-items: center; }
 .kit-preview-ad--full_screen { inset: 0; align-items: center; }
+.kit-preview-ad--l_shape { inset: 0; align-items: center; outline: none; }
+.kit-preview-ad--l_shape img { width: 100%; height: 100%; object-fit: contain; }
+.kit-preview-scene { position: absolute; overflow: hidden; background: linear-gradient(135deg, #1b1038, #0e0e16); }
+.kit-thumb-note { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.kit-thumb-note-img { width: 96px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex: none; }
+.kit-frame-check { display: flex; flex-direction: column; gap: 6px; }
+.kit-frame-preview { position: relative; width: 160px; max-width: 100%; aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #8881; }
+.kit-frame-preview--portrait { width: 90px; aspect-ratio: 9 / 16; }
+.kit-frame-preview img { width: 100%; height: 100%; object-fit: fill; display: block; }
 .kit-preview-ad-tag { position: absolute; top: 2px; right: 3px; font-size: 8px; line-height: 1; color: #fff; background: rgba(0, 0, 0, 0.55); padding: 2px 3px; border-radius: 3px; }
 .studio-tab { padding: 8px 9px; gap: 4px; }
 .ad-card > .icon-btn { align-self: flex-start; }

@@ -28,9 +28,9 @@ const RED = [255, 0, 0] as const;
 const GREEN = [0, 255, 0] as const;
 const BLUE = [0, 0, 255] as const;
 /** Picture shapes that roughly match their placement, so the contain-fit leaves little letterbox. */
-const SHAPE: Record<AdPlacement, [number, number]> = { lower_third: [128, 24], side_third: [43, 72], full_screen: [160, 90] };
-const LABEL: Record<AdPlacement, string> = { lower_third: 'Lower third', side_third: 'Left third', full_screen: 'Full screen' };
-const COLOR: Record<AdPlacement, readonly [number, number, number]> = { lower_third: RED, side_third: GREEN, full_screen: BLUE };
+const SHAPE: Record<AdPlacement, [number, number]> = { lower_third: [128, 24], side_third: [43, 72], full_screen: [160, 90], l_shape: [160, 90] };
+const LABEL: Record<AdPlacement, string> = { lower_third: 'Lower third', side_third: 'Left third', full_screen: 'Full screen', l_shape: 'L-shaped frame' };
+const COLOR: Record<AdPlacement, readonly [number, number, number]> = { lower_third: RED, side_third: GREEN, full_screen: BLUE, l_shape: RED };
 
 const png = (p: AdPlacement) => solidPng(...COLOR[p], ...SHAPE[p]);
 /** The middle of where a picture of this placement's shape ends up on a W x H canvas. */

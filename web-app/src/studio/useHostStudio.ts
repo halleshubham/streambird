@@ -306,7 +306,7 @@ function saveAdFile(streamId: string, placement: AdPlacement, dataUrl: string | 
 /** Ads picked on this computer: pictures only, and not absurdly large (the canvas holds them in memory). */
 const MAX_AD_FILE_BYTES = 12 * 1024 * 1024;
 const AD_FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false, stillReason: null };
+const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false, stillReason: null, window: null, aspect: null };
 const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
 // The host's green-screen background picture lives in its own key (a full quota must not drop the rest).
 const chromaBgKey = (streamId: string) => `streambird:studio:${streamId}:chromabg:v1`;
@@ -452,7 +452,7 @@ export function useHostStudio(streamId: string | undefined) {
   if (!adLayerRef.current) adLayerRef.current = new AdLayer();
   const [adsShrink, setAdsShrinkState] = useState(true);
   const [adsPlan, setAdsPlan] = useState<'unknown' | 'free' | 'custom'>('unknown');
-  const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD });
+  const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD, l_shape: EMPTY_AD });
   /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
   const [lowerThird, setLowerThirdState] = useState<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
   const lowerThirdRef = useRef<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
@@ -1202,6 +1202,9 @@ export function useHostStudio(streamId: string | undefined) {
       const sceneBox = adLayer ? adLayer.sceneRect(w, h) : null;
       const realCtx = ctx;
       let sceneCtx = ctx;
+      // An L-shaped frame is the base layer: drawn full-frame now, the scene then goes into its window on top.
+      const frameOn = !!adLayer && adLayer.frameActive();
+      if (frameOn) adLayer!.paintBase(realCtx, now);
       if (sceneBox) {
         let off = sceneCanvasRef.current;
         if (!off) off = sceneCanvasRef.current = document.createElement('canvas');
@@ -1211,6 +1214,14 @@ export function useHostStudio(streamId: string | undefined) {
         }
         sceneCtx = off.getContext('2d')!;
         sceneCtx.clearRect(0, 0, w, h);
+        if (frameOn) {
+          // Inside a frame the picture carries its own background and wallpaper (the frame graphic covers the full-frame ones).
+          paintBackground(sceneCtx, getTheme(themeIdRef.current), w, h);
+          if (wp) {
+            const ws = wallpaperSettingsRef.current;
+            paintWallpaper(sceneCtx, wp, w, h, ws.x, ws.y, ws.dim);
+          }
+        }
         ctxRef.current = sceneCtx; // every scene draw function paints on ctxRef.current
       }
 
@@ -2340,7 +2351,7 @@ export function useHostStudio(streamId: string | undefined) {
 
   function refreshAds() {
     const layer = adLayerRef.current!;
-    setAdsUi({ lower_third: layer.info('lower_third'), side_third: layer.info('side_third'), full_screen: layer.info('full_screen') });
+    setAdsUi({ lower_third: layer.info('lower_third'), side_third: layer.info('side_third'), full_screen: layer.info('full_screen'), l_shape: layer.info('l_shape') });
   }
 
   /** Keeps what the host chose per stream (on/off, schedule, where the file came from). Manual Show/Hide is never kept. */
