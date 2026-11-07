@@ -195,7 +195,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       expect((await client.patch(`/brand-kits/${kit.body.id}`, { ads: [] })).status).toBe(200); // removing is always fine
     });
 
-    it('create, read, replace-all, omit-keeps, clear: up to 3 ads, one per placement, with their schedules', async () => {
+    it('create, read, replace-all, omit-keeps, clear: up to 4 ads, one per placement, with their schedules', async () => {
       await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
       const { client } = await h.signIn();
       const [a1, a2, a3] = [await upload(client, fakePng(1280, 240), 'ad', 'Lower'), await upload(client, fakePng(427, 720), 'ad', 'Side'), await upload(client, fakePng(1280, 720), 'ad', 'Full')].map((r) => r.body);
@@ -242,7 +242,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       expect((await client.del(`/assets/${a3.id}`)).status).toBe(204);
     });
 
-    it('validation: placement, schedule ranges, interval needs both numbers, one per placement, max 3, owned files of kind ad', async () => {
+    it('validation: placement, schedule ranges, interval needs both numbers, one per placement, owned files of kind ad', async () => {
       await admin.patch('/superadmin/plans/free', { assetStorageMb: 5, watermark: false });
       const { client } = await h.signIn();
       const ad = (await upload(client, fakePng(1280, 240), 'ad', 'Banner')).body;
@@ -262,7 +262,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 10, everySec: 86401 }]);
       await bad([{ placement: 'lower_third', assetId: ad.id, mode: 'interval', showSec: 1.5, everySec: 10 }]);
       await bad([{ placement: 'lower_third', assetId: ad.id }, { placement: 'lower_third', assetId: ad.id }]); // one per placement
-      await bad([...PLACEMENTS.map((placement) => ({ placement, assetId: ad.id })), { placement: 'lower_third', assetId: ad.id }]); // max 3
+      await bad([...PLACEMENTS.map((placement) => ({ placement, assetId: ad.id })), { placement: 'lower_third', assetId: ad.id }]); // duplicate placement
       await bad([{ placement: 'lower_third', assetId: logo.id }]); // a logo is not an ad
       await bad([{ placement: 'lower_third', assetId: ad.id, surprise: true }]); // unknown field
       await bad('lower_third');
