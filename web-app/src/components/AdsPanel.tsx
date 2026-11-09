@@ -8,6 +8,7 @@ import {
   AD_SHOW_SEC_RANGE,
   FREE_PLAN_AD_SCHEDULE,
   describeSchedule,
+  formatCountdown,
   scheduleError,
   splitSeconds,
   toSeconds,
@@ -36,6 +37,7 @@ interface Props {
     setAdEnabled: (p: AdPlacement, enabled: boolean) => void;
     setAdSchedule: (p: AdPlacement, schedule: AdSchedule) => void;
     setAdManual: (p: AdPlacement, manual: AdManual) => void;
+    adTiming: (p: AdPlacement) => { visible: boolean; secondsLeft: number } | null;
     setAdFile: (p: AdPlacement, file: File | null) => Promise<void>;
     useKitAd: (p: AdPlacement) => Promise<void>;
   };
@@ -125,6 +127,21 @@ function AdCard({
   const frameBlocked = placement === 'l_shape' && !shrink; // an L-shaped frame cannot run with the picture-shrink switch off
   const noWindow = placement === 'l_shape' && info.hasMedia && !info.window;
   const manualNote = info.manual === 'shown' ? 'Showing now (by hand)' : info.manual === 'hidden' ? 'Hidden (by hand)' : info.hasMedia ? describeSchedule(info.schedule) : 'No picture yet';
+
+  // A "now and then" ad is hidden until its first showing: say when that is, counting down live.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!timed || !info.hasMedia) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [timed, info.hasMedia]);
+  const timing = timed && info.hasMedia && info.enabled && !frameBlocked ? actions.adTiming(placement) : null;
+  const timingNote =
+    info.manual || !timing
+      ? null
+      : timing.visible
+        ? `Showing now; hides in ${formatCountdown(timing.secondsLeft)}.`
+        : `Hidden for now; shows in ${formatCountdown(timing.secondsLeft)} for ${describeSchedule(info.schedule).replace(/^Shown for (.*?),.*$/, '$1')}.`;
 
   async function pick(file: File | undefined) {
     if (!file) return;
@@ -251,6 +268,11 @@ function AdCard({
       <p className="field-hint" role="status" data-testid={`ad-status-${placement}`}>
         {frameBlocked && info.hasMedia ? 'Off while the picture does not shrink' : info.hasMedia && !info.enabled ? 'Switched off' : manualNote}
       </p>
+      {timingNote && (
+        <p className="field-hint" role="status" data-testid={`ad-timing-${placement}`}>
+          {timingNote} Use Show now to see it straight away. This preview timer starts again when you go live.
+        </p>
+      )}
     </div>
   );
 }

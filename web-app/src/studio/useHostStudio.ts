@@ -269,6 +269,8 @@ interface PersistedStudioState {
   wentLive: boolean;
   /** The brand kit applied to this stream: undefined = never chosen (the destination's or default kit is applied once), null = chosen manual. */
   brandKitId: string | null;
+  /** True from the moment a kit is chosen for the stream until its first full apply (logo, wallpaper AND ads) has finished: a studio that opens with this set applies the kit completely, not just the reload top-up. */
+  kitPending: boolean;
   /** The host's own green-screen settings (guests' are per visit and not kept). */
   chroma: ChromaSettings;
   /** Per-stream ad overrides (on/off, schedule, where the file came from). The pictures themselves: adFilesKey / the asset library. */
@@ -362,7 +364,10 @@ export function seedStudioFromPreset(streamId: string, cfg: PresetConfig): void 
   if (cfg.tickerEnabled !== undefined || cfg.tickerText !== undefined) {
     patch.branding = { ...DEFAULT_BRANDING, newsText: cfg.tickerEnabled === false ? '' : (cfg.tickerText ?? '') };
   }
-  if (cfg.brandKitId !== undefined) patch.brandKitId = cfg.brandKitId;
+  if (cfg.brandKitId !== undefined) {
+    patch.brandKitId = cfg.brandKitId;
+    patch.kitPending = typeof cfg.brandKitId === 'string'; // chosen on the form, but nothing of it is on the canvas yet
+  }
   if (Object.keys(patch).length > 0) savePersisted(streamId, patch);
 }
 
@@ -1710,6 +1715,12 @@ export function useHostStudio(streamId: string | undefined) {
     if (typeof saved.brandKitId === 'string') {
       const kit = byId(saved.brandKitId);
       if (!kit) return;
+      // The kit was picked for this stream (New stream form, a preset) or a first apply never finished (the host left
+      // early, a file failed to load): apply it in full, ads included. Otherwise this is a reload.
+      if (saved.kitPending) {
+        void applyBrandKit(kit);
+        return;
+      }
       setActiveKitId(kit.id);
       // Big pictures are not kept in the browser: fetch them again so a reload keeps the look.
       const set = kitSetFor(kit, stream.orientation ?? 'landscape');
@@ -2300,7 +2311,7 @@ export function useHostStudio(streamId: string | undefined) {
   /** Applies a saved brand kit (logo, wallpaper, logo position/size, lower-third look) to this stream; null = go back to manual. */
   async function applyBrandKit(kit: BrandKit | null, opts: { silent?: boolean } = {}) {
     setActiveKitId(kit ? kit.id : null);
-    if (streamIdRef.current) savePersisted(streamIdRef.current, { brandKitId: kit ? kit.id : null });
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { brandKitId: kit ? kit.id : null, kitPending: !!kit && !opts.silent });
     if (!kit) {
       // "Manual": the look stays as it is, but ads that came from a kit leave the canvas (ads picked on this computer stay).
       clearKitAds();
@@ -2341,9 +2352,13 @@ export function useHostStudio(streamId: string | undefined) {
       persistAds();
     }
     if (failed.length > 0) {
+      // kitPending stays set, so the next open of this stream tries the kit again.
+      console.warn('[brand kit] could not load', failed.join(', '), 'of kit', kit.name);
       setStatus({ text: `Could not load the ${failed.join(', ')} of brand kit "${kit.name}". Check your connection and pick the kit again.`, isError: true });
     } else if (!opts.silent) {
-      setStatus({ text: `Applied brand kit "${kit.name}".`, isError: false });
+      if (streamIdRef.current) savePersisted(streamIdRef.current, { kitPending: false });
+      const timed = set.ads.some((a) => a.mode === 'interval');
+      setStatus({ text: `Applied brand kit "${kit.name}".${timed ? ' Ads set to "now and then" show on their timer; it starts again when you go live (see the Ads tab).' : ''}`, isError: false });
     }
   }
 
@@ -2385,6 +2400,11 @@ export function useHostStudio(streamId: string | undefined) {
     adLayerRef.current!.setSchedule(p, schedule);
     refreshAds();
     persistAds();
+  }
+
+  /** Where an ad's "now and then" schedule is (for the card's countdown). */
+  function adTiming(p: AdPlacement) {
+    return adLayerRef.current!.timing(p);
   }
 
   function setAdManual(p: AdPlacement, manual: AdManual) {
@@ -3325,6 +3345,7 @@ export function useHostStudio(streamId: string | undefined) {
       setAdsShrink,
       setAdSchedule,
       setAdManual,
+      adTiming,
       setAdFile,
       useKitAd,
       setLogoSize,

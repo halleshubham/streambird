@@ -124,6 +124,23 @@ export function adVisibility(elapsedSec: number, schedule: AdSchedule): AdVisibi
   return a < 0 ? { visible: false, alpha: 0 } : { visible: true, alpha: a };
 }
 
+/** Where an interval schedule is at `elapsedSec`: shown or hidden, and whole seconds until that flips (null for "always on"). */
+export function adScheduleTiming(elapsedSec: number, schedule: AdSchedule): { visible: boolean; secondsLeft: number } | null {
+  if (!schedule || schedule.mode !== 'interval') return null;
+  const { showSec, everySec } = schedule;
+  if (!(showSec > 0) || !(everySec > 0)) return null;
+  const cycle = everySec + showSec;
+  const e = Number.isFinite(elapsedSec) && elapsedSec > 0 ? elapsedSec : 0;
+  const t = e % cycle;
+  return t < everySec ? { visible: false, secondsLeft: Math.ceil(everySec - t) } : { visible: true, secondsLeft: Math.ceil(cycle - t) };
+}
+
+/** m:ss for a countdown ("2:41"). */
+export function formatCountdown(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 /** What the host did by hand in the studio: null = follow the schedule. Never saved; a reload goes back to the schedule. */
 export type AdManual = 'shown' | 'hidden' | null;
 

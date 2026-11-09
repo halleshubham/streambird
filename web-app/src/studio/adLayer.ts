@@ -8,6 +8,7 @@ import {
   AD_DRAW_ORDER,
   FREE_PLAN_AD_SCHEDULE,
   adRect,
+  adScheduleTiming,
   adTargetAlpha,
   fitAd,
   resolveAdAlphas,
@@ -144,6 +145,11 @@ export class AdLayer {
   info(p: AdPlacement): AdInfo {
     const r = this.rt[p];
     return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still, stillReason: r.stillReason, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
+  }
+
+  /** Where this ad's schedule is right now (null = always on). The clock is the preview clock: it restarts when the host goes live. */
+  timing(p: AdPlacement, now = performance.now()): { visible: boolean; secondsLeft: number } | null {
+    return adScheduleTiming(this.elapsedSec(now), this.rt[p].schedule);
   }
 
   /** The Free plan draws only StreamBird's own ad, so custom GIFs are not even decoded there. */
