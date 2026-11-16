@@ -20,6 +20,8 @@ import { getBillingConfig } from '../api/billing';
 import type { PublicPlan } from '../types/api';
 import { FacebookLogo, GoogleLogo } from '../components/AuthLogos';
 import { PlatformBadge } from '../components/PlatformBadge';
+import { AuthCta } from '../components/AuthCta';
+import { useAuth } from '../context/AuthContext';
 import { BrandLink } from '../components/PublicLayout';
 import { Badge, buttonClass } from '../components/ui';
 import { HeroShowcase } from '../components/HeroShowcase';
@@ -191,6 +193,7 @@ const FAQ = [
 ];
 
 export function LandingPage() {
+  const authed = useAuth().status === 'authenticated';
   const [currency, setCurrency] = useState<Currency>(detectDefaultCurrency);
   // Pricing comes from the admin-managed plans; the static TIERS are the fallback if that request fails.
   const [livePlans, setLivePlans] = useState<PublicPlan[] | null>(null);
@@ -214,9 +217,9 @@ export function LandingPage() {
           <a href="#faq">FAQ</a>
           <a href={docsUrl()} target="_blank" rel="noopener">Guides</a>
         </nav>
-        <Link to="/login" className={buttonClass('secondary', 'sm')}>
+        <AuthCta variant="secondary" authedVariant="primary" size="sm" testId="nav-dashboard">
           Log in
-        </Link>
+        </AuthCta>
       </header>
 
       <main>
@@ -235,21 +238,23 @@ export function LandingPage() {
             mix-minus audio and your own branding. No app to install, no managed-cloud markup.
           </p>
           <div className="pub-hero-actions">
-            <Link to="/login" className={buttonClass('primary', 'lg')}>
+            <AuthCta variant="primary" size="lg" authedLabel="Open dashboard" testId="hero-dashboard">
               Go live free
-            </Link>
+            </AuthCta>
             <a href="#how" className={buttonClass('ghost', 'lg')}>
               See how it works
             </a>
           </div>
-          <div className="pub-hero-social">
-            <a href={authApi.googleLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Sign in with Google">
-              <GoogleLogo /> Google
-            </a>
-            <a href={authApi.facebookLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Continue with Facebook">
-              <FacebookLogo /> Facebook
-            </a>
-          </div>
+          {!authed && (
+            <div className="pub-hero-social">
+              <a href={authApi.googleLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Sign in with Google">
+                <GoogleLogo /> Google
+              </a>
+              <a href={authApi.facebookLoginUrl()} className={buttonClass('secondary', 'sm')} aria-label="Continue with Facebook">
+                <FacebookLogo /> Facebook
+              </a>
+            </div>
+          )}
           <p className="pub-trust">
             <ShieldCheck size={14} aria-hidden="true" /> No credit card to start &middot; Free tier included &middot; Self-hosted
             relay, no vendor lock-in
@@ -388,12 +393,20 @@ export function LandingPage() {
             <h2>Ready when you are.</h2>
             <p>Set up your company in a minute and go live today.</p>
             <div className="pub-cta-actions">
-              <Link to="/signup-company" className="pub-cta-primary">
-                Create company
-              </Link>
-              <Link to="/login" className="pub-cta-secondary">
-                Log in
-              </Link>
+              {authed ? (
+                <AuthCta className="pub-cta-primary" authedLabel="Open dashboard" testId="cta-dashboard">
+                  Log in
+                </AuthCta>
+              ) : (
+                <>
+                  <Link to="/signup-company" className="pub-cta-primary">
+                    Create company
+                  </Link>
+                  <Link to="/login" className="pub-cta-secondary">
+                    Log in
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

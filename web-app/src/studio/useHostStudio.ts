@@ -3170,7 +3170,7 @@ export function useHostStudio(streamId: string | undefined) {
 
     if (ended) {
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = '/dashboard';
       }, 1500);
     }
     return ended;
