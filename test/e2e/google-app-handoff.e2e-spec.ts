@@ -192,7 +192,7 @@ describeE2E('Google sign-in browser fallback for the Android app (one-time hando
     expect((await redeem(c, { code: 5, verifier: verifier() })).status).toBe(400);
   });
 
-  it('the plain web flow is unchanged: session cookie and redirect to /', async () => {
+  it('the plain web flow is unchanged: session cookie and redirect to /dashboard', async () => {
     const email = `gapp-web-${rnd}@e2e.test`;
     const s = await start('/auth/google');
     expect(s.setCookies.some((c) => c.startsWith('sb_google_app='))).toBe(false);
@@ -201,7 +201,7 @@ describeE2E('Google sign-in browser fallback for the Android app (one-time hando
     googleFails = false;
     const res = await fetch(`${h.baseUrl}/api/auth/google/callback?code=gcode&state=${s.state}`, { redirect: 'manual', headers: { Cookie: s.cookies } });
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
+    expect(res.headers.get('location')).toBe('/dashboard');
     expect(res.headers.getSetCookie().some((c) => c.startsWith('sb_session='))).toBe(true);
   });
 

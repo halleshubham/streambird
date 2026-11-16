@@ -200,7 +200,7 @@ test.describe('signed-in user', () => {
       await expect(page.getByRole('button', { name: /Subscribe -- autopay/ })).toHaveCount(4); // Lite, Starter, Pro, Business
       await expect(page.getByRole('button', { name: /Or pay once for 30 days/ })).toHaveCount(4);
       await expect(page.getByRole('button', { name: 'Buy' })).toHaveCount(1); // the Day Pass
-      // The home page redirects signed-in users to the dashboard, so look at pricing as a visitor.
+      // Look at the pricing section as an anonymous visitor (a fresh page, no session).
       const visitor = await browser.newPage();
       await visitor.goto(`${APP}/`);
       await expect(visitor.locator('#pricing').getByRole('link', { name: 'Buy' })).toHaveCount(5); // priced plans only

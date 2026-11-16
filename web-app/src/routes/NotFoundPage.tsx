@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { BrandLink } from '../components/PublicLayout';
+import { AuthCta } from '../components/AuthCta';
 import { buttonClass } from '../components/ui';
 
 export function NotFoundPage() {
@@ -19,9 +20,9 @@ export function NotFoundPage() {
           <Link to="/" className={buttonClass('primary', 'lg')}>
             Back to home
           </Link>
-          <Link to="/login" className={buttonClass('ghost', 'lg')}>
+          <AuthCta variant="ghost" size="lg">
             Log in
-          </Link>
+          </AuthCta>
         </div>
       </main>
     </div>

@@ -278,7 +278,7 @@ export class AuthController {
         {},
       );
       this.setSessionCookie(res, token, expiresAt);
-      res.redirect('/');
+      res.redirect('/dashboard');
     } catch {
       res.redirect('/login?error=google_oauth_failed');
     }
@@ -411,7 +411,7 @@ export class AuthController {
       }
       const { token, expiresAt } = await this.authService.loginWithFacebookProfile(profile.email, {});
       this.setSessionCookie(res, token, expiresAt);
-      res.redirect('/');
+      res.redirect('/dashboard');
     } catch {
       res.redirect('/login?error=facebook_oauth_failed');
     }

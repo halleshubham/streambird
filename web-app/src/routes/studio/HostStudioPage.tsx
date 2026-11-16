@@ -1226,7 +1226,7 @@ export function HostStudioPage() {
           <div className="studio-ended-card">
             <h2>Stream ended</h2>
             <p>Your broadcast has stopped on every destination. Taking you back to your dashboard.</p>
-            <a className="ui-btn ui-btn--primary" href="/">Back to dashboard</a>
+            <a className="ui-btn ui-btn--primary" href="/dashboard">Back to dashboard</a>
           </div>
         </div>
       )}
