@@ -36,6 +36,7 @@ export function cleanConfig(dto: PresetConfigDto): PresetConfig {
   if (dto.destinationIds) out.destinationIds = [...new Set(dto.destinationIds)];
   if (dto.brandKitId !== undefined) out.brandKitId = dto.brandKitId;
   if (dto.quality) out.quality = dto.quality;
+  if (dto.visibility) out.visibility = dto.visibility;
   if (typeof dto.tickerEnabled === 'boolean') out.tickerEnabled = dto.tickerEnabled;
   if (typeof dto.tickerText === 'string') out.tickerText = dto.tickerText;
   return out;
@@ -119,12 +120,15 @@ export class PresetsService {
     // the preset has none chosen), else the preset's name. A preset stores no title of its own. The kit choice also picks the
     // default description and the kit thumbnail: brandKitId omitted = automatic, null = "no kit", an id = that kit.
     const kitChoice = resolved.effectiveConfig.brandKitId;
+    // Visibility: this start's choice, else the preset's, else none (the stream is created as before; YouTube makes it unlisted).
+    const visibility = dto.visibility ?? resolved.effectiveConfig.visibility;
     const stream = await this.streams.create(
       accountId,
       {
         title: dto.title?.trim() || undefined,
         orientation: resolved.effectiveConfig.orientation ?? 'landscape',
         destinationConnectionIds: destinationIds,
+        ...(visibility ? { visibility } : {}),
         ...(kitChoice !== undefined ? { thumbnailBrandKitId: kitChoice } : {}),
       },
       { fallbackTitle: preset.name },

@@ -621,11 +621,15 @@ export interface HeavyUsageRow {
 
 // ---- Stream presets (docs/API-PRESETS.md) ------------------------------------
 
+export type StreamVisibility = 'public' | 'unlisted' | 'private';
+
 export interface PresetConfig {
   orientation?: 'landscape' | 'portrait';
   destinationIds?: string[];
   brandKitId?: string | null;
   quality?: Resolution;
+  /** Omitted = not chosen: the stream is created without one and YouTube makes it unlisted. */
+  visibility?: StreamVisibility;
   tickerEnabled?: boolean;
   tickerText?: string;
 }

@@ -5,7 +5,7 @@ import { createPreset, deletePreset, listPresets, startPreset, updatePreset } fr
 import { createStream } from '../api/streams';
 import { ApiError } from '../api/client';
 import { PresetForm } from './PresetForm';
-import { destinationList, presetOptionsLine } from '../lib/presets';
+import { DEFAULT_PRESET_VISIBILITY, destinationList, presetOptionsLine } from '../lib/presets';
 import { kitDefaultText } from '../lib/kitText';
 import { seedStudioFromPreset } from '../studio/useHostStudio';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, StreamPreset } from '../types/api';
@@ -60,6 +60,8 @@ export function PresetsSection({
     orientation: 'landscape',
     destinationIds: connections.slice(0, Math.max(1, limits?.maxDestinations ?? connections.length)).map((c) => c.id),
     quality: 'hd',
+    // Stated on purpose: this is what the one-tap default has always done on YouTube, now shown and sent explicitly.
+    visibility: DEFAULT_PRESET_VISIBILITY,
     tickerEnabled: false,
   };
 
@@ -69,7 +71,7 @@ export function PresetsSection({
     try {
       // The brand kit's default title is the server's to apply (a blank title takes it); 'Untitled stream' only when no kit has one.
       const hasKitTitle = !!kitDefaultText(defaultConfig.destinationIds ?? [], kits).title;
-      const stream = await createStream({ ...(hasKitTitle ? {} : { title: 'Untitled stream' }), orientation: 'landscape', destinationConnectionIds: defaultConfig.destinationIds ?? [] });
+      const stream = await createStream({ ...(hasKitTitle ? {} : { title: 'Untitled stream' }), orientation: 'landscape', visibility: DEFAULT_PRESET_VISIBILITY, destinationConnectionIds: defaultConfig.destinationIds ?? [] });
       navigate(`/streams/${stream.id}/studio`, { state: { autoCamera: true, offerPreset: defaultConfig } });
     } catch (e) {
       fail(e, 'Could not start this stream.');

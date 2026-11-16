@@ -102,6 +102,7 @@ export function CreateStreamPage() {
       orientation,
       destinationIds: (connections ?? []).filter((c) => selected.has(c.id)).map((c) => c.id),
       quality: effectiveQuality,
+      visibility,
       tickerEnabled: tickerOn,
       ...(tickerActive ? { tickerText: tickerText.trim() } : {}),
     };

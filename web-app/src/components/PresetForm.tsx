@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { Save } from 'lucide-react';
 import { DestinationPicker } from './host/DestinationPicker';
 import { Button, Input, SelectField } from './ui';
-import { MAX_PRESET_NAME, QUALITY_ORDER, QUALITY_SHORT } from '../lib/presets';
-import type { BrandKit, PlatformConnection, PresetConfig, Resolution } from '../types/api';
+import { DEFAULT_PRESET_VISIBILITY, MAX_PRESET_NAME, QUALITY_ORDER, QUALITY_SHORT, VISIBILITY_HINT, VISIBILITY_LABEL } from '../lib/presets';
+import type { BrandKit, PlatformConnection, PresetConfig, Resolution, StreamVisibility } from '../types/api';
 
 export interface PresetFormProps {
   connections: PlatformConnection[];
@@ -20,7 +20,7 @@ export interface PresetFormProps {
   onCancel: () => void;
 }
 
-/** The small inline form to make or edit a preset: name, destinations, brand kit, shape, quality, ticker. */
+/** The small inline form to make or edit a preset: name, destinations, brand kit, shape, quality, visibility, ticker. */
 export function PresetForm({ connections, kits, maxResolution, initialName = '', initial, busy, error, submitLabel, onSubmit, onCancel }: PresetFormProps) {
   const uid = useId();
   const [name, setName] = useState(initialName);
@@ -29,6 +29,8 @@ export function PresetForm({ connections, kits, maxResolution, initialName = '',
   const [kit, setKit] = useState<string>(initial?.brandKitId === null ? 'none' : (initial?.brandKitId ?? ''));
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>(initial?.orientation ?? 'landscape');
   const [quality, setQuality] = useState<Resolution>(initial?.quality && QUALITY_ORDER.indexOf(initial.quality) <= QUALITY_ORDER.indexOf(maxResolution) ? initial.quality : 'hd');
+  // A preset without a saved choice shows what it does today (unlisted on YouTube); saving writes the choice down.
+  const [visibility, setVisibility] = useState<StreamVisibility>(initial?.visibility ?? DEFAULT_PRESET_VISIBILITY);
   const [tickerOn, setTickerOn] = useState(!!initial?.tickerEnabled);
   const [tickerText, setTickerText] = useState(initial?.tickerText ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -52,6 +54,7 @@ export function PresetForm({ connections, kits, maxResolution, initialName = '',
       orientation,
       destinationIds: connections.filter((c) => selected.has(c.id)).map((c) => c.id),
       quality,
+      visibility,
       tickerEnabled: tickerOn,
       ...(tickerOn && tickerText.trim() ? { tickerText: tickerText.trim() } : {}),
     };
@@ -89,6 +92,13 @@ export function PresetForm({ connections, kits, maxResolution, initialName = '',
           {QUALITY_ORDER.filter((q) => QUALITY_ORDER.indexOf(q) <= QUALITY_ORDER.indexOf(maxResolution)).map((q) => (
             <option key={q} value={q}>
               {QUALITY_SHORT[q]}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField id={`${uid}-visibility`} label="Visibility" value={visibility} onChange={(e) => setVisibility(e.target.value as StreamVisibility)} hint={VISIBILITY_HINT}>
+          {(Object.keys(VISIBILITY_LABEL) as StreamVisibility[]).map((v) => (
+            <option key={v} value={v}>
+              {VISIBILITY_LABEL[v]}
             </option>
           ))}
         </SelectField>

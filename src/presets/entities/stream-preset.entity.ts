@@ -8,6 +8,7 @@ export interface PresetConfig {
   destinationIds?: string[];
   brandKitId?: string | null;
   quality?: PresetQuality;
+  visibility?: 'public' | 'unlisted' | 'private';
   tickerEnabled?: boolean;
   tickerText?: string;
 }

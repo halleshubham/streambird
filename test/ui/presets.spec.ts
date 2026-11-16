@@ -25,14 +25,15 @@ test.describe('dashboard presets', () => {
     const card = page.getByRole('article', { name: 'Go live' });
     await expect(card).toBeVisible();
     await expect(card).toContainText('Twitch');
-    await expect(card).toContainText('Default look · 720p · ticker off');
+    await expect(card).toContainText('Default look · Unlisted · 720p · ticker off'); // says what the one-tap default does on YouTube
     await expect(card.getByRole('button', { name: 'Save as preset' })).toBeVisible();
     // The old entry to the full setup form is still there.
     await expect(page.locator('a.go-live-cta')).toBeVisible();
 
     const created = page.waitForRequest((r) => r.url().endsWith('/api/streams') && r.method() === 'POST');
     await card.getByRole('button', { name: 'Go live now' }).click();
-    expect((await created).postDataJSON()).toMatchObject({ orientation: 'landscape' });
+    // The default card keeps its behaviour (unlisted on YouTube) and now says so in the request.
+    expect((await created).postDataJSON()).toMatchObject({ orientation: 'landscape', visibility: 'unlisted' });
     await expect(page).toHaveURL(/\/streams\/[^/]+\/studio$/);
     // Camera is on already; publishing still needs the host's tap on Go live.
     await expect(page.getByRole('button', { name: 'Camera on' })).toBeVisible({ timeout: 15_000 });
@@ -52,8 +53,11 @@ test.describe('dashboard presets', () => {
     const card = page.getByRole('article', { name: 'Everyday' });
     await expect(card).toBeVisible();
     await expect(card).toContainText('Twitch');
+    await expect(card).toContainText('Unlisted');
     await expect(page.getByRole('article', { name: 'Go live', exact: true })).toHaveCount(0);
-    expect((await (await api.get(`${APP}/api/presets`)).json())).toHaveLength(1);
+    const saved = await (await api.get(`${APP}/api/presets`)).json();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].config.visibility).toBe('unlisted'); // saved from the default card: what it does today
   });
 
   test('create a preset in the inline form; Go live now starts the stream from it with its shape, quality and ticker', async ({ page, context }) => {
@@ -69,10 +73,10 @@ test.describe('dashboard presets', () => {
 
     const card = page.getByRole('article', { name: 'Tall show' });
     await expect(card).toContainText('Twitch');
-    await expect(card).toContainText('Default look · 360p · ticker on · vertical');
+    await expect(card).toContainText('Default look · Unlisted · 360p · ticker on · vertical'); // the editor's default is Unlisted
     // The server holds exactly what the form had.
     const saved = (await (await api.get(`${APP}/api/presets`)).json())[0];
-    expect(saved.config).toMatchObject({ orientation: 'portrait', quality: 'sd', tickerEnabled: true, tickerText: 'Breaking: it works' });
+    expect(saved.config).toMatchObject({ orientation: 'portrait', quality: 'sd', visibility: 'unlisted', tickerEnabled: true, tickerText: 'Breaking: it works' });
 
     const start = page.waitForResponse((r) => /\/api\/presets\/[^/]+\/start$/.test(r.url()) && r.request().method() === 'POST');
     await card.getByRole('button', { name: 'Go live now with Tall show' }).click();
@@ -157,6 +161,88 @@ test.describe('dashboard presets', () => {
   });
 });
 
+test.describe('preset visibility', () => {
+  test('the editor offers Public / Unlisted / Private with the same hint as the New stream form, defaulting to Unlisted', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await addTwitch(api);
+    await page.goto('/dashboard');
+    await fillNewPreset(page, 'Vis');
+    const field = page.getByLabel('Visibility');
+    await expect(field).toHaveValue('unlisted');
+    await expect(field.locator('option')).toHaveText(['Public', 'Unlisted', 'Private']);
+    await expect(page.getByText('Only platforms that support visibility (e.g. YouTube) use this -- others ignore it.')).toBeVisible();
+    await field.selectOption('private');
+    await page.getByRole('button', { name: 'Save preset' }).click();
+    const card = page.getByRole('article', { name: 'Vis' });
+    await expect(card).toContainText('Default look · Private · 720p · ticker off');
+    expect((await (await api.get(`${APP}/api/presets`)).json())[0].config.visibility).toBe('private');
+  });
+
+  test('edit a preset visibility: the card shows it and Go live now sends it (the stream keeps it)', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const dest = await addTwitch(api);
+    await api.post(`${APP}/api/presets`, { data: { name: 'Weekly', config: { destinationIds: [dest], visibility: 'unlisted' } }, headers: apiHeaders });
+    await page.goto('/dashboard');
+    const card = page.getByRole('article', { name: 'Weekly' });
+    await expect(card).toContainText('Unlisted');
+
+    await page.getByRole('button', { name: 'Edit preset Weekly' }).click();
+    await expect(page.getByLabel('Visibility')).toHaveValue('unlisted');
+    await page.getByLabel('Visibility').selectOption('public');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(card).toContainText('Public');
+    await expect(card).not.toContainText('Unlisted');
+    expect((await (await api.get(`${APP}/api/presets`)).json())[0].config.visibility).toBe('public');
+
+    // The server applies the saved visibility (the web sends no override), so the stream has it.
+    const start = page.waitForResponse((r) => /\/api\/presets\/[^/]+\/start$/.test(r.url()) && r.request().method() === 'POST');
+    await card.getByRole('button', { name: 'Go live now with Weekly' }).click();
+    const res = await start;
+    expect(res.request().postDataJSON()).toEqual({});
+    const body = await res.json();
+    expect(body.visibility).toBe('public');
+    expect((await (await api.get(`${APP}/api/streams/${body.id}`)).json()).visibility).toBe('public');
+  });
+
+  test('a preset saved before visibility existed shows Unlisted and starts with none (as before)', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    const dest = await addTwitch(api);
+    await api.post(`${APP}/api/presets`, { data: { name: 'Old one', config: { destinationIds: [dest] } }, headers: apiHeaders });
+    await page.goto('/dashboard');
+    const card = page.getByRole('article', { name: 'Old one' });
+    await expect(card).toContainText('Unlisted');
+    const start = page.waitForResponse((r) => /\/api\/presets\/[^/]+\/start$/.test(r.url()) && r.request().method() === 'POST');
+    await card.getByRole('button', { name: 'Go live now with Old one' }).click();
+    expect((await (await start).json()).visibility).toBeNull(); // as before: no value sent, YouTube defaults to unlisted
+  });
+
+  test('a preset saved from the New stream form keeps that form\'s visibility; the studio offer saves the default card as Unlisted', async ({ page, context }) => {
+    const { api } = await signIn(context);
+    await addTwitch(api, 'Vis Twitch');
+    await page.goto('/streams/new');
+    await page.getByRole('button', { name: /More options/ }).click();
+    await page.locator('#visibility').selectOption('private');
+    await page.getByLabel(/Vis Twitch/).check();
+    await page.getByRole('button', { name: 'Save these settings as a preset' }).click();
+    await page.getByLabel('Preset name').fill('Private show');
+    await page.getByRole('button', { name: 'Save preset' }).click();
+    await expect(page.getByText(/Saved "Private show"/)).toBeVisible();
+    expect((await (await api.get(`${APP}/api/presets`)).json())[0].config.visibility).toBe('private');
+
+    // A fresh account: Go live now on the default card, then save the studio's offer.
+    const second = await signIn(context);
+    await addTwitch(second.api, 'Offer Twitch');
+    await page.goto('/dashboard');
+    await page.getByRole('article', { name: 'Go live' }).getByRole('button', { name: 'Go live now' }).click();
+    const offer = page.getByTestId('save-preset-offer');
+    await offer.getByLabel('Preset name').fill('From default');
+    await offer.getByRole('button', { name: 'Save preset' }).click();
+    await expect(offer).toContainText('Saved "From default"');
+    const presets = await (await second.api.get(`${APP}/api/presets`)).json();
+    expect(presets[0].config.visibility).toBe('unlisted');
+  });
+});
+
 test.describe('setup form', () => {
   test('title and destinations first; the rest sits in "More options" with a one-line summary that follows the choices', async ({ page, context }) => {
     const { api } = await signIn(context);
@@ -219,7 +305,8 @@ test.describe('setup form', () => {
     await page.getByRole('button', { name: 'Save preset' }).click();
     await expect(page.getByText(/Saved "From the form"/)).toBeVisible();
     const saved = (await (await api.get(`${APP}/api/presets`)).json())[0];
-    expect(saved).toMatchObject({ name: 'From the form', config: { quality: 'sd', orientation: 'landscape', tickerEnabled: false } });
+    // The form's Visibility (Public by default there) is what the preset keeps.
+    expect(saved).toMatchObject({ name: 'From the form', config: { quality: 'sd', orientation: 'landscape', visibility: 'public', tickerEnabled: false } });
     expect(saved.config.destinationIds).toHaveLength(1);
   });
 
