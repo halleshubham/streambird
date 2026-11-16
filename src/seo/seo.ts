@@ -5,7 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 /**
  * Search-engine behaviour of the web app (see .claude/docs/frontend.md "SEO"):
  *  - robots.txt and sitemap.xml are generated from PUBLIC_BASE_URL, so staging never advertises production URLs;
- *  - the public pages (/, /privacy, /terms, /delete-account) are served from the build-time prerender
+ *  - the public pages (/, /privacy, /terms, /delete-account, /android) are served from the build-time prerender
  *    (dist-web/_prerender/*.html) so crawlers get real HTML;
  *  - every other page URL answers with X-Robots-Tag: noindex; URLs the SPA does not know answer 404 (not a soft 200).
  * Runs before ServeStaticModule (registered in configureApp), so it only handles page URLs and calls next() for assets.
@@ -17,6 +17,7 @@ export const PUBLIC_PAGES: Record<string, string> = {
   '/privacy': 'privacy',
   '/terms': 'terms',
   '/delete-account': 'delete-account',
+  '/android': 'android',
 };
 
 /** Client-side routes that exist but must not be indexed (signed-in app, guest links, admin). Matched as path or path/... */
@@ -52,7 +53,7 @@ export const DISALLOWED_IN_ROBOTS = [
 
 export function robotsTxt(base: string): string {
   return [
-    '# StreamBird: public pages are the home page, privacy, terms and delete-account.',
+    '# StreamBird: public pages are the home page, privacy, terms, delete-account and android.',
     'User-agent: *',
     'Allow: /',
     ...DISALLOWED_IN_ROBOTS.map((p) => `Disallow: ${p}`),

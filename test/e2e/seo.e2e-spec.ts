@@ -34,7 +34,7 @@ describeE2E('SEO: robots, sitemap, prerendered pages, noindex, 404s', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('xml');
     const locs = [...(await res.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    expect(locs).toEqual(['/', '/privacy', '/terms', '/delete-account'].map((p) => `${h.baseUrl}${p}`));
+    expect(locs).toEqual(['/', '/privacy', '/terms', '/delete-account', '/android'].map((p) => `${h.baseUrl}${p}`));
   });
 
   it('serves llms.txt and the manifest as files, not as the app shell', async () => {
@@ -54,6 +54,7 @@ describeE2E('SEO: robots, sitemap, prerendered pages, noindex, 404s', () => {
       '/privacy': { h1: /<h1>StreamBird Privacy Policy/, canonical: `${h.baseUrl}/privacy` },
       '/terms': { h1: /<h1>StreamBird Terms of Service/, canonical: `${h.baseUrl}/terms` },
       '/delete-account': { h1: /<h1>Delete your StreamBird account/, canonical: `${h.baseUrl}/delete-account` },
+      '/android': { h1: /<h1>Install the StreamBird Android app/, canonical: `${h.baseUrl}/android` },
     };
     for (const [path, want] of Object.entries(expected)) {
       const res = await get(path);

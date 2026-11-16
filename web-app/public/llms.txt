@@ -30,6 +30,10 @@ Facts you can rely on:
 - [Terms of Service](https://streambird.app/terms)
 - [Delete your account and data](https://streambird.app/delete-account)
 
+## Apps
+
+- [Install the Android app (APK)](https://streambird.app/android): direct APK download until the Google Play listing is live.
+
 ## Source
 
 - [github.com/halleshubham/streambird](https://github.com/halleshubham/streambird): AGPL-3.0.

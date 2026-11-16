@@ -25,6 +25,8 @@ import { useAuth } from '../context/AuthContext';
 import { BrandLink } from '../components/PublicLayout';
 import { Badge, buttonClass } from '../components/ui';
 import { HeroShowcase } from '../components/HeroShowcase';
+import { AndroidDownload } from '../components/AndroidDownload';
+import { ANDROID_APK_MIN_ANDROID, PLAY_STORE_URL } from '../lib/appLinks';
 
 const FEATURES = [
   {
@@ -244,6 +246,7 @@ export function LandingPage() {
             <a href="#how" className={buttonClass('ghost', 'lg')}>
               See how it works
             </a>
+            <AndroidDownload testId="apk-download-hero" />
           </div>
           {!authed && (
             <div className="pub-hero-social">
@@ -317,6 +320,28 @@ export function LandingPage() {
             <PlatformBadge platform="facebook" />
             <PlatformBadge platform="twitch" />
             <span className="badge">LinkedIn -- coming soon</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="android" className="pub-section pub-section--white pub-section--tight">
+        <div className="pub-wrap">
+          <div className="pub-card pub-android">
+            <div className="pub-android-copy">
+              <p className="pub-eyebrow">Android app</p>
+              <h2>Stream from your phone</h2>
+              <p>
+                The StreamBird app sends your phone camera to YouTube, Facebook and Twitch, with your brand kits, on the same account you use here.
+              </p>
+              <p className="pub-android-meta">
+                Android {ANDROID_APK_MIN_ANDROID}+ &middot;{' '}
+                {PLAY_STORE_URL ? 'Also available on Google Play' : 'Google Play listing coming soon'} &middot;{' '}
+                <Link to="/android">How to install</Link>
+              </p>
+            </div>
+            <div className="pub-android-action">
+              <AndroidDownload testId="apk-download" variant="primary" size="lg" />
+            </div>
           </div>
         </div>
       </section>
@@ -423,7 +448,7 @@ export function LandingPage() {
             </a>
           </span>
           <span>
-            <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link> &middot; <Link to="/delete-account">Delete your account</Link><CookieSettingsLink />
+            <a href={docsUrl()} target="_blank" rel="noopener noreferrer">Docs</a> &middot; <Link to="/privacy">Privacy Policy</Link> &middot; <Link to="/terms">Terms of Service</Link> &middot; <Link to="/android">Android app</Link> &middot; <Link to="/delete-account">Delete your account</Link><CookieSettingsLink />
           </span>
           <span>
             <a href="mailto:support@shackyapps.in">support@shackyapps.in</a>

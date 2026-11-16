@@ -44,6 +44,9 @@ Required: `DATABASE_URL`, `ENCRYPTION_KEY_BASE64` (base64 of 32 bytes: `openssl 
 
 `.env.example` is incomplete (`FACEBOOK_REDIRECT_URI`, `GLITCH_SLATE_PORTRAIT_URL`, TURN and `RAZORPAY_API_BASE` are missing; LinkedIn vars are listed but unused). Adding a variable = `configuration.ts` + `.env.example` + this table.
 
+## Android app download (APK on GitHub)
+The home page and `/android` link to `https://github.com/halleshubham/streambird-android/releases/latest/download/streambird.apk` (public repo; GitHub redirects to the `streambird.apk` asset of the newest release marked Latest, so the URL never changes). **Publish a new APK:** in `halleshubham/streambird-android` create a new release, mark it **Latest** (not a pre-release) and attach the signed APK named exactly `streambird.apk`; nothing to deploy on the StreamBird side. The APK must be signed with the upload key whose SHA-256 is shown on `/android` (`web-app/src/lib/appLinks.ts`). If a Latest release has no asset with that exact name the button 404s. The page deliberately shows no version number. Switching to Google Play: see `frontend.md` "Android app download".
+
 ## Secrets rules
 - Never commit secrets, tokens or passwords — including test passwords as literals (GitGuardian flags them; generate in tests). Never print them back in chat/PRs/logs. User-pasted credentials are used only for the task they were given for.
 - OAuth app secrets, Razorpay keys, Coolify token, Resend key live in Coolify env / the user's head, never in git.
