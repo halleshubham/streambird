@@ -16,6 +16,9 @@ import {
 /** Same values as the plan's `maxResolution` and the studio's quality picker. */
 export const PRESET_QUALITIES = ['sd', 'hd', 'fhd', 'qhd'] as const;
 
+/** Same values as CreateStreamDto.visibility. */
+export const PRESET_VISIBILITIES = ['public', 'unlisted', 'private'] as const;
+
 export class PresetConfigDto {
   @IsOptional()
   @IsIn(['landscape', 'portrait'])
@@ -37,6 +40,14 @@ export class PresetConfigDto {
   @IsOptional()
   @IsIn(PRESET_QUALITIES as unknown as string[])
   quality?: (typeof PRESET_QUALITIES)[number];
+
+  /**
+   * Privacy of the broadcast on platforms that have it (YouTube; Twitch and Facebook ignore it). Omitted = not chosen:
+   * the stream is created without a visibility, which YouTube turns into unlisted. null is accepted and treated as omitted.
+   */
+  @IsOptional()
+  @IsIn(PRESET_VISIBILITIES as unknown as string[])
+  visibility?: (typeof PRESET_VISIBILITIES)[number];
 
   @IsOptional()
   @IsBoolean()
@@ -82,4 +93,9 @@ export class StartPresetDto {
   @MinLength(1)
   @MaxLength(200)
   title?: string;
+
+  /** For this start only: wins over the preset's saved visibility. */
+  @IsOptional()
+  @IsIn(PRESET_VISIBILITIES as unknown as string[])
+  visibility?: (typeof PRESET_VISIBILITIES)[number];
 }

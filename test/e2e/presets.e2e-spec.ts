@@ -1,3 +1,7 @@
+import { STREAM_PROVIDERS } from '../../src/providers/provider.tokens';
+import type { StreamProvider } from '../../src/providers/stream-provider.interface';
+import { PlatformConnectionsService } from '../../src/platform-connections/platform-connections.service';
+import { Platform } from '../../src/common/enums/platform.enum';
 import { describeE2E, bootApp, Client, Harness } from './harness';
 
 const msg = (b: any): string => (typeof b.message === 'string' ? b.message : b.message?.message);
@@ -218,5 +222,91 @@ describeE2E('stream presets: saved go-live setups, per account, applied at use t
     const gone = await client.post(`/presets/${p.body.id}/use`);
     expect(gone.body.effectiveConfig.brandKitId).toBeNull();
     expect(gone.body.warnings.join(' ')).toMatch(/no longer exists/);
+  });
+
+  describe('visibility', () => {
+    const rand = () => Math.random().toString(36).slice(2, 10);
+    // YouTube is the platform that acts on visibility; there is no fake Google in e2e, so the provider's createBroadcast is
+    // replaced by a recorder (the YouTubeProvider's own `meta.visibility ?? 'unlisted'` is covered in its unit spec).
+    let seen: Array<{ visibility?: string }>;
+    let restore: () => void;
+    beforeEach(() => {
+      seen = [];
+      const yt = (h.app.get(STREAM_PROVIDERS) as StreamProvider[]).find((p) => p.identifier === Platform.YOUTUBE)!;
+      const spy = jest.spyOn(yt, 'createBroadcast').mockImplementation(async (_c, meta) => {
+        seen.push({ visibility: meta.visibility });
+        return { ingestUrl: 'rtmp://yt.example/live', streamKey: 'k', platformBroadcastId: `b${rand()}`, watchUrl: 'https://www.youtube.com/watch?v=x' };
+      });
+      restore = () => spy.mockRestore();
+    });
+    afterEach(() => restore());
+
+    async function setup() {
+      const { client, accountId } = await h.signIn();
+      const c = await h.app.get(PlatformConnectionsService).upsertYouTubeConnection(accountId, { channelId: `UC${rand()}`, channelTitle: 'Chan' }, { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600_000 });
+      return { client, dest: c.id };
+    }
+
+    it('create and update accept public / unlisted / private, return it, and keep old presets without it valid', async () => {
+      const { client, dest } = await setup();
+      for (const v of ['public', 'unlisted', 'private']) {
+        const r = await client.post('/presets', { name: v, config: { destinationIds: [dest], visibility: v } });
+        expect(r.status).toBe(201);
+        expect(r.body.config.visibility).toBe(v);
+      }
+      const p = await client.post('/presets', { name: 'upd', config: { destinationIds: [dest], visibility: 'public' } });
+      const up = await client.patch(`/presets/${p.body.id}`, { config: { destinationIds: [dest], visibility: 'private' } });
+      expect(up.body.config.visibility).toBe('private');
+      expect((await client.get('/presets')).body.find((x: any) => x.id === p.body.id).config.visibility).toBe('private');
+      // omitted = not stored (config is replaced on update); null is treated as omitted
+      const none = await client.patch(`/presets/${p.body.id}`, { config: { destinationIds: [dest] } });
+      expect(none.body.config).not.toHaveProperty('visibility');
+      expect((await client.post('/presets', { name: 'nul', config: { visibility: null } })).body.config).toEqual({});
+      // use returns it in the effective config
+      const q = await client.post('/presets', { name: 'eff', config: { destinationIds: [dest], visibility: 'public' } });
+      expect((await client.post(`/presets/${q.body.id}/use`)).body.effectiveConfig.visibility).toBe('public');
+    });
+
+    it('rejects an invalid visibility on create, update and start', async () => {
+      const { client, dest } = await setup();
+      expect((await client.post('/presets', { name: 'x', config: { visibility: 'secret' } })).status).toBe(400);
+      expect((await client.post('/presets', { name: 'x', config: { visibility: '' } })).status).toBe(400);
+      expect((await client.post('/presets', { name: 'x', config: { visibility: 1 } })).status).toBe(400);
+      const p = await client.post('/presets', { name: 'ok', config: { destinationIds: [dest] } });
+      expect((await client.patch(`/presets/${p.body.id}`, { config: { visibility: 'Public' } })).status).toBe(400);
+      expect((await client.post(`/presets/${p.body.id}/start`, { visibility: 'secret' })).status).toBe(400);
+      expect(seen).toEqual([]);
+    });
+
+    it('start hands the saved visibility to the YouTube broadcast; omitted means none is passed (YouTube then uses unlisted)', async () => {
+      const { client, dest } = await setup();
+      for (const v of ['public', 'unlisted', 'private']) {
+        const p = await client.post('/presets', { name: `S-${v}`, config: { destinationIds: [dest], visibility: v } });
+        const started = await client.post(`/presets/${p.body.id}/start`, {});
+        expect(started.status).toBe(201);
+        expect(started.body.visibility).toBe(v);
+        expect(seen[seen.length - 1]).toEqual({ visibility: v });
+        expect((await client.get(`/streams/${started.body.id}`)).body.visibility).toBe(v);
+      }
+      const plain = await client.post('/presets', { name: 'Plain', config: { destinationIds: [dest] } });
+      const s = await client.post(`/presets/${plain.body.id}/start`, {});
+      expect(s.status).toBe(201);
+      expect(s.body.visibility).toBeNull();
+      expect(seen[seen.length - 1]).toEqual({ visibility: undefined });
+    });
+
+    it('a visibility sent with the start wins over the saved one and is not saved', async () => {
+      const { client, dest } = await setup();
+      const p = await client.post('/presets', { name: 'Over', config: { destinationIds: [dest], visibility: 'private' } });
+      const s = await client.post(`/presets/${p.body.id}/start`, { visibility: 'public' });
+      expect(s.status).toBe(201);
+      expect(seen[seen.length - 1]).toEqual({ visibility: 'public' });
+      expect(s.body.visibility).toBe('public');
+      expect((await client.get('/presets')).body.find((x: any) => x.id === p.body.id).config.visibility).toBe('private');
+      // a preset without a saved value takes the start's
+      const q = await client.post('/presets', { name: 'Bare', config: { destinationIds: [dest] } });
+      await client.post(`/presets/${q.body.id}/start`, { visibility: 'unlisted' });
+      expect(seen[seen.length - 1]).toEqual({ visibility: 'unlisted' });
+    });
   });
 });

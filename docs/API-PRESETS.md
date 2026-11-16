@@ -15,6 +15,7 @@ All routes are under `/api`, JSON, and authenticated exactly like the rest of th
     "destinationIds": ["<platform connection id>", "..."],
     "brandKitId": "<brand kit id>",
     "quality": "hd",
+    "visibility": "unlisted",
     "tickerEnabled": true,
     "tickerText": "Welcome to the show"
   },
@@ -30,10 +31,11 @@ All routes are under `/api`, JSON, and authenticated exactly like the rest of th
 | `destinationIds` | string[] (uuid, max 50) - ids from `GET /platform-connections` | every connected destination of the account |
 | `brandKitId` | uuid \| `null` | omitted = the destination's / account default kit (what the studio does today); `null` = no kit (manual) |
 | `quality` | `"sd"` \| `"hd"` \| `"fhd"` \| `"qhd"` (same values as the plan's `maxResolution` / `GET /plans/me`) | the studio's default (hd) |
+| `visibility` | `"public"` \| `"unlisted"` \| `"private"` (`null` = omitted) | not passed to the stream: YouTube creates it **unlisted** (Twitch/Facebook ignore it). Web and Android should show Unlisted for a preset without it |
 | `tickerEnabled` | boolean | false |
 | `tickerText` | string, max 200 | none |
 
-Which of these are *stream* fields and which are *studio* settings: `orientation` and `destinationIds` become the stream (`POST /streams`). `quality`, `brandKitId`, `tickerEnabled`/`tickerText` are studio (client) settings in StreamBird: the server never stores them on the stream. `/use` and `/start` return them already checked against the plan (`effectiveConfig`) for the client to apply. Brand-kit ads are part of the kit; they follow the kit and the existing ad plan rules (Free plan cannot save ads), there is no separate ads field.
+Which of these are *stream* fields and which are *studio* settings: `orientation`, `destinationIds` and `visibility` become the stream (`POST /streams`). `quality`, `brandKitId`, `tickerEnabled`/`tickerText` are studio (client) settings in StreamBird: the server never stores them on the stream. `/use` and `/start` return them already checked against the plan (`effectiveConfig`) for the client to apply. Brand-kit ads are part of the kit; they follow the kit and the existing ad plan rules (Free plan cannot save ads), there is no separate ads field.
 
 ## Endpoints
 
@@ -67,7 +69,7 @@ Checks at use time (the plan or the account may have changed since the preset wa
 - `brandKitId` is set to `null` (warning) when the kit was deleted or the plan has no brand storage (Free).
 
 ### `POST /api/presets/:id/start` -> 201
-Optional body `{ "title"?: string (1-200) }`; the stream title defaults to the preset name. Creates the stream **through the same service method as `POST /api/streams`** (`StreamsService.create`): hours/grace check, destination count of the plan, provider broadcasts, MediaMTX forward, a studio session, status `live` - and the same throttle (5/min/account, 429). The response is **exactly the `POST /api/streams` response** (`StreamResponseDto`: `id, title, status, ingestUrl, streamKey, whipUrl, orientation, studioSessionId, destinations[], ...`) with one extra property:
+Optional body `{ "title"?: string (1-200), "visibility"?: "public"|"unlisted"|"private" }` (`visibility` here applies to this start only, wins over the saved one, is not saved; the stream's `visibility` field shows what was used, `null` when none was passed); the stream title defaults to the preset name. Creates the stream **through the same service method as `POST /api/streams`** (`StreamsService.create`): hours/grace check, destination count of the plan, provider broadcasts, MediaMTX forward, a studio session, status `live` - and the same throttle (5/min/account, 429). The response is **exactly the `POST /api/streams` response** (`StreamResponseDto`: `id, title, status, ingestUrl, streamKey, whipUrl, orientation, studioSessionId, destinations[], ...`) with one extra property:
 
 ```json
 { "id": "<stream id>", "title": "Friday show", "status": "live", "whipUrl": "...", "...": "...",

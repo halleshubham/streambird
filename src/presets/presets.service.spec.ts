@@ -51,6 +51,12 @@ describe('cleanConfig', () => {
     });
     expect(cleanConfig({} as any)).toEqual({});
   });
+
+  it('keeps a chosen visibility and drops null/omitted', () => {
+    expect(cleanConfig({ visibility: 'private' } as any)).toEqual({ visibility: 'private' });
+    expect(cleanConfig({ visibility: null } as any)).toEqual({});
+    expect(cleanConfig({} as any)).not.toHaveProperty('visibility');
+  });
 });
 
 describe('clampQuality', () => {
@@ -159,5 +165,34 @@ describe('PresetsService', () => {
     streams.create.mockRejectedValueOnce(new Error('hours used up'));
     await expect(svc.start(A, p.id, {})).rejects.toThrow('hours used up');
     expect(rows[0].lastUsedAt).toBeNull();
+  });
+
+  it('start passes the preset visibility to the stream only when set; a per-start visibility wins; old presets are unchanged', async () => {
+    const { svc, streams, rows } = build();
+    for (const v of ['public', 'unlisted', 'private'] as const) {
+      const p = await svc.create(A, { name: v, config: { visibility: v } as any });
+      expect(p.config.visibility).toBe(v);
+      await svc.start(A, p.id, {});
+      expect(streams.create).toHaveBeenLastCalledWith(A, expect.objectContaining({ visibility: v }), { fallbackTitle: v });
+    }
+    const priv = await svc.create(A, { name: 'Priv', config: { visibility: 'private' } as any });
+    await svc.start(A, priv.id, { visibility: 'public' });
+    expect(streams.create).toHaveBeenLastCalledWith(A, expect.objectContaining({ visibility: 'public' }), { fallbackTitle: 'Priv' });
+    expect(rows.find((r) => r.id === priv.id)!.config.visibility).toBe('private'); // the override is not saved
+
+    // A preset saved before the key existed (and one without a choice) starts exactly as before: no visibility on the stream.
+    rows.push({ id: 'old', accountId: A, name: 'Old', config: { orientation: 'landscape' }, lastUsedAt: null } as StreamPreset);
+    await svc.start(A, 'old', {});
+    expect(streams.create.mock.calls[streams.create.mock.calls.length - 1][1]).not.toHaveProperty('visibility');
+    await svc.start(A, 'old', { visibility: 'unlisted' });
+    expect(streams.create).toHaveBeenLastCalledWith(A, expect.objectContaining({ visibility: 'unlisted' }), { fallbackTitle: 'Old' });
+  });
+
+  it('update replaces the config, so a visibility left out is removed', async () => {
+    const { svc } = build();
+    const p = await svc.create(A, { name: 'x', config: { visibility: 'public', quality: 'hd' } as any });
+    expect((await svc.update(A, p.id, { config: { visibility: 'private' } as any })).config).toEqual({ visibility: 'private' });
+    expect((await svc.update(A, p.id, { config: { quality: 'sd' } as any })).config).toEqual({ quality: 'sd' });
+    expect((await svc.update(A, p.id, { name: 'renamed' })).config).toEqual({ quality: 'sd' }); // name-only keeps the config
   });
 });

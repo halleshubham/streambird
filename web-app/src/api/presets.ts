@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { PresetConfig, StartedFromPreset, StreamPreset } from '../types/api';
+import type { PresetConfig, StartedFromPreset, StreamPreset, StreamVisibility } from '../types/api';
 
 export function listPresets(): Promise<StreamPreset[]> {
   return api.get('/presets');
@@ -18,6 +18,6 @@ export function deletePreset(id: string): Promise<void> {
 }
 
 /** Creates the stream from the preset (like POST /streams) and returns it with how the preset applies today. */
-export function startPreset(id: string, title?: string): Promise<StartedFromPreset> {
-  return api.post(`/presets/${id}/start`, title ? { title } : {});
+export function startPreset(id: string, opts: { title?: string; visibility?: StreamVisibility } = {}): Promise<StartedFromPreset> {
+  return api.post(`/presets/${id}/start`, { ...(opts.title ? { title: opts.title } : {}), ...(opts.visibility ? { visibility: opts.visibility } : {}) });
 }
