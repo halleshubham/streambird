@@ -5,6 +5,7 @@ import { LandingPage } from '../routes/LandingPage';
 import { PrivacyPolicyPage } from '../routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from '../routes/TermsOfServicePage';
 import { DeleteAccountInfoPage } from '../routes/DeleteAccountInfoPage';
+import { AndroidAppPage } from '../routes/AndroidAppPage';
 import { landingJsonLd } from './jsonld';
 import { ORIGIN_TOKEN, PUBLIC_ROUTES, headTags, type RouteSeo } from './routes';
 
@@ -18,6 +19,7 @@ const PAGES: Record<string, () => React.ReactElement> = {
   '/privacy': () => <PrivacyPolicyPage />,
   '/terms': () => <TermsOfServicePage />,
   '/delete-account': () => <DeleteAccountInfoPage />,
+  '/android': () => <AndroidAppPage />,
 };
 
 const anonymous = {

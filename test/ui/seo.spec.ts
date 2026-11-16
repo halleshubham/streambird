@@ -4,7 +4,7 @@ import { APP } from './helpers';
 // Search/crawler view of the public pages: what is in the served HTML before any JavaScript runs, the head tags the
 // SPA keeps in step per route, JSON-LD, the 404 status, and the sitemap matching the canonical URLs.
 
-const PUBLIC = ['/', '/privacy', '/terms', '/delete-account'];
+const PUBLIC = ['/', '/privacy', '/terms', '/delete-account', '/android'];
 
 test.describe('crawler view (JavaScript off)', () => {
   test.use({ javaScriptEnabled: false });

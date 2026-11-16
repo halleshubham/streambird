@@ -46,6 +46,13 @@ export const PUBLIC_ROUTES: Record<string, RouteSeo> = {
     index: true,
     prerender: 'delete-account',
   },
+  '/android': {
+    title: 'Install the StreamBird Android app (APK)',
+    description:
+      'Download the StreamBird Android app (APK) and stream your phone camera to YouTube, Facebook and Twitch. Step-by-step install guide and signing fingerprint.',
+    index: true,
+    prerender: 'android',
+  },
 };
 
 /** Reachable without signing in but not worth a search result. */
