@@ -16,6 +16,7 @@ describe('seo', () => {
     expect(xml.match(/<loc>/g)).toHaveLength(Object.keys(PUBLIC_PAGES).length);
     expect(xml).toContain('<loc>https://streambird.app/</loc>');
     expect(xml).toContain('<loc>https://streambird.app/privacy</loc>');
+    expect(xml).toContain('<loc>https://streambird.app/android</loc>');
     for (const p of APP_PREFIXES) expect(xml).not.toContain(`${base}${p}<`);
   });
 

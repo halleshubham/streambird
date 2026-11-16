@@ -758,6 +758,68 @@
   border: 0;
 }
 
+/* ---- Android app (home hero button, home section, /android page) ---- */
+.pub-android-btn {
+  gap: 10px;
+}
+.pub-android-btn-text {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  text-align: left;
+}
+.pub-android-btn-text small {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.pub-android {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 32px;
+}
+.pub-android-copy {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+.pub-android-copy .pub-eyebrow {
+  margin-bottom: 4px;
+}
+.pub-section .pub-android h2 {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+.pub-android-meta {
+  font-size: 14px;
+}
+.pub-android-action {
+  flex: none;
+}
+.pub-legal-main--center {
+  justify-content: center;
+}
+.pub-android-cta {
+  margin: 20px 0 12px;
+}
+.pub-android-steps {
+  padding-left: 22px;
+}
+.pub-android-steps li {
+  margin-bottom: 10px;
+}
+.pub-android-fp {
+  display: block;
+  padding: 10px 12px;
+  background: var(--soft);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Tablet / phone ---- */
 @media (max-width: 960px) {
   .pub-hero {
@@ -808,6 +870,10 @@
     flex-direction: column;
   }
   .pub-hero-actions .ui-btn {
+    width: 100%;
+  }
+  .pub-android-action,
+  .pub-android-action .ui-btn {
     width: 100%;
   }
   .pub-wrap {

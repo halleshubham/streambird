@@ -11,6 +11,7 @@ import { PrivacyPolicyPage } from './routes/PrivacyPolicyPage';
 import { TermsOfServicePage } from './routes/TermsOfServicePage';
 import { NotFoundPage } from './routes/NotFoundPage';
 import { DeleteAccountInfoPage } from './routes/DeleteAccountInfoPage';
+import { AndroidAppPage } from './routes/AndroidAppPage';
 import { AccountDeletedPage } from './routes/AccountDeletedPage';
 import { CookieBanner } from './components/CookieBanner';
 import { RouteHead } from './components/RouteHead';
@@ -61,6 +62,8 @@ export function App() {
       <Route path="/terms" element={<TermsOfServicePage />} />
       {/* Public: how to delete an account and data (Google Play requires a public URL for this). */}
       <Route path="/delete-account" element={<DeleteAccountInfoPage />} />
+      {/* Public: install the Android app from the direct APK (lib/appLinks.ts). */}
+      <Route path="/android" element={<AndroidAppPage />} />
       <Route path="/account-deleted" element={<AccountDeletedPage />} />
 
       {/* Public -- a guest never has an account or session cookie. */}
