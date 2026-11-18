@@ -554,14 +554,14 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0034%'`);
       await runMigrations(url, { quiet: true }); // forced re-apply: IF NOT EXISTS / DROP IF EXISTS keep it fine
 
-      // The existing kit keeps everything it had and gets the clock defaults: off, top right, 12 hour, date on, no seconds, device zone, medium.
+      // The existing kit keeps everything it had and gets the clock defaults: off, top right, 12 hour, date on, no seconds, device zone, medium (stored by 0034; 0035 only changes the default of new rows).
       expect((await db.query(`SELECT name, logo_position, logo_size, is_default, clock_enabled, clock_position, clock_format, clock_show_date, clock_show_seconds, clock_timezone, clock_size FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({
         name: 'Main', logo_position: 'right', logo_size: 120, is_default: true,
         clock_enabled: false, clock_position: 'top_right', clock_format: '12h', clock_show_date: true, clock_show_seconds: false, clock_timezone: null, clock_size: 'medium',
       });
       // The old release's insert shape (no clock columns) still works and gets the same defaults.
       const old = (await db.query(`INSERT INTO brand_kits (account_id, name) VALUES ($1, 'Old shape') RETURNING clock_enabled, clock_size`, [acct])).rows[0];
-      expect(old).toEqual({ clock_enabled: false, clock_size: 'medium' });
+      expect(old).toEqual({ clock_enabled: false, clock_size: 'small' }); // 0035 made the default for new rows 'small'
       // Valid values store; the database refuses anything else (the API validates first, the CHECKs are the safety net).
       await db.query(`UPDATE brand_kits SET clock_enabled = true, clock_position = 'bottom_left', clock_format = '24h', clock_size = 'large', clock_timezone = 'Asia/Kolkata' WHERE id = $1`, [kit]);
       expect((await db.query(`SELECT clock_position, clock_format, clock_size, clock_timezone FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ clock_position: 'bottom_left', clock_format: '24h', clock_size: 'large', clock_timezone: 'Asia/Kolkata' });
@@ -570,6 +570,47 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await expect(db.query(`UPDATE brand_kits SET clock_size = 'huge' WHERE id = $1`, [kit])).rejects.toThrow();
       await expect(db.query(`UPDATE brand_kits SET clock_timezone = $2 WHERE id = $1`, [kit, 'x'.repeat(65)])).rejects.toThrow(); // varchar(64)
       await expect(db.query(`UPDATE brand_kits SET clock_enabled = NULL WHERE id = $1`, [kit])).rejects.toThrow(); // NOT NULL
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
+  it('0035 adds clock_style (text) and clock_alternate (true), makes new kits small, keeps existing kits as they were, enforces the styles, and is re-runnable', async () => {
+    const live = `sb_mig_${Date.now()}_kcs`;
+    const a = new PgClient({ connectionString: adminUrl });
+    await a.connect();
+    await a.query(`CREATE DATABASE ${live}`);
+    await a.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0034', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('kit-clock-style-acct', 'hkcs', 'pro', 30) RETURNING id`)).rows[0].id;
+      // A kit that already has the first-release clock (medium pill-era settings).
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, clock_enabled, clock_size, clock_position) VALUES ($1, 'Clocked', true, 'large', 'bottom_left') RETURNING id`, [acct])).rows[0].id;
+      await expect(db.query(`SELECT clock_style FROM brand_kits`)).rejects.toThrow();
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0035%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply stays fine
+
+      // Existing kit: its own clock settings are untouched, and it gets the new columns' defaults.
+      expect((await db.query(`SELECT clock_enabled, clock_size, clock_position, clock_style, clock_alternate FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({
+        clock_enabled: true, clock_size: 'large', clock_position: 'bottom_left', clock_style: 'text', clock_alternate: true,
+      });
+      // A kit inserted the old way (no new columns) gets the compact defaults.
+      const old = (await db.query(`INSERT INTO brand_kits (account_id, name) VALUES ($1, 'Old shape') RETURNING clock_size, clock_style, clock_alternate`, [acct])).rows[0];
+      expect(old).toEqual({ clock_size: 'small', clock_style: 'text', clock_alternate: true });
+      await db.query(`UPDATE brand_kits SET clock_style = 'pill', clock_alternate = false WHERE id = $1`, [kit]);
+      expect((await db.query(`SELECT clock_style, clock_alternate FROM brand_kits WHERE id = $1`, [kit])).rows[0]).toEqual({ clock_style: 'pill', clock_alternate: false });
+      await expect(db.query(`UPDATE brand_kits SET clock_style = 'box' WHERE id = $1`, [kit])).rejects.toThrow();
+      await expect(db.query(`UPDATE brand_kits SET clock_style = NULL WHERE id = $1`, [kit])).rejects.toThrow();
+      await expect(db.query(`UPDATE brand_kits SET clock_alternate = NULL WHERE id = $1`, [kit])).rejects.toThrow();
       await db.end();
     } finally {
       const a2 = new PgClient({ connectionString: adminUrl });

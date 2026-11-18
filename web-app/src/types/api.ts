@@ -581,6 +581,10 @@ export interface BrandKit {
   /** IANA zone name; null = the streamer's device time zone. */
   clockTimezone: string | null;
   clockSize: 'small' | 'medium' | 'large';
+  /** 'text' = compact plain text under the logo (default); 'pill' = the dark rounded plate. */
+  clockStyle: 'text' | 'pill';
+  /** The date and the time take turns in the same spot (true, default) or show together (false). */
+  clockAlternate: boolean;
   /** The kit's stream thumbnail (a JPG/PNG library file, 16:9 recommended); one for both orientations. null = none. */
   thumbnailAssetId: string | null;
   /** The channels/pages (platform connections) using this kit. */
@@ -602,6 +606,8 @@ export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPositio
   clockShowSeconds?: boolean;
   clockTimezone?: string | null;
   clockSize?: BrandKit['clockSize'];
+  clockStyle?: BrandKit['clockStyle'];
+  clockAlternate?: boolean;
   thumbnailAssetId?: string | null;
   /** Omitted = unchanged on update; null or blank = cleared. */
   title?: string | null;

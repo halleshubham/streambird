@@ -484,7 +484,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
     });
   });
   describe('brand kit clock (on-air date and time)', () => {
-    const DEFAULTS = { clockEnabled: false, clockPosition: 'top_right', clockFormat: '12h', clockShowDate: true, clockShowSeconds: false, clockTimezone: null, clockSize: 'medium' };
+    const DEFAULTS = { clockEnabled: false, clockPosition: 'top_right', clockFormat: '12h', clockShowDate: true, clockShowSeconds: false, clockTimezone: null, clockSize: 'small', clockStyle: 'text', clockAlternate: true };
     beforeEach(async () => {
       await admin.patch('/superadmin/plans/free', { assetStorageMb: 5 });
     });
@@ -504,7 +504,7 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
 
     it('create takes every clock field; PATCH changes only what is sent (omitted = unchanged); null time zone = the device zone', async () => {
       const { client } = await h.signIn();
-      const full = { clockEnabled: true, clockPosition: 'bottom_left', clockFormat: '24h', clockShowDate: false, clockShowSeconds: true, clockTimezone: 'Asia/Kolkata', clockSize: 'large' };
+      const full = { clockEnabled: true, clockPosition: 'bottom_left', clockFormat: '24h', clockShowDate: false, clockShowSeconds: true, clockTimezone: 'Asia/Kolkata', clockSize: 'large', clockStyle: 'pill', clockAlternate: false };
       const created = await client.post('/brand-kits', { name: 'Clocked', ...full });
       expect(created.status).toBe(201);
       expect(created.body).toMatchObject(full);
@@ -520,6 +520,11 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       expect(cleared.body).toMatchObject({ clockTimezone: null, clockEnabled: false, clockFormat: '24h', clockSize: 'large' });
       await client.patch(`/brand-kits/${id}`, { clockTimezone: 'Europe/London' });
       expect((await client.patch(`/brand-kits/${id}`, { clockTimezone: '  ' })).body.clockTimezone).toBeNull();
+      // Style and alternate change on their own and are saved for real.
+      const styled = await client.patch(`/brand-kits/${id}`, { clockStyle: 'text', clockAlternate: true });
+      expect(styled.body).toMatchObject({ clockStyle: 'text', clockAlternate: true, clockSize: 'large', clockFormat: '24h' });
+      expect((await client.patch(`/brand-kits/${id}`, { clockAlternate: false })).body).toMatchObject({ clockStyle: 'text', clockAlternate: false });
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === id)).toMatchObject({ clockStyle: 'text', clockAlternate: false });
       // Saved for real, not just echoed.
       expect((await client.get('/brand-kits')).body.find((k: any) => k.id === id)).toMatchObject({ clockEnabled: false, clockPosition: 'top_left', clockFormat: '24h', clockSize: 'large', clockTimezone: null });
     });
@@ -531,6 +536,9 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
         [{ clockPosition: 'center' }, /clock position/],
         [{ clockFormat: '36h' }, /clock format/],
         [{ clockSize: 'huge' }, /clock size/],
+        [{ clockStyle: 'box' }, /clock style/],
+        [{ clockStyle: 1 }, /clock style/],
+        [{ clockAlternate: 'yes' }, /alternate/],
         [{ clockEnabled: 'yes' }, /on\/off/],
         [{ clockShowDate: 'no' }, /show-date/],
         [{ clockShowSeconds: 1 }, /show-seconds/],
