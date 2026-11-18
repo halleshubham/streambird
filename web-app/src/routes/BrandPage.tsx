@@ -28,7 +28,7 @@ import {
 import { kitSetFor } from '../studio/brandKitSet';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
 import { ClockFields } from '../components/ClockFields';
-import { clockFromKit, clockNow, formatClock, kitPatchFromClock, type ClockSettings } from '../studio/clock';
+import { alternatePhase, clockFromKit, clockNow, formatClock, isAlternating, kitPatchFromClock, type ClockSettings } from '../studio/clock';
 import { Button, Card, EmptyState, Input, Modal, SelectField, TextArea, buttonClass, confirm, toast } from '../components/ui';
 import { Notice, PageHeader } from '../components/host/HostKit';
 
@@ -58,7 +58,9 @@ const EMPTY_KIT: BrandKitInput = {
   clockShowDate: true,
   clockShowSeconds: false,
   clockTimezone: null,
-  clockSize: 'medium',
+  clockSize: 'small',
+  clockStyle: 'text',
+  clockAlternate: true,
   thumbnailAssetId: null,
   title: null,
   description: null,
@@ -311,25 +313,39 @@ export function BrandPage() {
   );
 }
 
-/** The clock in a kit preview: a dark pill in the chosen corner, stepping below the logo when they share a top corner (the studio does the same). */
-function KitClockPreview({ clock, logoSide, logoPct }: { clock: ClockSettings; logoSide: 'left' | 'right' | null; logoPct: number }) {
+/**
+ * The clock in a kit preview. Compact text (default): plain text with a shadow directly under the logo, centred on it when
+ * they share a top corner; the date and the time swap when "alternate" is on. Pill: a dark plate in the chosen corner,
+ * stepping below the logo when they share a top corner (the studio does the same).
+ */
+function KitClockPreview({ clock, logoSide, logoPct, logoCx }: { clock: ClockSettings; logoSide: 'left' | 'right' | null; logoPct: number; logoCx: number | null }) {
   const [now, setNow] = useState(() => clockNow());
   useEffect(() => {
-    const id = window.setInterval(() => setNow(clockNow()), 1000);
+    const id = window.setInterval(() => setNow(clockNow()), 250);
     return () => window.clearInterval(id);
   }, []);
   const text = formatClock(now, clock);
   const top = clock.position === 'top_left' || clock.position === 'top_right';
   const left = clock.position === 'top_left' || clock.position === 'bottom_left';
   const sharesLogoCorner = top && logoSide !== null && (logoSide === 'left') === left;
-  const style: CSSProperties = {
-    [left ? 'left' : 'right']: '3%',
-    ...(top ? { top: sharesLogoCorner ? `${4 + logoPct + 2}%` : '4%' } : { bottom: '4%' }),
-  };
+  const alt = isAlternating(clock) && text.date !== null;
+  const showing = alt ? (alternatePhase(now).date >= 0.5 ? 'date' : 'time') : 'both';
+  const underLogo = clock.style === 'text' && sharesLogoCorner && logoCx !== null;
+  const style: CSSProperties = underLogo
+    ? { left: `${logoCx}%`, transform: 'translateX(-50%)', top: `${4 + logoPct + 1.5}%` }
+    : { [left ? 'left' : 'right']: '3%', ...(top ? { top: sharesLogoCorner ? `${4 + logoPct + 2}%` : '4%' } : { bottom: '4%' }) };
   return (
-    <div className={`kit-preview-clock kit-preview-clock--${clock.size}`} style={style} data-testid="kit-preview-clock" data-position={clock.position}>
-      {text.date && <span>{text.date}</span>}
-      <b>{text.time}</b>
+    <div className={`kit-preview-clock kit-preview-clock--${clock.size} kit-preview-clock--${clock.style}`} style={style} data-testid="kit-preview-clock" data-position={clock.position} data-style={clock.style} data-showing={showing}>
+      {alt ? (
+        <b>{showing === 'date' ? text.date : text.time}</b>
+      ) : clock.style === 'pill' ? (
+        <>
+          {text.date && <span>{text.date}</span>}
+          <b>{text.time}</b>
+        </>
+      ) : (
+        <b>{text.date ? `${text.date}  ·  ${text.time}` : text.time}</b>
+      )}
     </div>
   );
 }
@@ -343,6 +359,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
   const wall = assets.find((a) => a.id === kit[f.wallpaper]);
   const ads = kit[f.ads] ?? [];
   const clock = clockFromKit(kit);
+  const [logoCx, setLogoCx] = useState<number | null>(null); // the logo's horizontal centre, in percent of the preview (for the compact clock under it)
   const canvasH = orientation === 'portrait' ? 1920 : 720;
   const frameAd = ads.find((a) => a.placement === 'l_shape');
   const frame = useFrameWindow(frameAd && kit.adsShrinkPicture !== false ? frameAd.assetId : null);
@@ -358,6 +375,11 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
           src={assetsApi.assetFileUrl(logo.id)}
           alt=""
           style={{ height: `${Math.max(6, (kit.logoSize / canvasH) * 100)}%` }}
+          onLoad={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            const box = e.currentTarget.closest('.kit-preview')?.getBoundingClientRect();
+            if (box && box.width > 0) setLogoCx(((r.left + r.width / 2 - box.left) / box.width) * 100);
+          }}
         />
       )}
     </>
@@ -385,7 +407,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
           </div>
         ) : null;
       })}
-      {clock.enabled && <KitClockPreview clock={clock} logoSide={logo ? kit.logoPosition : null} logoPct={logo ? Math.max(6, (kit.logoSize / canvasH) * 100) : 0} />}
+      {clock.enabled && <KitClockPreview clock={clock} logoSide={logo ? kit.logoPosition : null} logoPct={logo ? Math.max(6, (kit.logoSize / canvasH) * 100) : 0} logoCx={logo ? logoCx : null} />}
       <div className={`kit-preview-lt kit-preview-lt--${kit.lowerThirdStyle}`}>
         <b>Your name</b>
         <span>Title or topic</span>
@@ -708,7 +730,7 @@ interface KitEditorProps {
 const sameSet = (a: Set<string>, b: string[]) => a.size === b.length && b.every((x) => a.has(x));
 const sameAds = (a: BrandKitAd[], b: BrandKitAd[]) => JSON.stringify([...a].sort(byPlacement)) === JSON.stringify([...b].sort(byPlacement));
 const byPlacement = (x: BrandKitAd, y: BrandKitAd) => x.placement.localeCompare(y.placement);
-const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId', 'clockEnabled', 'clockPosition', 'clockFormat', 'clockShowDate', 'clockShowSeconds', 'clockTimezone', 'clockSize'] as const;
+const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId', 'clockEnabled', 'clockPosition', 'clockFormat', 'clockShowDate', 'clockShowSeconds', 'clockTimezone', 'clockSize', 'clockStyle', 'clockAlternate'] as const;
 
 /** One kit's editor (also the "new kit" form when `kit` is null): every graphic in place, per orientation, with a live preview. */
 function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, onLibraryChanged, onError, onSaid }: KitEditorProps) {
@@ -759,7 +781,9 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         clockShowDate: form.clockShowDate !== false,
         clockShowSeconds: form.clockShowSeconds === true,
         clockTimezone: form.clockTimezone ?? null,
-        clockSize: form.clockSize ?? 'medium',
+        clockSize: form.clockSize ?? 'small',
+        clockStyle: form.clockStyle ?? 'text',
+        clockAlternate: form.clockAlternate !== false,
         title: form.title?.trim() || null,
         description: form.description?.trim() || null,
         ...(sendAds(form.ads ?? []) ? { ads: form.ads ?? [] } : {}),

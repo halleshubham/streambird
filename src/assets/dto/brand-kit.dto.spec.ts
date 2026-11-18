@@ -10,7 +10,7 @@ const errorsOf = (cls: typeof CreateBrandKitDto | typeof UpdateBrandKitDto, body
 describe('brand kit clock fields', () => {
   const base = { name: 'Kit' };
 
-  it('all seven fields are optional on create and update (omitted = default / unchanged)', () => {
+  it('all nine fields are optional on create and update (omitted = default / unchanged)', () => {
     expect(errorsOf(CreateBrandKitDto, base)).toEqual([]);
     expect(errorsOf(UpdateBrandKitDto, {})).toEqual([]);
   });
@@ -19,6 +19,8 @@ describe('brand kit clock fields', () => {
     for (const clockPosition of ['top_left', 'top_right', 'bottom_left', 'bottom_right']) expect(errorsOf(UpdateBrandKitDto, { clockPosition })).toEqual([]);
     for (const clockFormat of ['12h', '24h']) expect(errorsOf(UpdateBrandKitDto, { clockFormat })).toEqual([]);
     for (const clockSize of ['small', 'medium', 'large']) expect(errorsOf(UpdateBrandKitDto, { clockSize })).toEqual([]);
+    for (const clockStyle of ['text', 'pill']) expect(errorsOf(UpdateBrandKitDto, { clockStyle })).toEqual([]);
+    for (const clockAlternate of [true, false]) expect(errorsOf(CreateBrandKitDto, { ...base, clockAlternate })).toEqual([]);
     expect(errorsOf(UpdateBrandKitDto, { clockEnabled: true, clockShowDate: false, clockShowSeconds: true, clockTimezone: 'Asia/Kolkata' })).toEqual([]);
   });
 
@@ -26,6 +28,9 @@ describe('brand kit clock fields', () => {
     expect(errorsOf(UpdateBrandKitDto, { clockPosition: 'center' })).toEqual(['The clock position must be top_left, top_right, bottom_left or bottom_right.']);
     expect(errorsOf(UpdateBrandKitDto, { clockFormat: '36h' })).toEqual(['The clock format must be 12h or 24h.']);
     expect(errorsOf(UpdateBrandKitDto, { clockSize: 'huge' })).toEqual(['The clock size must be small, medium or large.']);
+    expect(errorsOf(UpdateBrandKitDto, { clockStyle: 'box' })).toEqual(['The clock style must be text or pill.']);
+    expect(errorsOf(CreateBrandKitDto, { ...base, clockStyle: 3 })).toEqual(['The clock style must be text or pill.']);
+    expect(errorsOf(UpdateBrandKitDto, { clockAlternate: 'yes' })).toEqual(['The clock alternate setting must be true or false.']);
     expect(errorsOf(UpdateBrandKitDto, { clockEnabled: 'yes' })).toEqual(['The clock on/off setting must be true or false.']);
     expect(errorsOf(UpdateBrandKitDto, { clockShowDate: 1 })).toEqual(['The clock show-date setting must be true or false.']);
     expect(errorsOf(UpdateBrandKitDto, { clockShowSeconds: 'no' })).toEqual(['The clock show-seconds setting must be true or false.']);

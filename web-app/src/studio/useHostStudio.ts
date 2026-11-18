@@ -8,7 +8,7 @@ import {
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy, poweredByBox } from './poweredBy';
-import { ClockOverlay, DEFAULT_CLOCK, clockFromKit, clockNow, normalizeClock, type Box, type ClockSettings } from './clock';
+import { ClockOverlay, DEFAULT_CLOCK, LEGACY_CLOCK_LOOK, clockFromKit, clockNow, normalizeClock, type Box, type ClockSettings } from './clock';
 import { loadAnimatedLogo, type AnimatedFailReason, type AnimatedLogo } from './animatedLogo';
 import { kitSetFor } from './brandKitSet';
 import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
@@ -785,9 +785,10 @@ export function useHostStudio(streamId: string | undefined) {
     if (!settings.enabled) return;
     const avoid: Box[] = [];
     const b = brandingRef.current;
+    let logoBox: Box | null = null;
     if (b.logoImg) {
       const logoW = b.logoImg.naturalWidth * (b.logoSize / b.logoImg.naturalHeight);
-      avoid.push({ x: b.logoPosition === 'right' ? w - 16 - logoW : 16, y: 16, w: logoW, h: b.logoSize });
+      logoBox = { x: b.logoPosition === 'right' ? w - 16 - logoW : 16, y: 16, w: logoW, h: b.logoSize };
     }
     const toScene = (r: Box): Box => {
       if (!sceneBox) return r;
@@ -798,7 +799,8 @@ export function useHostStudio(streamId: string | undefined) {
     const tickerBar = b.newsText ? newsBarHeight(b.newsFontSize) : 0;
     if (tickerBar > 0) avoid.push(toScene({ x: 0, y: h - tickerBar, w, h: tickerBar }));
     if (showMarkRef.current) avoid.push(toScene(poweredByBox(w, h, tickerBar)));
-    clockOverlayRef.current!.draw(ctxRef.current!, w, h, settings, clockNow(), avoid);
+    // The compact text goes under the logo (and always keeps clear of it); the pill keeps clear of it by stepping away.
+    clockOverlayRef.current!.draw(ctxRef.current!, w, h, settings, clockNow(), avoid, undefined, logoBox);
   }
 
   function drawLowerThirdBanner(w: number, h: number, now: number, noTickerReserve = false) {
@@ -1622,7 +1624,8 @@ export function useHostStudio(streamId: string | undefined) {
         }
 
         if (saved.clock) {
-          const restored = normalizeClock(saved.clock);
+          // A clock saved before the compact style existed has no style/alternate: it was a pill with both texts on one line, so it stays that way.
+          const restored = normalizeClock(saved.clock, LEGACY_CLOCK_LOOK);
           clockRef.current = restored;
           setClockState(restored);
           setClockKitId(typeof saved.clockKitId === 'string' ? saved.clockKitId : null);

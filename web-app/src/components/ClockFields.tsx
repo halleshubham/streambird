@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { CLOCK_POSITIONS, CLOCK_SIZES, COMMON_TIMEZONES, allTimeZones, isValidTimeZone, type ClockSettings } from '../studio/clock';
+import { CLOCK_POSITIONS, CLOCK_SIZES, CLOCK_STYLES, COMMON_TIMEZONES, allTimeZones, isValidTimeZone, type ClockSettings } from '../studio/clock';
 
 /**
  * The "Date and time" settings, shared by the studio's Look tab (`variant="studio"`) and the brand kit editor
  * (`variant="kit"`): the two screens differ only in the CSS classes of their segmented buttons. Every control has a
  * test id (`clock-enabled`, `clock-position-top_left`, `clock-format-24h`, `clock-show-date`, `clock-show-seconds`,
- * `clock-size-large`, `clock-timezone`, `clock-timezone-search`).
+ * `clock-size-large`, `clock-style-text` / `clock-style-pill`, `clock-alternate` (only while the date is on),
+ * `clock-timezone`, `clock-timezone-search`).
  */
 export function ClockFields({ value, onChange, idPrefix, variant }: { value: ClockSettings; onChange: (patch: Partial<ClockSettings>) => void; idPrefix: string; variant: 'studio' | 'kit' }) {
   const seg = variant === 'kit' ? 'ha-seg' : 'segmented';
   const labelClass = variant === 'kit' ? 'ui-field-label' : undefined;
+  const hintClass = variant === 'kit' ? 'ha-hint' : 'docs-hint';
   const checkClass = variant === 'kit' ? 'ha-check' : 'clock-check';
   const [search, setSearch] = useState('');
   const zones = allTimeZones();
@@ -41,10 +43,21 @@ export function ClockFields({ value, onChange, idPrefix, variant }: { value: Clo
       {value.enabled && (
         <>
           {segmented('Position', 'position', CLOCK_POSITIONS, value.position, (position) => onChange({ position }))}
+          <div>
+            {segmented('Style', 'style', CLOCK_STYLES, value.style, (style) => onChange({ style }))}
+            <p className={hintClass} data-testid="clock-style-hint" style={{ margin: '6px 0 0' }}>
+              {value.style === 'text' ? 'Compact text sits under your logo and swaps between the time and the date.' : 'A dark rounded box in the corner you pick.'}
+            </p>
+          </div>
           {segmented('Time format', 'format', [{ id: '12h' as const, label: '12 hour' }, { id: '24h' as const, label: '24 hour' }], value.format, (format) => onChange({ format }))}
           <label className={checkClass}>
             <input type="checkbox" checked={value.showDate} data-testid="clock-show-date" onChange={(e) => onChange({ showDate: e.target.checked })} /> Show the date
           </label>
+          {value.showDate && (
+            <label className={checkClass}>
+              <input type="checkbox" checked={value.alternate} data-testid="clock-alternate" onChange={(e) => onChange({ alternate: e.target.checked })} /> Alternate date and time
+            </label>
+          )}
           <label className={checkClass}>
             <input type="checkbox" checked={value.showSeconds} data-testid="clock-show-seconds" onChange={(e) => onChange({ showSeconds: e.target.checked })} /> Show seconds
           </label>

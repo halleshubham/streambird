@@ -3764,7 +3764,9 @@ video.chroma-preview {
 .kit-preview-clock { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 1.2% 2.4%; border-radius: 999px; background: rgba(17, 14, 34, 0.78); color: #fff; font-size: 9px; line-height: 1.2; white-space: nowrap; }
 .kit-preview-clock--small { font-size: 7px; }
 .kit-preview-clock--large { font-size: 12px; }
-.kit-preview-clock b { font-weight: 600; }
+.kit-preview-clock b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.kit-preview-clock--text { padding: 0; border-radius: 0; background: none; font-weight: 700; text-shadow: 0 0 3px rgba(0, 0, 0, 0.8), 0 1px 2px rgba(0, 0, 0, 0.7); }
+.kit-preview-clock--text b { font-weight: 700; }
 .kit-preview-lt { position: absolute; left: 4%; bottom: 8%; display: flex; flex-direction: column; padding: 3% 4%; font-size: 9px; line-height: 1.25; color: #fff; background: rgba(17, 14, 34, 0.92); }
 .kit-preview-lt b { font-size: 11px; }
 .kit-preview-lt span { color: #d9ccff; }

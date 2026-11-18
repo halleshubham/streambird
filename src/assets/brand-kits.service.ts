@@ -228,7 +228,9 @@ export class BrandKitsService {
           clockShowDate: dto.clockShowDate ?? true,
           clockShowSeconds: dto.clockShowSeconds ?? false,
           clockTimezone: dto.clockTimezone ?? null,
-          clockSize: dto.clockSize ?? 'medium',
+          clockSize: dto.clockSize ?? 'small',
+          clockStyle: dto.clockStyle ?? 'text',
+          clockAlternate: dto.clockAlternate ?? true,
           isDefault: makeDefault,
         }),
       );
@@ -288,6 +290,8 @@ export class BrandKitsService {
       if (dto.clockShowSeconds !== undefined) kit.clockShowSeconds = dto.clockShowSeconds;
       if (dto.clockTimezone !== undefined) kit.clockTimezone = dto.clockTimezone;
       if (dto.clockSize !== undefined) kit.clockSize = dto.clockSize;
+      if (dto.clockStyle !== undefined) kit.clockStyle = dto.clockStyle;
+      if (dto.clockAlternate !== undefined) kit.clockAlternate = dto.clockAlternate;
       if (dto.isDefault === true && !kit.isDefault) {
         await repo.update({ accountId, isDefault: true }, { isDefault: false });
         kit.isDefault = true;

@@ -4,6 +4,7 @@ export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
 export type ClockPosition = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
 export type ClockFormat = '12h' | '24h';
 export type ClockSize = 'small' | 'medium' | 'large';
+export type ClockStyle = 'text' | 'pill';
 
 /** A reusable look made of library assets. Platform connections point at a kit (see PlatformConnection.brandKitId). */
 @Entity('brand_kits')
@@ -78,8 +79,16 @@ export class BrandKit {
   @Column({ type: 'varchar', length: 64, nullable: true })
   clockTimezone!: string | null;
 
-  @Column({ type: 'text', default: 'medium' })
+  @Column({ type: 'text', default: 'small' })
   clockSize!: ClockSize;
+
+  /** Migration 0035: 'text' = plain text with a shadow under the logo, 'pill' = the dark rounded plate. */
+  @Column({ type: 'varchar', length: 8, default: 'text' })
+  clockStyle!: ClockStyle;
+
+  /** Migration 0035: the date and the time take turns in the same spot (true) or show together (false). */
+  @Column({ default: true })
+  clockAlternate!: boolean;
 
   /** The account-wide default kit, used by a stream whose destinations have no kit of their own. At most one per account. */
   @Column({ default: false })

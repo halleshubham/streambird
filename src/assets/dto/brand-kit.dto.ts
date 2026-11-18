@@ -137,6 +137,12 @@ export class CreateBrandKitDto {
 
   @IsOptional() @IsIn(['small', 'medium', 'large'], { message: 'The clock size must be small, medium or large.' })
   clockSize?: 'small' | 'medium' | 'large';
+
+  @IsOptional() @IsIn(['text', 'pill'], { message: 'The clock style must be text or pill.' })
+  clockStyle?: 'text' | 'pill';
+
+  @IsOptional() @IsBoolean({ message: 'The clock alternate setting must be true or false.' })
+  clockAlternate?: boolean;
 }
 
 export class UpdateBrandKitDto {
@@ -216,6 +222,12 @@ export class UpdateBrandKitDto {
 
   @IsOptional() @IsIn(['small', 'medium', 'large'], { message: 'The clock size must be small, medium or large.' })
   clockSize?: 'small' | 'medium' | 'large';
+
+  @IsOptional() @IsIn(['text', 'pill'], { message: 'The clock style must be text or pill.' })
+  clockStyle?: 'text' | 'pill';
+
+  @IsOptional() @IsBoolean({ message: 'The clock alternate setting must be true or false.' })
+  clockAlternate?: boolean;
 }
 
 export class AssignBrandKitDto {
