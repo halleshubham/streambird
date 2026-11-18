@@ -2,15 +2,20 @@ name: CI
 
 # Runs on every pull request, and is also called by docker-publish.yml so the
 # image is only built and published from a main that passed everything below.
+#
+# Jobs: `checks` (typecheck, unit, build, e2e) and `ui` (Playwright, 4 shards in parallel, each with its own
+# Postgres) run side by side; the final `test` job aggregates them. Keep its id AND name exactly `test`:
+# docker-publish.yml (`needs: test`) and the PR tooling poll that check name.
 on:
   pull_request: {}
   workflow_call: {}
   workflow_dispatch: {}
 
 jobs:
-  test:
+  checks:
+    name: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -59,18 +64,76 @@ jobs:
       - name: End-to-end tests
         run: npm run test:e2e
 
+  ui:
+    name: ui (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: streambird
+          POSTGRES_PASSWORD: streambird
+          POSTGRES_DB: streambird_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U streambird"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      E2E_DATABASE_URL: postgres://streambird:streambird@localhost:5432/streambird_e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web-app/package-lock.json
+
+      - run: npm ci
+      - run: npm ci --prefix web-app
+
+      # The UI tests serve dist-web/ (the fixture server runs the backend with ts-node).
+      - name: Build web app
+        run: npm run build --prefix web-app
+
       - name: Install browser for UI tests
         run: npx playwright install --with-deps chromium
 
-      - name: Browser smoke tests
-        run: npm run test:ui
+      - name: Browser smoke tests (shard ${{ matrix.shard }}/4)
+        run: npm run test:ui -- --shard=${{ matrix.shard }}/4
 
       - name: Keep the Playwright report when something fails
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Single required check: succeeds only when every job above succeeded (not skipped, not cancelled).
+  test:
+    name: test
+    if: always()
+    needs: [checks, ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needed job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "::error::a CI job finished as '$r'"; exit 1; fi
+          done
