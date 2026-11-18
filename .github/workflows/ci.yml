@@ -2,15 +2,20 @@ name: CI
 
 # Runs on every pull request, and is also called by docker-publish.yml so the
 # image is only built and published from a main that passed everything below.
+#
+# Jobs: `checks` (typecheck, unit, build, e2e) and `ui` (Playwright, 6 shards in parallel, each with its own
+# Postgres) run side by side; the final `test` job aggregates them. Keep its id AND name exactly `test`:
+# docker-publish.yml (`needs: test`) and the PR tooling poll that check name.
 on:
   pull_request: {}
   workflow_call: {}
   workflow_dispatch: {}
 
 jobs:
-  test:
+  checks:
+    name: checks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -40,9 +45,23 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix web-app
 
-      # The slate end-to-end test pushes real RTMP through ffmpeg.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # apt mirrors occasionally stall for minutes (seen on both ffmpeg and Playwright's system deps):
+      # fail fast per attempt and retry instead of hanging the job.
+      - name: Make apt resilient
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99ci-resilient
+
+      # The slate end-to-end test pushes real RTMP through ffmpeg. The apt mirror is sometimes slow (minutes), so
+      # install in the background while typecheck/unit/build run, and wait for it just before the e2e step.
+      - name: Install ffmpeg (background)
+        run: |
+          nohup bash -c '
+            for i in 1 2 3; do
+              if timeout 240 bash -c "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg"; then touch /tmp/ffmpeg.ok; exit 0; fi
+              echo "apt attempt $i failed or timed out"
+            done
+            touch /tmp/ffmpeg.failed
+          ' > /tmp/ffmpeg-install.log 2>&1 &
 
       - name: Typecheck (backend, tests and web app)
         run: npm run typecheck
@@ -55,22 +74,107 @@ jobs:
           npm run build
           npm run build --prefix web-app
 
+      - name: Wait for ffmpeg
+        run: |
+          for i in $(seq 1 300); do
+            [ -f /tmp/ffmpeg.ok ] && exit 0
+            [ -f /tmp/ffmpeg.failed ] && break
+            sleep 2
+          done
+          cat /tmp/ffmpeg-install.log | tail -30
+          [ -f /tmp/ffmpeg.ok ] || { echo "::error::ffmpeg did not install"; exit 1; }
+
       # Real Postgres (migrations applied on top of existing data) + the real app + a mock Razorpay.
       - name: End-to-end tests
         run: npm run test:e2e
 
-      - name: Install browser for UI tests
-        run: npx playwright install --with-deps chromium
+  ui:
+    name: ui (${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: streambird
+          POSTGRES_PASSWORD: streambird
+          POSTGRES_DB: streambird_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U streambird"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      E2E_DATABASE_URL: postgres://streambird:streambird@localhost:5432/streambird_e2e
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Browser smoke tests
-        run: npm run test:ui
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web-app/package-lock.json
+
+      - run: npm ci
+      - run: npm ci --prefix web-app
+
+      # The UI tests serve dist-web/ (the fixture server runs the backend with ts-node).
+      - name: Build web app
+        run: npm run build --prefix web-app
+
+      # apt mirrors occasionally stall for minutes (seen on both ffmpeg and Playwright's system deps):
+      # fail fast per attempt and retry instead of hanging the job.
+      - name: Make apt resilient
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99ci-resilient
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install browser for UI tests
+        run: |
+          for i in 1 2 3; do
+            timeout 240 npx playwright install --with-deps chromium && exit 0
+            echo "playwright install attempt $i failed or timed out"
+          done
+          exit 1
+
+      - name: Browser smoke tests (shard ${{ matrix.shard }}/6)
+        run: npm run test:ui -- --fully-parallel --shard=${{ matrix.shard }}/6
 
       - name: Keep the Playwright report when something fails
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Single required check: succeeds only when every job above succeeded (not skipped, not cancelled).
+  test:
+    name: test
+    if: always()
+    needs: [checks, ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needed job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "::error::a CI job finished as '$r'"; exit 1; fi
+          done

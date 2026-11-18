@@ -22,7 +22,7 @@ export PW_CHROMIUM=/opt/pw-browsers/chromium      # only if Playwright's own bro
 npm run typecheck && npm test
 (cd web-app && npm run build)                       # REQUIRED before test:ui (tsc + vite build + prerender) — it serves dist-web/
 npm run test:e2e
-npm run test:ui                                      # one test: npx playwright test -c test/ui/playwright.config.ts -g "part of title"
+npm run test:ui                                      # CI runs 6 shards; one locally: `npm run test:ui -- --fully-parallel --shard=2/6`; one test: npx playwright test -c test/ui/playwright.config.ts -g "part of title"
 ```
 
 Single e2e file: `npx jest --config test/e2e/jest-e2e.config.js --runInBand test/e2e/<name>`.
