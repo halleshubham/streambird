@@ -572,6 +572,15 @@ export interface BrandKit {
   isDefault: boolean;
   /** Shrink the live picture into the space an ad leaves free while it shows. */
   adsShrinkPicture: boolean;
+  /** On-air date and time overlay (one setting for both orientations). Off by default. */
+  clockEnabled: boolean;
+  clockPosition: 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
+  clockFormat: '12h' | '24h';
+  clockShowDate: boolean;
+  clockShowSeconds: boolean;
+  /** IANA zone name; null = the streamer's device time zone. */
+  clockTimezone: string | null;
+  clockSize: 'small' | 'medium' | 'large';
   /** The kit's stream thumbnail (a JPG/PNG library file, 16:9 recommended); one for both orientations. null = none. */
   thumbnailAssetId: string | null;
   /** The channels/pages (platform connections) using this kit. */
@@ -586,6 +595,13 @@ export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPositio
   logoAssetIdPortrait?: string | null;
   wallpaperAssetIdPortrait?: string | null;
   adsShrinkPicture?: boolean;
+  clockEnabled?: boolean;
+  clockPosition?: BrandKit['clockPosition'];
+  clockFormat?: BrandKit['clockFormat'];
+  clockShowDate?: boolean;
+  clockShowSeconds?: boolean;
+  clockTimezone?: string | null;
+  clockSize?: BrandKit['clockSize'];
   thumbnailAssetId?: string | null;
   /** Omitted = unchanged on update; null or blank = cleared. */
   title?: string | null;

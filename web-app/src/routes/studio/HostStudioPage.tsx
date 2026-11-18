@@ -42,6 +42,7 @@ import {
   Settings2,
   RefreshCw,
   SlidersHorizontal,
+  Clock,
 } from 'lucide-react';
 import { useHostStudio, RESOLUTIONS, MAX_SLIDES } from '../../studio/useHostStudio';
 import { SlideControls } from '../../components/SlideControls';
@@ -63,6 +64,7 @@ import { ApiError } from '../../api/client';
 import type { PresetConfig } from '../../types/api';
 import { confirm } from '../../components/ui';
 import { animatedNotice } from '../../studio/animatedImage';
+import { ClockFields } from '../../components/ClockFields';
 import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -148,6 +150,8 @@ export function HostStudioPage() {
     canBrandLibrary,
     adsPlan,
     adsShrink,
+    clock,
+    clockKitId,
     ads,
     canRecord,
     canChromaKey,
@@ -1033,6 +1037,41 @@ export function HostStudioPage() {
                       value={branding.newsFontSize}
                       onChange={(e) => actions.setNewsFontSize(parseInt(e.target.value, 10))}
                     />
+                  </div>
+
+                  <div className="panel studio-clock" data-testid="studio-clock">
+                    <label className="studio-section-label">
+                      <Clock size={14} /> Date and time
+                    </label>
+                    {(() => {
+                      const fromKit = clockKitId ? brandKits.find((k) => k.id === clockKitId) ?? null : null;
+                      const activeKit = brandKits.find((k) => k.id === activeKitId) ?? null;
+                      return (
+                        <>
+                          {fromKit ? (
+                            <p className="docs-hint" data-testid="clock-source">
+                              From brand kit <strong>{fromKit.name}</strong>. Change anything below to set it for this stream only.
+                            </p>
+                          ) : (
+                            <p className="docs-hint" data-testid="clock-source">
+                              Set for this stream.
+                            </p>
+                          )}
+                          <ClockFields value={clock} onChange={actions.setClock} idPrefix="studioClock" variant="studio" />
+                          {fromKit && clock.enabled && (
+                            <button type="button" className="icon-btn icon-btn--small" data-testid="clock-off-for-stream" onClick={() => actions.setClock({ enabled: false })}>
+                              Switch off for this stream
+                            </button>
+                          )}
+                          {!fromKit && activeKit && (
+                            <button type="button" className="icon-btn icon-btn--small" data-testid="clock-reset-kit" onClick={() => actions.applyKitClock(activeKit)}>
+                              Use the settings of "{activeKit.name}" again
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <p className="docs-hint">Drawn on the picture, so viewers and the recording see it. It steps clear of the logo and the news ticker.</p>
                   </div>
 
           </div>

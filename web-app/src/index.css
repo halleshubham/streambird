@@ -3761,6 +3761,10 @@ video.chroma-preview {
 .kit-preview-logo { position: absolute; top: 4%; max-width: 40%; object-fit: contain; }
 .kit-preview-logo--left { left: 3%; }
 .kit-preview-logo--right { right: 3%; }
+.kit-preview-clock { position: absolute; display: flex; flex-direction: column; align-items: center; padding: 1.2% 2.4%; border-radius: 999px; background: rgba(17, 14, 34, 0.78); color: #fff; font-size: 9px; line-height: 1.2; white-space: nowrap; }
+.kit-preview-clock--small { font-size: 7px; }
+.kit-preview-clock--large { font-size: 12px; }
+.kit-preview-clock b { font-weight: 600; }
 .kit-preview-lt { position: absolute; left: 4%; bottom: 8%; display: flex; flex-direction: column; padding: 3% 4%; font-size: 9px; line-height: 1.25; color: #fff; background: rgba(17, 14, 34, 0.92); }
 .kit-preview-lt b { font-size: 11px; }
 .kit-preview-lt span { color: #d9ccff; }
@@ -4094,3 +4098,6 @@ video.chroma-preview {
 @media (prefers-reduced-motion: reduce) {
   .more-options-chevron, .preset-card { transition: none; }
 }
+
+.clock-check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.clock-check input[type="checkbox"] { width: auto; flex: none; margin: 0; }

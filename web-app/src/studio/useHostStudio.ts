@@ -7,7 +7,8 @@ import {
   stepLowerThirdProgress,
 } from './lowerThird';
 import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
-import { drawPoweredBy } from './poweredBy';
+import { drawPoweredBy, poweredByBox } from './poweredBy';
+import { ClockOverlay, DEFAULT_CLOCK, clockFromKit, clockNow, normalizeClock, type Box, type ClockSettings } from './clock';
 import { loadAnimatedLogo, type AnimatedFailReason, type AnimatedLogo } from './animatedLogo';
 import { kitSetFor } from './brandKitSet';
 import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
@@ -277,6 +278,10 @@ interface PersistedStudioState {
   ads: Partial<Record<AdPlacement, PersistedAd>>;
   /** "Shrink picture while ads show" for this stream; undefined = the kit's choice (default on). */
   adsShrink: boolean;
+  /** The on-air date and time for this stream. undefined = never decided: the stream's kit supplies it (off when there is none). Once set, it wins over the kit on every reload. */
+  clock: ClockSettings;
+  /** The kit whose clock settings these still are; null = the host changed them for this stream. */
+  clockKitId: string | null;
 }
 interface PersistedAd {
   source: AdSource;
@@ -456,6 +461,12 @@ export function useHostStudio(streamId: string | undefined) {
   const adLayerRef = useRef<AdLayer | null>(null);
   if (!adLayerRef.current) adLayerRef.current = new AdLayer();
   const [adsShrink, setAdsShrinkState] = useState(true);
+  /** The on-air date and time (clock.ts). The ref is what the draw loop reads. */
+  const [clock, setClockState] = useState<ClockSettings>({ ...DEFAULT_CLOCK });
+  const clockRef = useRef<ClockSettings>({ ...DEFAULT_CLOCK });
+  const [clockKitId, setClockKitId] = useState<string | null>(null);
+  const clockOverlayRef = useRef<ClockOverlay | null>(null);
+  if (!clockOverlayRef.current) clockOverlayRef.current = new ClockOverlay();
   const [adsPlan, setAdsPlan] = useState<'unknown' | 'free' | 'custom'>('unknown');
   const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD, l_shape: EMPTY_AD });
   /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
@@ -761,6 +772,33 @@ export function useHostStudio(streamId: string | undefined) {
     const animated = logoAnimRef.current;
     ctx.drawImage(animated ? animated.anim.frameAt(now - animated.startedAt) : b.logoImg, logoX, 16 + yOffset, logoW, b.logoSize);
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * The on-air date and time. Drawn on the scene (ctxRef.current: the shrunken picture's own layer while an ad shrinks it, so
+   * it follows the picture and no ad hides it; otherwise the canvas itself), after the logo and before the name banner. It
+   * keeps clear of the logo, the ticker and the Free plan's mark by stepping away from them (see layoutClock). `sceneBox` is
+   * where the scene lands on the real canvas, so the ticker and the mark (real-canvas things) are mapped into scene space.
+   */
+  function drawClock(w: number, h: number, sceneBox: { x: number; y: number; w: number; h: number } | null) {
+    const settings = clockRef.current;
+    if (!settings.enabled) return;
+    const avoid: Box[] = [];
+    const b = brandingRef.current;
+    if (b.logoImg) {
+      const logoW = b.logoImg.naturalWidth * (b.logoSize / b.logoImg.naturalHeight);
+      avoid.push({ x: b.logoPosition === 'right' ? w - 16 - logoW : 16, y: 16, w: logoW, h: b.logoSize });
+    }
+    const toScene = (r: Box): Box => {
+      if (!sceneBox) return r;
+      const kx = w / sceneBox.w;
+      const ky = h / sceneBox.h;
+      return { x: (r.x - sceneBox.x) * kx, y: (r.y - sceneBox.y) * ky, w: r.w * kx, h: r.h * ky };
+    };
+    const tickerBar = b.newsText ? newsBarHeight(b.newsFontSize) : 0;
+    if (tickerBar > 0) avoid.push(toScene({ x: 0, y: h - tickerBar, w, h: tickerBar }));
+    if (showMarkRef.current) avoid.push(toScene(poweredByBox(w, h, tickerBar)));
+    clockOverlayRef.current!.draw(ctxRef.current!, w, h, settings, clockNow(), avoid);
   }
 
   function drawLowerThirdBanner(w: number, h: number, now: number, noTickerReserve = false) {
@@ -1243,6 +1281,7 @@ export function useHostStudio(streamId: string | undefined) {
       }
 
       drawLogo(now);
+      drawClock(w, h, sceneBox);
       if (sceneBox) {
         // Scene done: the logo and name banner are part of it. Put the shrunken scene on the real canvas; the ticker stays at the bottom edge.
         drawLowerThirdBanner(w, h, now, true);
@@ -1582,6 +1621,13 @@ export function useHostStudio(streamId: string | undefined) {
           }
         }
 
+        if (saved.clock) {
+          const restored = normalizeClock(saved.clock);
+          clockRef.current = restored;
+          setClockState(restored);
+          setClockKitId(typeof saved.clockKitId === 'string' ? saved.clockKitId : null);
+        }
+
         restoreAds(streamRow.id, saved.ads);
         if (typeof saved.adsShrink === 'boolean') {
           adLayerRef.current?.setShrink(saved.adsShrink);
@@ -1722,6 +1768,9 @@ export function useHostStudio(streamId: string | undefined) {
         return;
       }
       setActiveKitId(kit.id);
+      // The clock follows the kit while it is still "from the kit" (so editing the kit reaches the stream), and an undecided stream
+      // (opened before the clock existed) takes the kit's once the kit turns it on. A clock the host set by hand is never touched.
+      if (saved.clock ? saved.clockKitId === kit.id : kit.clockEnabled) applyKitClock(kit);
       // Big pictures are not kept in the browser: fetch them again so a reload keeps the look.
       const set = kitSetFor(kit, stream.orientation ?? 'landscape');
       const missingLogo = !!set.logoAssetId && !saved.logoDataUrl;
@@ -2321,6 +2370,8 @@ export function useHostStudio(streamId: string | undefined) {
     setLogoPosition(kit.logoPosition);
     setLogoSize(kit.logoSize);
     setLowerThird({ style: kit.lowerThirdStyle });
+    // A reload (silent) keeps the clock the host set for this stream; only an explicit pick (or a first apply) takes the kit's.
+    if (!opts.silent) applyKitClock(kit);
     if (!opts.silent) setAdsShrink(kit.adsShrinkPicture !== false);
     // The logo, the wallpaper and each ad load on their own: one missing file never stops the others.
     const failed: string[] = [];
@@ -2360,6 +2411,25 @@ export function useHostStudio(streamId: string | undefined) {
       const timed = set.ads.some((a) => a.mode === 'interval');
       setStatus({ text: `Applied brand kit "${kit.name}".${timed ? ' Ads set to "now and then" show on their timer; it starts again when you go live (see the Ads tab).' : ''}`, isError: false });
     }
+  }
+
+  // ---- Clock (on-air date and time) -------------------------------------------
+
+  function storeClock(next: ClockSettings, kitId: string | null) {
+    clockRef.current = next;
+    setClockState(next);
+    setClockKitId(kitId);
+    if (streamIdRef.current) savePersisted(streamIdRef.current, { clock: next, clockKitId: kitId });
+  }
+
+  /** Takes the kit's clock settings for this stream (they stay marked "from the kit" until the host changes one). */
+  function applyKitClock(kit: BrandKit) {
+    storeClock(clockFromKit(kit), kit.id);
+  }
+
+  /** The host's own change for this stream: wins over the kit from now on, also after a reload. */
+  function setClock(patch: Partial<ClockSettings>) {
+    storeClock(normalizeClock({ ...clockRef.current, ...patch }), null);
   }
 
   // ---- Ads ---------------------------------------------------------------
@@ -3286,6 +3356,8 @@ export function useHostStudio(streamId: string | undefined) {
     adsPlan,
     ads: adsUi,
     adsShrink,
+    clock,
+    clockKitId,
     canRecord,
     canChromaKey,
     canLowerThird,
@@ -3350,6 +3422,8 @@ export function useHostStudio(streamId: string | undefined) {
       useKitAd,
       setLogoSize,
       setLogoPosition,
+      setClock,
+      applyKitClock,
       setNewsText,
       setNameFontSize,
       setNewsFontSize,
