@@ -9,7 +9,7 @@
 - Single backend process assumption (in-memory state, see `backend.md`).
 
 ## CI/CD
-- `.github/workflows/ci.yml` (PRs, `workflow_call`, manual): Postgres 16 service, ffmpeg, then typecheck → unit → build → e2e → Playwright UI. `GitGuardian` also runs on PRs.
+- `.github/workflows/ci.yml` (PRs, `workflow_call`, manual): job `checks` (Postgres 16 service, ffmpeg, typecheck → unit → build → e2e) in parallel with job `ui`, a matrix of 4 Playwright shards (each its own Postgres, web-app build and Chromium), then an aggregator job whose id and name are exactly `test` (`needs: [checks, ui]`, `if: always()`, fails unless every needed job succeeded). `docker-publish.yml` and PR tooling depend on the check name `test`; keep it. Shard failures upload `playwright-report-shard-N`. `GitGuardian` also runs on PRs.
 - `docker-publish.yml` (push to `main`, manual): runs `ci.yml` first, then builds and pushes `latest` + short-sha to GHCR. **An image exists only for a green `main` commit.** Typical timing: CI ≈ 3–4 min, image ≈ 4–5 min.
 - **Release = merge to `main` → wait for the image → deploy in Coolify.** Merging does not deploy by itself.
 - Re-run a stuck CI via the Actions UI or `workflow_dispatch` (a hung `apt-get install ffmpeg` step has happened once).
