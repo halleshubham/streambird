@@ -105,11 +105,17 @@ jobs:
       - name: Build web app
         run: npm run build --prefix web-app
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install browser for UI tests
         run: npx playwright install --with-deps chromium
 
       - name: Browser smoke tests (shard ${{ matrix.shard }}/6)
-        run: npm run test:ui -- --shard=${{ matrix.shard }}/6
+        run: npm run test:ui -- --fully-parallel --shard=${{ matrix.shard }}/6
 
       - name: Keep the Playwright report when something fails
         if: failure()
