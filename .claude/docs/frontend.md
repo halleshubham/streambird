@@ -178,3 +178,6 @@ No separate upload section: `BrandPage.tsx` has Brand kits (editor per kit) and 
 
 ## Studio and guest styles (redesign)
 Host studio CSS lives in `src/styles/studio.css`, guest CSS in `src/styles/guest.css` (not in `index.css`). The studio is a dark scope (`.studio-shell` overrides the tokens); the call view (`.guest-page--call`) likewise. See studio.md "Studio and guest redesign" (it supersedes the dock/top-bar split described above).
+
+### Date and time UI (clock)
+`components/ClockFields.tsx` is the one control set for the kit editor (`variant="kit"`, Brand page card `kit-clock`, "Date and time (both shapes)") and the studio Look tab (`variant="studio"`, panel `studio-clock`). The kit preview adds `kit-preview-clock` (`data-position`; steps below the logo in a shared top corner). Test ids: `clock-enabled`, `clock-position-<corner>`, `clock-format-12h|24h`, `clock-show-date`, `clock-show-seconds`, `clock-size-small|medium|large`, `clock-timezone` (select: "This device (auto)" + common zones incl. Asia/Kolkata), `clock-timezone-search` (free text with a datalist of `Intl.supportedValuesOf('timeZone')`). The other controls are hidden while the switch is off.

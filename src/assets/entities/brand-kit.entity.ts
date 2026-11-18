@@ -1,6 +1,9 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
+export type ClockPosition = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
+export type ClockFormat = '12h' | '24h';
+export type ClockSize = 'small' | 'medium' | 'large';
 
 /** A reusable look made of library assets. Platform connections point at a kit (see PlatformConnection.brandKitId). */
 @Entity('brand_kits')
@@ -54,6 +57,29 @@ export class BrandKit {
 
   @Column({ type: 'text', default: 'accent' })
   lowerThirdStyle!: LowerThirdStyleId;
+
+  /** On-air date and time overlay (migration 0034). One setting for both orientations. Off by default. */
+  @Column({ default: false })
+  clockEnabled!: boolean;
+
+  @Column({ type: 'text', default: 'top_right' })
+  clockPosition!: ClockPosition;
+
+  @Column({ type: 'text', default: '12h' })
+  clockFormat!: ClockFormat;
+
+  @Column({ default: true })
+  clockShowDate!: boolean;
+
+  @Column({ default: false })
+  clockShowSeconds!: boolean;
+
+  /** IANA zone name; null = the streamer's device timezone. */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  clockTimezone!: string | null;
+
+  @Column({ type: 'text', default: 'medium' })
+  clockSize!: ClockSize;
 
   /** The account-wide default kit, used by a stream whose destinations have no kit of their own. At most one per account. */
   @Column({ default: false })

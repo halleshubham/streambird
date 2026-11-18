@@ -483,4 +483,79 @@ describeE2E('assets and brand kits: the account library, plan allowance and shar
       expect((await client.patch(`/brand-kits/${kit}`, { logoAssetIdPortrait: logo })).status).toBe(403);
     });
   });
+  describe('brand kit clock (on-air date and time)', () => {
+    const DEFAULTS = { clockEnabled: false, clockPosition: 'top_right', clockFormat: '12h', clockShowDate: true, clockShowSeconds: false, clockTimezone: null, clockSize: 'medium' };
+    beforeEach(async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 5 });
+    });
+    afterEach(async () => {
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 0 });
+    });
+
+    it('a kit made without clock fields gets the defaults (off), on create, list and update, and every field is always returned', async () => {
+      const { client } = await h.signIn();
+      const created = await client.post('/brand-kits', { name: 'Plain' });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject(DEFAULTS);
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === created.body.id)).toMatchObject(DEFAULTS);
+      const renamed = await client.patch(`/brand-kits/${created.body.id}`, { name: 'Plain 2' });
+      expect(renamed.body).toMatchObject({ name: 'Plain 2', ...DEFAULTS });
+    });
+
+    it('create takes every clock field; PATCH changes only what is sent (omitted = unchanged); null time zone = the device zone', async () => {
+      const { client } = await h.signIn();
+      const full = { clockEnabled: true, clockPosition: 'bottom_left', clockFormat: '24h', clockShowDate: false, clockShowSeconds: true, clockTimezone: 'Asia/Kolkata', clockSize: 'large' };
+      const created = await client.post('/brand-kits', { name: 'Clocked', ...full });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject(full);
+      const id = created.body.id;
+
+      const one = await client.patch(`/brand-kits/${id}`, { clockPosition: 'top_left' });
+      expect(one.status).toBe(200);
+      expect(one.body).toMatchObject({ ...full, clockPosition: 'top_left' });
+      // Unrelated edits leave the clock alone.
+      expect((await client.patch(`/brand-kits/${id}`, { wallpaperDim: 10 })).body).toMatchObject({ ...full, clockPosition: 'top_left' });
+      // null (and blank) clear the zone back to the device's own; false switches things off.
+      const cleared = await client.patch(`/brand-kits/${id}`, { clockTimezone: null, clockEnabled: false });
+      expect(cleared.body).toMatchObject({ clockTimezone: null, clockEnabled: false, clockFormat: '24h', clockSize: 'large' });
+      await client.patch(`/brand-kits/${id}`, { clockTimezone: 'Europe/London' });
+      expect((await client.patch(`/brand-kits/${id}`, { clockTimezone: '  ' })).body.clockTimezone).toBeNull();
+      // Saved for real, not just echoed.
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === id)).toMatchObject({ clockEnabled: false, clockPosition: 'top_left', clockFormat: '24h', clockSize: 'large', clockTimezone: null });
+    });
+
+    it('bad values are a 400 with a plain sentence and change nothing', async () => {
+      const { client } = await h.signIn();
+      const kit = (await client.post('/brand-kits', { name: 'Strict', clockEnabled: true, clockTimezone: 'Asia/Kolkata' })).body.id;
+      const bad: Array<[Record<string, unknown>, RegExp]> = [
+        [{ clockPosition: 'center' }, /clock position/],
+        [{ clockFormat: '36h' }, /clock format/],
+        [{ clockSize: 'huge' }, /clock size/],
+        [{ clockEnabled: 'yes' }, /on\/off/],
+        [{ clockShowDate: 'no' }, /show-date/],
+        [{ clockShowSeconds: 1 }, /show-seconds/],
+        [{ clockTimezone: 'Mars/Olympus' }, /time zone/],
+        [{ clockTimezone: 'A'.repeat(65) }, /time zone/],
+        [{ clockTimezone: 12 }, /time zone/],
+      ];
+      for (const [body, re] of bad) {
+        const r = await client.patch(`/brand-kits/${kit}`, body);
+        expect(r.status).toBe(400);
+        expect(JSON.stringify(r.body)).toMatch(re);
+        expect((await client.post('/brand-kits', { name: 'Bad', ...body })).status).toBe(400);
+      }
+      expect((await client.get('/brand-kits')).body.find((k: any) => k.id === kit)).toMatchObject({ ...DEFAULTS, clockEnabled: true, clockTimezone: 'Asia/Kolkata' });
+      expect((await client.get('/brand-kits')).body.filter((k: any) => k.name === 'Bad')).toHaveLength(0);
+    });
+
+    it('another account cannot read or change the clock of a kit (404), and the Free plan without storage still has no kits', async () => {
+      const { client } = await h.signIn();
+      const { client: other } = await h.signIn();
+      const kit = (await client.post('/brand-kits', { name: 'Mine', clockEnabled: true })).body.id;
+      expect((await other.patch(`/brand-kits/${kit}`, { clockEnabled: false })).status).toBe(404);
+      expect((await other.get('/brand-kits')).body).toEqual([]);
+      await admin.patch('/superadmin/plans/free', { assetStorageMb: 0 });
+      expect((await client.patch(`/brand-kits/${kit}`, { clockEnabled: false })).status).toBe(403);
+    });
+  });
 });

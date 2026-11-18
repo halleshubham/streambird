@@ -1,3 +1,14 @@
+/** A box that always covers the mark (it is a little wider than the mark ever is), so other overlays can keep clear of it. */
+export function poweredByBox(w: number, h: number, reserveBottom: number): { x: number; y: number; w: number; h: number } {
+  const portrait = h > w;
+  const unit = (portrait ? w : h) / 720;
+  const margin = Math.round(20 * unit);
+  const pillH = Math.round(40 * unit);
+  const bottomGap = portrait ? Math.round(h * 0.06) : margin;
+  const boxW = Math.round(340 * unit);
+  return { x: w - margin - boxW, y: h - reserveBottom - bottomGap - pillH, w: boxW, h: pillH };
+}
+
 /**
  * The small "Powered by StreamBird" mark drawn in the bottom-right corner of streams on plans that show it
  * (Free; see `plans.watermark`). Sits above the news ticker and, on a vertical stream, clear of the bottom edge.

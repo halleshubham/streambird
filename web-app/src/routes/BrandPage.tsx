@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent, FormEvent } from 'react';
+import type { CSSProperties, DragEvent, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, ImagePlus, Lock, Pencil, Plus, Replace, Trash2, UploadCloud, X } from 'lucide-react';
 import * as assetsApi from '../api/assets';
@@ -27,6 +27,8 @@ import {
 } from '../studio/brandSizes';
 import { kitSetFor } from '../studio/brandKitSet';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
+import { ClockFields } from '../components/ClockFields';
+import { clockFromKit, clockNow, formatClock, kitPatchFromClock, type ClockSettings } from '../studio/clock';
 import { Button, Card, EmptyState, Input, Modal, SelectField, TextArea, buttonClass, confirm, toast } from '../components/ui';
 import { Notice, PageHeader } from '../components/host/HostKit';
 
@@ -50,6 +52,13 @@ const EMPTY_KIT: BrandKitInput = {
   wallpaperDim: 0,
   lowerThirdStyle: 'accent',
   adsShrinkPicture: true,
+  clockEnabled: false,
+  clockPosition: 'top_right',
+  clockFormat: '12h',
+  clockShowDate: true,
+  clockShowSeconds: false,
+  clockTimezone: null,
+  clockSize: 'medium',
   thumbnailAssetId: null,
   title: null,
   description: null,
@@ -302,6 +311,29 @@ export function BrandPage() {
   );
 }
 
+/** The clock in a kit preview: a dark pill in the chosen corner, stepping below the logo when they share a top corner (the studio does the same). */
+function KitClockPreview({ clock, logoSide, logoPct }: { clock: ClockSettings; logoSide: 'left' | 'right' | null; logoPct: number }) {
+  const [now, setNow] = useState(() => clockNow());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(clockNow()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const text = formatClock(now, clock);
+  const top = clock.position === 'top_left' || clock.position === 'top_right';
+  const left = clock.position === 'top_left' || clock.position === 'bottom_left';
+  const sharesLogoCorner = top && logoSide !== null && (logoSide === 'left') === left;
+  const style: CSSProperties = {
+    [left ? 'left' : 'right']: '3%',
+    ...(top ? { top: sharesLogoCorner ? `${4 + logoPct + 2}%` : '4%' } : { bottom: '4%' }),
+  };
+  return (
+    <div className={`kit-preview-clock kit-preview-clock--${clock.size}`} style={style} data-testid="kit-preview-clock" data-position={clock.position}>
+      {text.date && <span>{text.date}</span>}
+      <b>{text.time}</b>
+    </div>
+  );
+}
+
 /** A mini picture of what a kit looks like for one orientation: wallpaper, logo corner and size, ads, lower-third style. */
 function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: LibraryAsset[]; orientation: BrandOrientation }) {
   const f = FIELDS[orientation];
@@ -310,6 +342,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
   const logo = assets.find((a) => a.id === logoId);
   const wall = assets.find((a) => a.id === kit[f.wallpaper]);
   const ads = kit[f.ads] ?? [];
+  const clock = clockFromKit(kit);
   const canvasH = orientation === 'portrait' ? 1920 : 720;
   const frameAd = ads.find((a) => a.placement === 'l_shape');
   const frame = useFrameWindow(frameAd && kit.adsShrinkPicture !== false ? frameAd.assetId : null);
@@ -352,6 +385,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
           </div>
         ) : null;
       })}
+      {clock.enabled && <KitClockPreview clock={clock} logoSide={logo ? kit.logoPosition : null} logoPct={logo ? Math.max(6, (kit.logoSize / canvasH) * 100) : 0} />}
       <div className={`kit-preview-lt kit-preview-lt--${kit.lowerThirdStyle}`}>
         <b>Your name</b>
         <span>Title or topic</span>
@@ -674,7 +708,7 @@ interface KitEditorProps {
 const sameSet = (a: Set<string>, b: string[]) => a.size === b.length && b.every((x) => a.has(x));
 const sameAds = (a: BrandKitAd[], b: BrandKitAd[]) => JSON.stringify([...a].sort(byPlacement)) === JSON.stringify([...b].sort(byPlacement));
 const byPlacement = (x: BrandKitAd, y: BrandKitAd) => x.placement.localeCompare(y.placement);
-const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId'] as const;
+const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId', 'clockEnabled', 'clockPosition', 'clockFormat', 'clockShowDate', 'clockShowSeconds', 'clockTimezone', 'clockSize'] as const;
 
 /** One kit's editor (also the "new kit" form when `kit` is null): every graphic in place, per orientation, with a live preview. */
 function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, onLibraryChanged, onError, onSaid }: KitEditorProps) {
@@ -719,6 +753,13 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         lowerThirdStyle: form.lowerThirdStyle,
         adsShrinkPicture: form.adsShrinkPicture !== false,
         thumbnailAssetId: form.thumbnailAssetId ?? null,
+        clockEnabled: form.clockEnabled === true,
+        clockPosition: form.clockPosition ?? 'top_right',
+        clockFormat: form.clockFormat ?? '12h',
+        clockShowDate: form.clockShowDate !== false,
+        clockShowSeconds: form.clockShowSeconds === true,
+        clockTimezone: form.clockTimezone ?? null,
+        clockSize: form.clockSize ?? 'medium',
         title: form.title?.trim() || null,
         description: form.description?.trim() || null,
         ...(sendAds(form.ads ?? []) ? { ads: form.ads ?? [] } : {}),
@@ -941,6 +982,17 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
               ))}
             </SelectField>
             <ShrinkSwitch shrink={form.adsShrinkPicture !== false} onChange={(on) => set('adsShrinkPicture', on)} />
+          </Card>
+
+          <Card as="fieldset" className="ha-fieldset ha-stack" data-testid="kit-clock" style={{ gap: 14 }}>
+            <legend className="ha-legend">Date and time (both shapes)</legend>
+            <p className="ha-hint">Shows the date and time on the picture of streams that use this kit. The host can switch it off or change it for a single stream in the studio.</p>
+            <ClockFields
+              value={clockFromKit(form)}
+              onChange={(patch) => setForm((fm) => ({ ...fm, ...kitPatchFromClock(patch) }))}
+              idPrefix={`${idPrefix}-clock`}
+              variant="kit"
+            />
           </Card>
 
           <Card as="fieldset" className="ha-fieldset ha-stack" style={{ gap: 4 }}>

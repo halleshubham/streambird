@@ -222,6 +222,13 @@ export class BrandKitsService {
           adsShrinkPicture: dto.adsShrinkPicture ?? true,
           wallpaperDim: dto.wallpaperDim ?? 0,
           lowerThirdStyle: dto.lowerThirdStyle ?? 'accent',
+          clockEnabled: dto.clockEnabled ?? false,
+          clockPosition: dto.clockPosition ?? 'top_right',
+          clockFormat: dto.clockFormat ?? '12h',
+          clockShowDate: dto.clockShowDate ?? true,
+          clockShowSeconds: dto.clockShowSeconds ?? false,
+          clockTimezone: dto.clockTimezone ?? null,
+          clockSize: dto.clockSize ?? 'medium',
           isDefault: makeDefault,
         }),
       );
@@ -274,6 +281,13 @@ export class BrandKitsService {
       if (dto.wallpaperAssetId !== undefined) kit.wallpaperAssetId = dto.wallpaperAssetId;
       if (dto.wallpaperDim !== undefined) kit.wallpaperDim = dto.wallpaperDim;
       if (dto.lowerThirdStyle !== undefined) kit.lowerThirdStyle = dto.lowerThirdStyle;
+      if (dto.clockEnabled !== undefined) kit.clockEnabled = dto.clockEnabled;
+      if (dto.clockPosition !== undefined) kit.clockPosition = dto.clockPosition;
+      if (dto.clockFormat !== undefined) kit.clockFormat = dto.clockFormat;
+      if (dto.clockShowDate !== undefined) kit.clockShowDate = dto.clockShowDate;
+      if (dto.clockShowSeconds !== undefined) kit.clockShowSeconds = dto.clockShowSeconds;
+      if (dto.clockTimezone !== undefined) kit.clockTimezone = dto.clockTimezone;
+      if (dto.clockSize !== undefined) kit.clockSize = dto.clockSize;
       if (dto.isDefault === true && !kit.isDefault) {
         await repo.update({ accountId, isDefault: true }, { isDefault: false });
         kit.isDefault = true;
