@@ -33,7 +33,7 @@ npm run test:ui                            # Playwright (set PW_CHROMIUM=/opt/pw
 npm run start:dev                          # backend with watch (needs .env: DATABASE_URL, ENCRYPTION_KEY_BASE64)
 npm run migrate                            # apply migrations/*.sql
 ```
-CI (`.github/workflows/ci.yml`) runs exactly typecheck → unit → build → e2e → UI on every PR (UI split into 4 Playwright shards; the aggregator job `test` is the check to watch), and again on `main` before the image is published.
+CI (`.github/workflows/ci.yml`) runs exactly typecheck → unit → build → e2e → UI on every PR (UI split into 6 Playwright shards; the aggregator job `test` is the check to watch), and again on `main` before the image is published.
 
 ## Rules that always apply
 1. **Test before you claim done.** Add/adjust tests at the right layer (unit / e2e / UI) for every behaviour change, run the full set (`testing.md` pre-PR checklist), and say which tests you added. For UI changes also look at screenshots (desktop 1366×800 + phone 390×800).
