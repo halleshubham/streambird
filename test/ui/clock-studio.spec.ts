@@ -604,7 +604,7 @@ test.describe('studio: compact text on the canvas', () => {
       await expect.poll(async () => isRedPixel(await pixelAt(p, logoCx, 16 + 45))).toBe(true);
       await expect.poll(async () => (await whiteBox(p, corner)).count).toBeGreaterThan(30);
       const ink = await whiteBox(p, corner);
-      expect(Math.abs((ink.x0 + ink.x1) / 2 - logoCx)).toBeLessThanOrEqual(5);
+      expect(Math.abs((ink.x0 + ink.x1) / 2 - logoCx)).toBeLessThanOrEqual(CENTRE_TOLERANCE); // font-independent: ink bearings differ per font
       expect(ink.y0).toBeGreaterThanOrEqual(16 + 90 + 4); // below the logo's bottom edge, with its gap
       expect(ink.y0).toBeLessThanOrEqual(16 + 90 + 20);
       await expect.poll(async () => isRedPixel(await pixelAt(p, logoCx, 16 + 45))).toBe(true); // the logo is there (it fades in) and not covered
@@ -633,7 +633,7 @@ test.describe('studio: compact text on the canvas', () => {
     await page.getByTestId('clock-position-top_right').click();
     await expect.poll(async () => (await whiteBox(page, 'top_right')).count).toBeGreaterThan(30);
     const ink = await whiteBox(page, 'top_right');
-    expect(Math.abs((ink.x0 + ink.x1) / 2 - (W - 16 - 45))).toBeLessThanOrEqual(5); // under the logo on the narrow frame too
+    expect(Math.abs((ink.x0 + ink.x1) / 2 - (W - 16 - 45))).toBeLessThanOrEqual(CENTRE_TOLERANCE); // under the logo on the narrow frame too
     expect(ink.y0).toBeGreaterThanOrEqual(16 + 90 + 4);
   });
 
@@ -712,4 +712,6 @@ test.describe('studio: compact text on the canvas', () => {
   });
 });
 
+/** Ink centre vs logo centre: about one text height (14 px at small), tiny against a 90 px logo, whatever font the runner falls back to. */
+const CENTRE_TOLERANCE = 14;
 const isRedPixel = (p: number[]) => p[0] > 200 && p[1] < 60 && p[2] < 60;
