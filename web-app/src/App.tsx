@@ -35,6 +35,7 @@ const AdminAuditLogPage = lazyPage(() => import('./routes/admin/AdminAuditLogPag
 const AdminAnalyticsPage = lazyPage(() => import('./routes/admin/AdminAnalyticsPage'), 'AdminAnalyticsPage');
 const AdminAccountsPage = lazyPage(() => import('./routes/admin/AdminAccountsPage'), 'AdminAccountsPage');
 const AdminAccountDetailPage = lazyPage(() => import('./routes/admin/AdminAccountDetailPage'), 'AdminAccountDetailPage');
+const AdminStreamBrandKitPage = lazyPage(() => import('./routes/admin/AdminStreamBrandKitPage'), 'AdminStreamBrandKitPage');
 const AdminPlansPage = lazyPage(() => import('./routes/admin/AdminPlansPage'), 'AdminPlansPage');
 const AdminBillingPage = lazyPage(() => import('./routes/admin/AdminBillingPage'), 'AdminBillingPage');
 const BillingPage = lazyPage(() => import('./routes/BillingPage'), 'BillingPage');
@@ -84,6 +85,7 @@ export function App() {
           <Route path="/admin/plans" element={<AdminPlansPage />} />
           <Route path="/admin/billing" element={<AdminBillingPage />} />
           <Route path="/admin/accounts/:id" element={<AdminAccountDetailPage />} />
+          <Route path="/admin/streams/:streamId" element={<AdminStreamBrandKitPage />} />
           <Route path="/admin/audit-log" element={<AdminAuditLogPage />} />
         </Route>
       </Route>

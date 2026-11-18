@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { AdminAccountBrandKits, AdminStreamBrandKit } from '../types/adminBrandKits';
 import type {
   AccountDetail,
   AdminPlan,
@@ -73,6 +74,14 @@ export function reactivateUser(userId: string): Promise<{ id: string; suspendedA
 
 export function listAccounts(limit = 50, offset = 0, q = ''): Promise<AccountListResponse> {
   return api.get(`/superadmin/accounts?limit=${limit}&offset=${offset}${q ? `&q=${encodeURIComponent(q)}` : ''}`);
+}
+
+export function getAccountBrandKits(id: string): Promise<AdminAccountBrandKits> {
+  return api.get(`/superadmin/accounts/${id}/brand-kits`);
+}
+
+export function getStreamBrandKit(streamId: string): Promise<AdminStreamBrandKit> {
+  return api.get(`/superadmin/streams/${streamId}/brand-kit`);
 }
 
 export function getAccountDetail(id: string): Promise<AccountDetail> {

@@ -6,6 +6,7 @@ import { Badge, DataTable, Empty, Notice, PageHeader, ROLE_LABEL, Section, When 
 import { ApiError } from '../../api/client';
 import type { HeavyUsageRow, PendingApproval, RegistrationStatus } from '../../types/api';
 import { Button, Card, confirm, toast } from '../../components/ui';
+import { StreamLookup } from '../../components/admin/StreamLookup';
 
 /** Everyone waiting for approval -- a new Company Admin signup or a brand-new solo user's first login. */
 export function AdminDashboardPage() {
@@ -110,6 +111,9 @@ export function AdminDashboardPage() {
   return (
     <>
       <PageHeader title="Pending approvals" subtitle="Unless registration is open (auto-approve), new signups can't use StreamBird until you approve them. They get an email either way." />
+      <Section title="Find a stream" hint="Paste a streambird.app/streams/... link or a stream id to see which brand kit and ads it uses.">
+        <StreamLookup />
+      </Section>
       {notice && <Notice tone="success" onDismiss={() => setNotice(null)}>{notice}</Notice>}
       {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
       {reg && (

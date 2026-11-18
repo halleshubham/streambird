@@ -21,12 +21,18 @@ import { SuperadminAccountsController } from './superadmin-accounts.controller';
 import { SuperadminAccountsService } from './superadmin-accounts.service';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { StreamsModule } from '../streams/streams.module';
+import { AssetsModule } from '../assets/assets.module';
+import { Asset } from '../assets/entities/asset.entity';
+import { BrandKit } from '../assets/entities/brand-kit.entity';
+import { BrandKitAd } from '../assets/entities/brand-kit-ad.entity';
+import { SuperadminBrandKitsController } from './superadmin-brand-kits.controller';
+import { SuperadminBrandKitsService } from './superadmin-brand-kits.service';
 import { PlansModule } from '../plans/plans.module';
 import { SuperadminPlansController } from './superadmin-plans.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Account, Company, LiveStream, LiveStreamDestination, PlatformConnection, AppSetting]),
+    TypeOrmModule.forFeature([User, Account, Company, LiveStream, LiveStreamDestination, PlatformConnection, AppSetting, Asset, BrandKit, BrandKitAd]),
     EmailModule,
     UsersModule,
     AccountsModule,
@@ -34,6 +40,7 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
     AuditLogModule,
     StreamsModule,
     PlansModule,
+    AssetsModule,
   ],
   controllers: [
     SuperadminController,
@@ -41,7 +48,8 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
     SuperadminUsersController,
     SuperadminAccountsController,
     SuperadminPlansController,
+    SuperadminBrandKitsController,
   ],
-  providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService, ApprovalDigestService],
+  providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService, SuperadminBrandKitsService, ApprovalDigestService],
 })
 export class SuperadminModule {}

@@ -777,3 +777,20 @@
   .admin-shell .admin-table .show-sm { display: block; }
 }
 @media (max-width: 640px) { .admin-shell .admin-table-wrap .admin-table td.hide-sm, .admin-shell .admin-table-wrap .admin-table th.hide-sm { display: none; } }
+
+/* Brand kits (read-only support view) */
+.admin-shell .admin-kit { margin-top: 14px; }
+.admin-shell .admin-kit h3 { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.admin-shell .admin-kit h4 { margin: 14px 0 6px; font-size: 0.95rem; }
+.admin-shell .admin-diag { margin: 10px 0; padding-left: 20px; display: grid; gap: 4px; }
+.admin-shell .admin-diag li { overflow-wrap: anywhere; }
+.admin-shell .admin-diag li.is-warning { color: var(--danger-text); background: var(--danger-soft); border-radius: 6px; padding: 4px 8px; margin-left: -8px; list-style-position: inside; }
+.admin-shell .admin-kit-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 10px 0; }
+.admin-shell .admin-kit-facts dt { font-size: 0.8rem; color: var(--muted); }
+.admin-shell .admin-kit-facts dd { margin: 0; overflow-wrap: anywhere; }
+.admin-shell .admin-kit-sets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.admin-shell .admin-lookup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.admin-shell .admin-lookup .ui-input { flex: 1 1 260px; }
+.admin-shell .admin-kit-set .admin-table .admin-cell-main { overflow-wrap: break-word; word-break: normal; }
+.admin-shell .admin-kit-set .admin-table td:nth-child(2) { min-width: 96px; }
+.admin-shell .admin-kit-set .admin-table td:last-child { min-width: 130px; }
