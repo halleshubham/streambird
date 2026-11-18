@@ -45,9 +45,20 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix web-app
 
+      # apt mirrors occasionally stall for minutes (seen on both ffmpeg and Playwright's system deps):
+      # fail fast per attempt and retry instead of hanging the job.
+      - name: Make apt resilient
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99ci-resilient
+
       # The slate end-to-end test pushes real RTMP through ffmpeg.
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        run: |
+          for i in 1 2 3; do
+            timeout 180 bash -c 'sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg' && exit 0
+            echo "apt attempt $i failed or timed out"
+          done
+          exit 1
 
       - name: Typecheck (backend, tests and web app)
         run: npm run typecheck
@@ -105,6 +116,12 @@ jobs:
       - name: Build web app
         run: npm run build --prefix web-app
 
+      # apt mirrors occasionally stall for minutes (seen on both ffmpeg and Playwright's system deps):
+      # fail fast per attempt and retry instead of hanging the job.
+      - name: Make apt resilient
+        run: |
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' | sudo tee /etc/apt/apt.conf.d/99ci-resilient
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -112,7 +129,12 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install browser for UI tests
-        run: npx playwright install --with-deps chromium
+        run: |
+          for i in 1 2 3; do
+            timeout 240 npx playwright install --with-deps chromium && exit 0
+            echo "playwright install attempt $i failed or timed out"
+          done
+          exit 1
 
       - name: Browser smoke tests (shard ${{ matrix.shard }}/6)
         run: npm run test:ui -- --fully-parallel --shard=${{ matrix.shard }}/6
