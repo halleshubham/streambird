@@ -26,6 +26,7 @@ const anonymous = {
   status: 'anonymous' as const,
   user: null,
   accountId: null,
+  impersonation: null,
   login: async () => undefined,
   setSession: () => undefined,
   logout: async () => undefined,

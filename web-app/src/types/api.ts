@@ -21,9 +21,29 @@ export interface AuthUser {
   createdAt?: string;
 }
 
+/** A superadmin support session ("view as / act as a customer"); GET /auth/me carries it while one is active. */
+export interface ImpersonationInfo {
+  id: string;
+  mode: 'view' | 'act';
+  reason: string | null;
+  startedAt: string;
+  expiresAt: string;
+  target: {
+    userId: string;
+    email: string;
+    displayName: string | null;
+    accountId: string;
+    accountName: string;
+    companyName: string | null;
+    suspended: boolean;
+  };
+}
+
 export interface MeResponse {
   user: AuthUser;
   accountId: string;
+  /** Only while a support session is active: `user` / `accountId` are then the CUSTOMER'S. */
+  impersonation?: ImpersonationInfo;
 }
 
 export interface TeamMember {

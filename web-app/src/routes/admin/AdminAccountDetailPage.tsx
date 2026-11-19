@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Eye, Pencil } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { SUPPORT_BLOCKED_SUMMARY } from '../../lib/impersonation';
 import * as superadminApi from '../../api/superadmin';
 import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
@@ -13,6 +16,11 @@ import { Button, Card, Input, Modal, SelectField, confirm, toast } from '../../c
 /** One account: its plan and exceptions, day pass, users, recent streams, connections; suspend/reactivate lives in a separate danger card. */
 export function AdminAccountDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { refresh } = useAuth();
+  const [actOpen, setActOpen] = useState(false);
+  const [actReason, setActReason] = useState('');
+  const [supportBusy, setSupportBusy] = useState<null | 'view' | 'act'>(null);
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -66,6 +74,24 @@ export function AdminAccountDetailPage() {
       setGrantOpen(false);
     } finally {
       setPassBusy(false);
+    }
+  }
+
+  /** Starts a support session as this account's main user, then opens the app as the customer. */
+  async function startSupport(mode: 'view' | 'act', reason?: string) {
+    if (!id) return;
+    setSupportBusy(mode);
+    setError(null);
+    try {
+      await superadminApi.startImpersonation({ accountId: id, mode, ...(reason ? { reason } : {}) });
+      await refresh();
+      setActOpen(false);
+      navigate('/dashboard');
+    } catch (err) {
+      setActOpen(false);
+      setError(err instanceof ApiError ? err.message : 'Could not start the support session.');
+    } finally {
+      setSupportBusy(null);
     }
   }
 
@@ -211,6 +237,27 @@ export function AdminAccountDetailPage() {
             {account.userCount === 1 ? 'user' : 'users'}
           </>
         }
+        actions={
+          <>
+            <Button variant="secondary" size="sm" icon={<Eye size={16} aria-hidden="true" />} busy={supportBusy === 'view'} disabled={supportBusy !== null} data-testid="admin-impersonate-view" onClick={() => void startSupport('view')}>
+              View as customer
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Pencil size={16} aria-hidden="true" />}
+              disabled={supportBusy !== null || !!account.suspendedAt}
+              title={account.suspendedAt ? 'A suspended account can only be viewed.' : undefined}
+              data-testid="admin-impersonate-act"
+              onClick={() => {
+                setActReason('');
+                setActOpen(true);
+              }}
+            >
+              Act as customer
+            </Button>
+          </>
+        }
       />
       {error && <Notice tone="error" onDismiss={() => setError(null)}>{error}</Notice>}
 
@@ -287,6 +334,30 @@ export function AdminAccountDetailPage() {
           )}
         </div>
       </Section>
+
+      <Modal
+        open={actOpen}
+        onClose={() => setActOpen(false)}
+        title="Act as this customer?"
+        description={`You will use StreamBird as ${name} for 30 minutes and can change their settings. Everything you change is recorded in the audit log under your name. The customer is not told.`}
+        testId="impersonate-act-dialog"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setActOpen(false)}>Cancel</Button>
+            <Button busy={supportBusy === 'act'} data-testid="impersonate-act-confirm" onClick={() => void startSupport('act', actReason.trim() || undefined)}>
+              Start acting as customer
+            </Button>
+          </>
+        }
+      >
+        <p className="field-hint">Still blocked, even when acting as a customer:</p>
+        <ul>
+          {SUPPORT_BLOCKED_SUMMARY.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <Input label="Reason (optional, kept in the audit log)" value={actReason} maxLength={200} onChange={(e) => setActReason(e.target.value)} placeholder="Ticket or what you are fixing" />
+      </Modal>
 
       <Modal
         open={grantOpen}

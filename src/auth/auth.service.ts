@@ -271,7 +271,7 @@ export class AuthService {
     return this.loginWithGoogleProfile(rawEmail, meta);
   }
 
-  async resolveSession(rawToken: string): Promise<{ user: User; account: Account } | null> {
+  async resolveSession(rawToken: string): Promise<{ user: User; account: Account; sessionId: string } | null> {
     const session = await this.sessions.findOne({
       where: { tokenHash: this.hash(rawToken) },
       relations: ['user', 'user.account'],
@@ -284,7 +284,7 @@ export class AuthService {
     session.lastSeenAt = new Date();
     await this.sessions.save(session);
 
-    return { user: session.user, account: session.user.account };
+    return { user: session.user, account: session.user.account, sessionId: session.id };
   }
 
   async logout(rawToken: string): Promise<void> {

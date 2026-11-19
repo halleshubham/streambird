@@ -1340,7 +1340,7 @@
 }
 .ha-kit-aside {
   position: sticky;
-  top: 88px;
+  top: calc(88px + var(--imp-h, 0px));
   display: flex;
   flex-direction: column;
   gap: 24px;

@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import {
   Body,
   Controller,
@@ -80,6 +81,7 @@ export class StudioSessionsController {
    * handshake. See StudioSessionsService.mintHostToken.
    */
   @Post(':id/host-token')
+  @BlockedWhenImpersonating('go-live')
   @UseGuards(AccountGuard)
   async mintHostToken(
     @CurrentAccount() account: Account,
@@ -89,6 +91,7 @@ export class StudioSessionsController {
   }
 
   @Post(':id/invites')
+  @BlockedWhenImpersonating('guest-link')
   @UseGuards(AccountGuard)
   async createInvite(
     @CurrentAccount() account: Account,

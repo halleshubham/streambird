@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { AuthUser } from '../types/api';
+import type { AuthUser, ImpersonationInfo } from '../types/api';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'anonymous';
 
@@ -7,6 +7,8 @@ export interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
   accountId: string | null;
+  /** Non-null while a superadmin support session is active (then user/accountId are the customer's). */
+  impersonation: ImpersonationInfo | null;
   login: (email: string, code: string) => Promise<void>;
   /** Sets the resulting session directly from an already-completed call
    * (signup-company / superadmin-login) rather than re-deriving it --

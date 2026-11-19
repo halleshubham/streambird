@@ -63,6 +63,7 @@ import { createPreset } from '../../api/presets';
 import { ApiError } from '../../api/client';
 import type { PresetConfig } from '../../types/api';
 import { confirm } from '../../components/ui';
+import { useAuth } from '../../context/AuthContext';
 import { animatedNotice } from '../../studio/animatedImage';
 import { ClockFields } from '../../components/ClockFields';
 import '../../styles/studio.css';
@@ -103,6 +104,7 @@ const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
 
 export function HostStudioPage() {
   const { streamId } = useParams<{ streamId: string }>();
+  const { impersonation } = useAuth();
   const [thumbnailNotice, setThumbnailNotice] = useState<string[]>([]);
   useEffect(() => {
     if (!streamId) return;
@@ -570,6 +572,11 @@ export function HostStudioPage() {
     return (
       <div className="studio-page studio-shell">
         <p className="error">{loadError ?? 'Could not load this stream.'}</p>
+        {impersonation && (
+          <p data-testid="studio-support-note">
+            The live studio cannot be opened during a support session. <Link to="/dashboard">Back to the dashboard</Link>
+          </p>
+        )}
       </div>
     );
   }

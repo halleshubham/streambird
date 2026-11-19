@@ -14,6 +14,7 @@ import type {
   RegistrationStatus,
   UpdateSubscriptionPayload,
   UsageAlert,
+  ImpersonationInfo,
 } from '../types/api';
 
 export function listPendingApprovals(): Promise<PendingApproval[]> {
@@ -121,4 +122,14 @@ export function grantDayPass(id: string, planKey?: string): Promise<AccountSumma
 
 export function revokeDayPass(id: string): Promise<AccountSummary> {
   return api.delete(`/superadmin/accounts/${id}/day-pass`);
+}
+
+/** Starts a support session (30 minutes) as this account's main user. `mode`: view = read-only, act = may change configuration. */
+export function startImpersonation(body: { accountId?: string; userId?: string; mode: 'view' | 'act'; reason?: string }): Promise<ImpersonationInfo> {
+  return api.post('/superadmin/impersonation', body);
+}
+
+/** Ends the support session (idempotent). */
+export function endImpersonation(): Promise<void> {
+  return api.delete('/superadmin/impersonation');
 }

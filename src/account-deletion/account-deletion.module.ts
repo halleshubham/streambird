@@ -10,6 +10,7 @@ import { StreamsModule } from '../streams/streams.module';
 import { PlatformConnectionsModule } from '../platform-connections/platform-connections.module';
 import { AssetsModule } from '../assets/assets.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { ImpersonationModule } from '../impersonation/impersonation.module';
 import { EmailModule } from '../email/email.module';
 import { AccountDeletionService } from './account-deletion.service';
 import { AccountDeletionController } from './account-deletion.controller';
@@ -25,6 +26,7 @@ import { AccountDeletionController } from './account-deletion.controller';
     AssetsModule,
     AuditLogModule,
     EmailModule,
+    ImpersonationModule,
   ],
   providers: [AccountDeletionService],
   controllers: [AccountDeletionController],

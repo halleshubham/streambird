@@ -11,12 +11,17 @@ import { BirdLoader } from './BirdLoader';
  * and its own redirect target (/admin/login, not /login).
  */
 export function SuperadminRoute() {
-  const { status, user } = useAuth();
+  const { status, user, impersonation } = useAuth();
 
   if (status === 'loading') {
     return <div className="page-loading">
         <BirdLoader loading compact />
       </div>;
+  }
+
+  // During a support session the app is the customer's: the admin area is for after Exit (the banner has it).
+  if (impersonation) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (status === 'anonymous' || user?.role !== 'superadmin') {

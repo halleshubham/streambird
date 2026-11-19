@@ -1,4 +1,4 @@
-import { api, ApiError } from './client';
+import { api, ApiError, supportHeaders } from './client';
 import type { Destination, ScheduleDetail, Stream, StreamListResponse, StreamStatusResponse } from '../types/api';
 
 export function listStreams(limit = 20, offset = 0, view?: 'upcoming'): Promise<StreamListResponse> {
@@ -106,7 +106,7 @@ export const THUMBNAIL_TYPES = ['image/jpeg', 'image/png'];
 export async function uploadScheduleThumbnail(id: string, file: File): Promise<ScheduleDetail> {
   const form = new FormData();
   form.set('file', file);
-  const res = await fetch(`/api/streams/${id}/schedule/thumbnail`, { method: 'PUT', credentials: 'include', body: form });
+  const res = await fetch(`/api/streams/${id}/schedule/thumbnail`, { method: 'PUT', credentials: 'include', headers: supportHeaders(), body: form });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const raw = body?.message;
@@ -129,7 +129,7 @@ export interface ThumbnailState {
 export async function uploadStreamThumbnail(id: string, file: File): Promise<ThumbnailState> {
   const form = new FormData();
   form.set('file', file);
-  const res = await fetch(`/api/streams/${id}/thumbnail`, { method: 'PUT', credentials: 'include', body: form });
+  const res = await fetch(`/api/streams/${id}/thumbnail`, { method: 'PUT', credentials: 'include', headers: supportHeaders(), body: form });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const raw = body?.message;

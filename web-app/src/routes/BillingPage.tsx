@@ -1,6 +1,7 @@
 import { monthlyHoursLabel } from '../lib/planCopy';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import * as billingApi from '../api/billing';
 import { getMyLimits, getPublicPlans } from '../api/plans';
 import { ApiError } from '../api/client';
@@ -63,6 +64,7 @@ function describePlan(p: PublicPlan): string[] {
 
 /** Current plan, Buy buttons (Razorpay Checkout) and payment history. Buying is admin-switchable; with it off this page just explains how to upgrade. */
 export function BillingPage() {
+  const { impersonation } = useAuth();
   const [params] = useSearchParams();
   const highlight = params.get('plan');
   const [config, setConfig] = useState<BillingConfig | null>(null);
@@ -231,6 +233,8 @@ export function BillingPage() {
   const pct = used !== null && included !== null && included > 0 ? Math.min(100, (used / included) * 100) : 0;
   const meterTone = pct >= 100 ? ' ha-meter--bad' : pct >= 80 ? ' ha-meter--warn' : '';
   const fmt = (n: number) => String(Math.round(n * 10) / 10);
+  // A support session cannot pay or change plans (the server refuses too): show the state, never the buy buttons.
+  const canPay = config.enabled && !impersonation;
   const autopayActive = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status) && !autopay.cancelAtCycleEnd;
 
   return (
@@ -289,9 +293,11 @@ export function BillingPage() {
                 </p>
                 <div className="ha-row" style={{ marginTop: 16 }}>
                   <span className="ha-sp" />
-                  <button type="button" className="ha-quiet ha-quiet--danger" onClick={() => void cancelAutopay()}>
-                    Cancel autopay
-                  </button>
+                  {!impersonation && (
+                    <button type="button" className="ha-quiet ha-quiet--danger" onClick={() => void cancelAutopay()}>
+                      Cancel autopay
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -299,7 +305,13 @@ export function BillingPage() {
         )}
       </div>
 
-      {!config.enabled && (
+      {impersonation && (
+        <Notice tone="info" testId="billing-support-note">
+          Support session: payments and plan changes are not allowed while acting as a customer. You can look at their plan and payments here.
+        </Notice>
+      )}
+
+      {!config.enabled && !impersonation && (
         <Notice tone="info">
           Online payments aren't switched on yet. To upgrade or for customised pricing, email{' '}
           <a href="mailto:support@shackyapps.in?subject=StreamBird%20upgrade">support@shackyapps.in</a>.
@@ -333,7 +345,7 @@ export function BillingPage() {
                   ))}
                 </ul>
                 <div className="ha-plan-foot">
-                  {config.enabled && p.kind === 'monthly' && (() => {
+                  {canPay && p.kind === 'monthly' && (() => {
                     const onAutopay = autopayActive && autopay!.planKey === p.key;
                     const hasLiveAutopay = !!autopay && ['authenticated', 'active', 'pending'].includes(autopay.status);
                     return onAutopay ? (
@@ -351,12 +363,12 @@ export function BillingPage() {
                       </>
                     );
                   })()}
-                  {config.enabled && p.kind === 'day_pass' && (
+                  {canPay && p.kind === 'day_pass' && (
                     <Button busy={busyPlan === p.key} disabled={busyPlan !== null} onClick={() => void buy(p)}>
                       Buy
                     </Button>
                   )}
-                  {isCurrent && !config.enabled && <p className="ha-sm">Your current plan</p>}
+                  {isCurrent && !canPay && <p className="ha-sm">Your current plan</p>}
                 </div>
               </Card>
             );

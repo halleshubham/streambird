@@ -1,4 +1,5 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ImpersonationService } from '../impersonation/impersonation.service';
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import * as crypto from 'crypto';
@@ -59,6 +60,8 @@ export class AccountDeletionService {
     private readonly assets: AssetsService,
     private readonly audit: AuditLogService,
     @Inject(EMAIL_SERVICE) private readonly email: EmailService,
+    // Optional so unit tests can omit it: support sessions on the customer end (with an audit entry) before deletion.
+    @Optional() private readonly impersonation?: ImpersonationService,
   ) {}
 
   /** Who is affected, from the caller's role and the other users on the account. */
@@ -115,6 +118,7 @@ export class AccountDeletionService {
 
     const emails = members.map((m) => m.email);
     if (scope === 'member') {
+      await this.impersonation?.endForTarget({ userId: user.id });
       await this.auth.checkDeletionCode(user.email, input.code, { consume: true });
       await this.dataSource.transaction(async (m) => {
         await m.query('DELETE FROM users WHERE id = $1', [user.id]); // sessions go with it (ON DELETE CASCADE)
@@ -133,6 +137,7 @@ export class AccountDeletionService {
       throw err;
     }
     await this.auth.checkDeletionCode(user.email, input.code, { consume: true });
+    await this.impersonation?.endForTarget({ accountId: account.id });
 
     await this.endStreams(account);
     await this.platformConnections.revokeAllAtProvider(account.id).catch((err) => this.logger.warn(`Account deletion: revoking platform tokens failed: ${(err as Error).message}`));

@@ -103,11 +103,11 @@ export class Client {
   put = <T = any>(path: string, body?: unknown) => this.call<T>('PUT', path, { body });
 
   /** GET returning the raw bytes and headers (for file downloads). */
-  async getBytes(path: string): Promise<{ status: number; contentType: string | null; data: Buffer }> {
+  async getBytes(path: string): Promise<{ status: number; contentType: string | null; cacheControl: string | null; data: Buffer }> {
     const res = await fetch(`${this.baseUrl}/api${path}`, {
       headers: { Origin: this.baseUrl, ...(this.cookies.size ? { Cookie: [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ') } : {}) },
     });
-    return { status: res.status, contentType: res.headers.get('content-type'), data: Buffer.from(await res.arrayBuffer()) };
+    return { status: res.status, contentType: res.headers.get('content-type'), cacheControl: res.headers.get('cache-control'), data: Buffer.from(await res.arrayBuffer()) };
   }
   del = <T = any>(path: string) => this.call<T>('DELETE', path);
 }

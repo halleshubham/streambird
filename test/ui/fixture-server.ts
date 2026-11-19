@@ -66,6 +66,14 @@ async function main() {
             : await svc.upsertYouTubeConnection(rows[0].account_id, { channelId: ext, channelTitle: label }, { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600_000 });
         return send(200, { id: c.id, liveSlug: c.liveSlug });
       }
+      if (url.pathname === '/impersonation-expires' && req.method === 'POST') {
+        // Support session of this admin ends `seconds` from now (a test then waits for the banner's countdown to hit zero).
+        const r = await h.db.query(
+          `UPDATE impersonation_sessions SET expires_at = now() + ($2 || ' seconds')::interval WHERE ended_at IS NULL AND admin_user_id = (SELECT id FROM users WHERE email = $1)`,
+          [email, url.searchParams.get('seconds') ?? '3'],
+        );
+        return send(200, { updated: r.rowCount });
+      }
       send(404, { error: 'not found' });
     })
     .listen(CONTROL_PORT, '127.0.0.1');

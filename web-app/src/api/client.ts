@@ -9,6 +9,21 @@ export class ApiError extends Error {
 }
 
 /**
+ * While a superadmin support session is active the app names it on EVERY request (X-Support-Session). If that
+ * session has ended server-side the API answers 409 `support_session_ended` instead of silently serving the admin's
+ * own account to a screen that still shows the customer's. Set by AuthProvider from GET /auth/me.
+ */
+let supportSessionId: string | null = null;
+export function setSupportSessionId(id: string | null): void {
+  supportSessionId = id;
+}
+/** Extra headers for code that calls fetch() directly. */
+export function supportHeaders(): Record<string, string> {
+  return supportSessionId ? { 'X-Support-Session': supportSessionId } : {};
+}
+export const SUPPORT_SESSION_ENDED_EVENT = 'streambird:support-ended';
+
+/**
  * credentials: 'include' on every call -- the sb_session cookie is
  * httpOnly and same-origin (same-site in dev via the Vite proxy below),
  * so it rides along automatically; no token to manage client-side.
@@ -19,6 +34,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     // A multipart body (FormData) must set its own Content-Type with the boundary, so only JSON calls get one.
     headers: {
       ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...supportHeaders(),
       ...options.headers,
     },
     ...options,
@@ -31,6 +47,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const body = await res.json().catch(() => null);
 
   if (!res.ok) {
+    if (res.status === 409 && body?.message?.code === 'support_session_ended') {
+      window.dispatchEvent(new Event(SUPPORT_SESSION_ENDED_EVENT));
+      throw new ApiError('Support session ended', 409);
+    }
     const raw = body?.message;
     const message = Array.isArray(raw?.message)
       ? raw.message.join(', ')

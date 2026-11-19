@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { plainToInstance } from 'class-transformer';
@@ -45,6 +46,7 @@ export class PresetsController {
 
   /** Creates the stream like POST /streams (same limits and the same 5/min/account throttle) from the preset. */
   @Post(':id/start')
+  @BlockedWhenImpersonating('go-live')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async start(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StartPresetDto) {
