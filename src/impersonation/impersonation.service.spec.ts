@@ -251,6 +251,70 @@ describe('ImpersonationService', () => {
   });
 });
 
+describe('ImpersonationService: live studio control checks', () => {
+  const t0 = new Date('2030-01-01T10:00:00Z');
+  const admin: any = { id: 'admin', role: Role.SUPERADMIN, accountId: 'acc_admin' };
+  const account: any = { id: 'acc_c', name: 'Acme', deletedAt: null, suspendedAt: null };
+  const customer: any = { id: 'cust', email: 'c@x.dev', role: Role.COMPANY_ADMIN, accountId: 'acc_c', approvedAt: t0, suspendedAt: null, account };
+
+  function build(audit: any = {}) {
+    const sessions = fakeRepo<any>();
+    const users = fakeRepo<any>([customer]);
+    const accounts = fakeRepo<any>([account]);
+    const a = { log: jest.fn(async () => undefined), logStrict: jest.fn(async () => undefined), logAnonymous: jest.fn(async () => undefined), ...audit };
+    const service = new ImpersonationService(sessions as any, users as any, accounts as any, fakeRepo<any>() as any, a as any);
+    let now = t0;
+    service.now = () => now;
+    return { service, sessions, accounts, audit: a, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
+  }
+
+  it('accepts an active ACT session, refuses view mode, an ended, an expired and a suspended one', async () => {
+    const { service, sessions, accounts, advance } = build();
+    const act = await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+    expect(await service.checkControlSession(act.id)).toMatchObject({ ok: true });
+    accounts.rows[0].suspendedAt = t0;
+    expect(await service.checkControlSession(act.id)).toEqual({ ok: false, reason: 'suspended' });
+    accounts.rows[0].suspendedAt = null;
+    advance(IMPERSONATION_TTL_MS + 1000);
+    expect(await service.checkControlSession(act.id)).toEqual({ ok: false, reason: 'expired' });
+    expect(sessions.rows[0]).toMatchObject({ endReason: 'expired' });
+    expect(await service.checkControlSession(act.id)).toEqual({ ok: false, reason: 'ended' });
+    expect(await service.checkControlSession('nope')).toEqual({ ok: false, reason: 'ended' });
+    const view = await service.start(admin, 's', { userId: 'cust', mode: 'view' });
+    expect(await service.checkControlSession(view.id)).toEqual({ ok: false, reason: 'view' });
+  });
+
+  it('tells listeners when a session ends, whatever the reason', async () => {
+    const { service } = build();
+    const seen: Array<[string, string]> = [];
+    const off = service.onSessionEnded((id, reason) => seen.push([id, reason]));
+    const info = await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+    await service.end(admin);
+    expect(seen).toEqual([[info.id, 'exit']]);
+    off();
+    await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+    await service.end(admin);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('a listener that throws never breaks ending the session', async () => {
+    const { service, sessions } = build();
+    service.onSessionEnded(() => {
+      throw new Error('boom');
+    });
+    await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+    await service.end(admin);
+    expect(sessions.rows[0].endedAt).toBeTruthy();
+  });
+
+  it('strict studio-control audit throws 503 when the log is down; the lenient one goes through log()', async () => {
+    const { service, audit } = build({ logStrict: jest.fn(async () => Promise.reject(new Error('db down'))) });
+    await expect(service.recordStudioControl('impersonated_studio_command', 'admin', 'acc_c', { phase: 'intent' }, true)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await service.recordStudioControl('impersonated_studio_command', 'admin', 'acc_c', { phase: 'result' }, false);
+    expect(audit.log).toHaveBeenCalledWith({ id: 'admin' }, 'impersonated_studio_command', 'account', 'acc_c', { phase: 'result' });
+  });
+});
+
 describe('blocked-when-impersonating registry', () => {
   it('every category has a plain-language label and the message names it', () => {
     for (const [key, label] of Object.entries(IMPERSONATION_BLOCK_CATEGORIES)) {

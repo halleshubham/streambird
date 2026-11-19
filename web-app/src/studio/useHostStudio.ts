@@ -32,6 +32,7 @@ import {
   type Facing,
 } from './cameraDevices';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
+import { SNAPSHOT_DEBOUNCE_MS, HostChangeTracker, applySupportCommand, buildSupportState, trackedValues, type HostControls, type RelayedSupportCommand } from './supportControl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getMyLimits } from '../api/plans';
@@ -605,6 +606,14 @@ export function useHostStudio(streamId: string | undefined) {
   const streamTitleRef = useRef('');
   const brandImgRef = useRef<HTMLImageElement | null>(null);
   const tickerAppearedAtRef = useRef<number | null>(null);
+  // Remote control by a superadmin support session (supportControl.ts). Inert unless the server relays a `support:command`
+  // / `support:state-request` on this authenticated host socket (only a validated, act-mode support session can cause one).
+  const supportTrackerRef = useRef<HostChangeTracker>(new HostChangeTracker());
+  const supportTickerStashRef = useRef({ text: '' });
+  const supportWatchingRef = useRef(false);
+  const supportRevRef = useRef(0);
+  const supportQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const supportHandlersRef = useRef<{ command: (raw: unknown) => void; request: () => void } | null>(null);
 
   function renderParticipantList() {
     const view: ParticipantView[] = [...participantsRef.current.values()].map((p) => ({
@@ -1534,6 +1543,11 @@ export function useHostStudio(streamId: string | undefined) {
     });
 
     socket.on('error', (err: Error) => setStatus({ text: `Error: ${err.message}`, isError: true }));
+
+    // Support remote control: trusted ONLY because it arrives on this authenticated host socket from the server, which
+    // validates the support session and the command whitelist and never relays anything a guest emits.
+    socket.on('support:state-request', () => supportHandlersRef.current?.request());
+    socket.on('support:command', (cmd: unknown) => supportHandlersRef.current?.command(cmd));
   }
 
   // ---- 1. Load the stream, then connect signaling + start the draw loop ----
@@ -3331,6 +3345,116 @@ export function useHostStudio(streamId: string | undefined) {
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [isLive, ending]);
+
+  // ---- Support remote control (see supportControl.ts and .claude/docs/studio.md) ----------------------------------
+
+  // The host's own setters, exactly the functions the UI calls (so persistence, canvas redraw and kit loading behave as
+  // if the host clicked). Re-assigned every render so the receiver always sees the current closures.
+  const supportControls: HostControls = {
+    adsPlan: () => adsPlan,
+    adHasMedia: (p) => adLayerRef.current!.info(p).hasMedia,
+    setLayout: (id) => setLayout(id as LayoutMode),
+    setAdManual,
+    setAdEnabled,
+    setAdSchedule,
+    setAdsShrink,
+    hasKit: (id) => brandKits.some((k) => k.id === id),
+    applyKit: async (id) => {
+      const kit = brandKits.find((k) => k.id === id);
+      if (kit) await applyBrandKit(kit);
+    },
+    tickerText: () => brandingRef.current.newsText,
+    setTicker: setNewsText,
+    canLowerThird: () => canLowerThirdRef.current,
+    lowerThird: () => lowerThirdRef.current,
+    setLowerThird,
+    showLowerThird,
+    hideLowerThird,
+    clock: () => clockRef.current,
+    setClock,
+    setLogoPosition,
+    setLogoSize,
+    setWallpaperDim,
+  };
+  const supportControlsRef = useRef<HostControls>(supportControls);
+  supportControlsRef.current = supportControls;
+
+  const publishSupportStateRef = useRef<() => void>(() => undefined);
+  publishSupportStateRef.current = () => {
+    const socket = socketRef.current;
+    if (!socket || !supportWatchingRef.current) return;
+    socket.emit('support:state', { rev: ++supportRevRef.current, state: currentSupportState() });
+  };
+
+  function currentSupportState() {
+    return buildSupportState({
+      layout: layoutMode,
+      orientation: stream?.orientation ?? 'landscape',
+      adsPlan,
+      ads: adsUi,
+      adsShrink,
+      kits: brandKits,
+      activeKitId,
+      tickerText: branding.newsText,
+      tickerStash: supportTickerStashRef.current.text,
+      lowerThird,
+      lowerThirdLive,
+      canLowerThird,
+      clock,
+      logoPosition: branding.logoPosition,
+      logoSize: branding.logoSize,
+      hasLogo: !!brandingRef.current.logoImg,
+      wallpaperDim,
+      hasWallpaper: wallpaper !== null,
+    });
+  }
+
+  // After every state commit: note which controllable settings the HOST just changed (conflict rule), and, once a
+  // support session is watching, publish a debounced snapshot (only the controllable settings, no secrets or media).
+  const supportSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    supportTrackerRef.current.observe(trackedValues(currentSupportState()), Date.now());
+    if (!supportWatchingRef.current) return;
+    if (supportSnapshotTimerRef.current) clearTimeout(supportSnapshotTimerRef.current);
+    supportSnapshotTimerRef.current = setTimeout(() => publishSupportStateRef.current(), SNAPSHOT_DEBOUNCE_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutMode, adsUi, adsShrink, brandKits, activeKitId, branding, lowerThird, lowerThirdLive, canLowerThird, clock, wallpaperDim, wallpaper, adsPlan, stream]);
+  useEffect(
+    () => () => {
+      if (supportSnapshotTimerRef.current) clearTimeout(supportSnapshotTimerRef.current);
+    },
+    [],
+  );
+
+  supportHandlersRef.current = {
+    request: () => {
+      supportWatchingRef.current = true;
+      publishSupportStateRef.current();
+    },
+    command: (raw) => {
+      const cmd = raw as Partial<RelayedSupportCommand> | null;
+      // Only a server-relayed command is acted on; anything malformed is ignored (the server already validated it).
+      if (!cmd || cmd.source !== 'support-session' || typeof cmd.id !== 'string' || typeof cmd.type !== 'string' || typeof cmd.payload !== 'object' || cmd.payload === null) return;
+      const { id } = cmd;
+      supportWatchingRef.current = true;
+      // One at a time, in order (a brand kit loads files asynchronously).
+      supportQueueRef.current = supportQueueRef.current.then(async () => {
+        let result: { ok: boolean; error?: string };
+        try {
+          result = await applySupportCommand(cmd as RelayedSupportCommand, {
+            controls: supportControlsRef.current,
+            tracker: supportTrackerRef.current,
+            now: Date.now,
+            tickerStash: supportTickerStashRef.current,
+          });
+        } catch (err) {
+          result = { ok: false, error: err instanceof Error ? err.message.slice(0, 100) : 'Could not apply it' };
+        }
+        socketRef.current?.emit('support:ack', { id, ok: result.ok, ...(result.ok ? {} : { error: result.error }), appliedAt: Date.now() });
+        setTimeout(() => publishSupportStateRef.current(), SNAPSHOT_DEBOUNCE_MS);
+      });
+    },
+  };
 
   return {
     canvasRef,

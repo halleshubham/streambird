@@ -8,6 +8,10 @@ import { StudioSessionsService } from './studio-sessions.service';
 import { StudioSessionsController } from './studio-sessions.controller';
 import { StudioSignalingGateway } from './studio-signaling.gateway';
 import { TurnCredentialsService } from './turn-credentials.service';
+import { SupportControlController } from './support/support-control.controller';
+import { SupportControlService } from './support/support-control.service';
+import { BrandKit } from '../assets/entities/brand-kit.entity';
+import { ImpersonationModule } from '../impersonation/impersonation.module';
 import { CommonModule } from '../common/common.module';
 import { StreamsModule } from '../streams/streams.module';
 
@@ -20,13 +24,15 @@ import { StreamsModule } from '../streams/streams.module';
       StudioGuestInvite,
       StudioParticipant,
       StudioHostToken,
+      BrandKit,
     ]),
+    ImpersonationModule,
     CommonModule,
     // Circular: see StreamsModule's own forwardRef back to this module.
     forwardRef(() => StreamsModule),
   ],
-  providers: [StudioSessionsService, StudioSignalingGateway, TurnCredentialsService],
-  controllers: [StudioSessionsController],
+  providers: [StudioSessionsService, StudioSignalingGateway, TurnCredentialsService, SupportControlService],
+  controllers: [StudioSessionsController, SupportControlController],
   exports: [StudioSessionsService],
 })
 export class StudioModule {}

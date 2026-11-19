@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import * as crypto from 'crypto';
 import { APP, CONTROL, apiHeaders, newStream, patchFreePlan, signIn } from './helpers';
 
 // Superadmin support sessions ("View as customer" / "Act as customer"): the admin buttons, the banner everywhere,
@@ -36,7 +37,8 @@ test.describe('superadmin support sessions', () => {
     const dialog = page.getByTestId('impersonate-act-dialog');
     await expect(dialog).toContainText('Payments and plan changes');
     await expect(dialog).toContainText('Starting or stopping streams');
-    await expect(dialog).toContainText('cannot be changed remotely yet');
+    await expect(dialog.getByTestId('impersonate-act-remote-note')).toContainText('can be changed remotely');
+    await expect(dialog).not.toContainText('cannot be changed remotely');
     await dialog.getByLabel('Reason (optional, kept in the audit log)').fill('ticket 77');
     await page.getByTestId('impersonate-act-confirm').click();
 
@@ -83,11 +85,14 @@ test.describe('superadmin support sessions', () => {
     expect(refused.status()).toBe(403);
     expect(JSON.stringify(await refused.json())).toContain('Not allowed while acting as a customer: payments and plan changes');
 
-    // The studio shell: banner present (also on a phone), the live studio itself cannot be opened as the host.
+    // The studio: banner present (also on a phone). The host studio itself is never opened as the host (no camera, no host
+    // token): a LIVE stream shows the control-only page, here with no host studio connected.
     await page.goto(`/streams/${cust.streamId}/studio`);
     await expect(banner).toBeVisible();
-    await expect(page.getByTestId('studio-support-note')).toBeVisible();
-    await expect(page.getByText('Not allowed while acting as a customer')).toBeVisible();
+    await expect(page.getByTestId('support-control-header')).toContainText('(LIVE)');
+    await expect(page.getByTestId('support-host-status')).toContainText('The host studio is not connected');
+    await expect(page.locator('canvas.studio-canvas')).toHaveCount(0);
+    expect((await context.request.post(`${APP}/api/studio-sessions/${crypto.randomUUID()}/host-token`, { headers: apiHeaders })).status()).toBe(403);
     await page.setViewportSize({ width: 390, height: 800 });
     await expect(banner).toBeVisible();
     expect(await noHScroll(page)).toBe(true);

@@ -66,6 +66,7 @@ import { confirm } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
 import { animatedNotice } from '../../studio/animatedImage';
 import { ClockFields } from '../../components/ClockFields';
+import { SupportControlPage } from './SupportControlPage';
 import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -102,7 +103,25 @@ const SIDE_TABS: Array<{ id: SideTabId; label: string; icon: typeof Users }> = [
   { id: 'ads', label: 'Ads', icon: Megaphone },
 ];
 
+/**
+ * In a superadmin support session the host studio is never opened (no camera, no host token, no publishing): act mode
+ * gets the control-only page, view mode a plain note. Everyone else gets the host studio, exactly as before.
+ */
 export function HostStudioPage() {
+  const { streamId } = useParams<{ streamId: string }>();
+  const { impersonation, status } = useAuth();
+  if (status === 'loading') {
+    return (
+      <div className="studio-page studio-shell">
+        <BirdLoader loading compact />
+      </div>
+    );
+  }
+  if (impersonation) return <SupportControlPage streamId={streamId} mode={impersonation.mode} />;
+  return <HostStudio />;
+}
+
+function HostStudio() {
   const { streamId } = useParams<{ streamId: string }>();
   const { impersonation } = useAuth();
   const [thumbnailNotice, setThumbnailNotice] = useState<string[]>([]);
