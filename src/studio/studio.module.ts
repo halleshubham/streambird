@@ -9,6 +9,8 @@ import { StudioSessionsController } from './studio-sessions.controller';
 import { StudioSignalingGateway } from './studio-signaling.gateway';
 import { TurnCredentialsService } from './turn-credentials.service';
 import { SupportControlController } from './support/support-control.controller';
+import { PhoneRemoteController } from './support/phone-remote.controller';
+import { PhoneRemoteService } from './support/phone-remote.service';
 import { SupportControlService } from './support/support-control.service';
 import { BrandKit } from '../assets/entities/brand-kit.entity';
 import { ImpersonationModule } from '../impersonation/impersonation.module';
@@ -31,8 +33,8 @@ import { StreamsModule } from '../streams/streams.module';
     // Circular: see StreamsModule's own forwardRef back to this module.
     forwardRef(() => StreamsModule),
   ],
-  providers: [StudioSessionsService, StudioSignalingGateway, TurnCredentialsService, SupportControlService],
-  controllers: [StudioSessionsController, SupportControlController],
+  providers: [StudioSessionsService, StudioSignalingGateway, TurnCredentialsService, SupportControlService, PhoneRemoteService],
+  controllers: [StudioSessionsController, SupportControlController, PhoneRemoteController],
   exports: [StudioSessionsService],
 })
 export class StudioModule {}

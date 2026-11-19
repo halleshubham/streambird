@@ -37,6 +37,8 @@ export function useSupportControl(streamId: string | undefined) {
   const [stream, setStream] = useState<Stream | null>(null);
   const [connected, setConnected] = useState(false);
   const [hostConnected, setHostConnected] = useState(false);
+  /** Who hosts the stream: the web studio, or the Android app (long poll). null = unknown / nobody yet. */
+  const [hostKind, setHostKind] = useState<'web' | 'phone' | null>(null);
   const [state, setState] = useState<SupportState | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
   const [log, setLog] = useState<CommandEntry[]>([]);
@@ -96,18 +98,24 @@ export function useSupportControl(streamId: string | undefined) {
           },
         });
         socketRef.current = socket;
-        socket.on('support:joined', (m: { hostConnected: boolean }) => {
+        socket.on('support:joined', (m: { hostConnected: boolean; hostKind?: 'web' | 'phone' | null }) => {
           setConnected(true);
           setError(null);
           setHostConnected(!!m.hostConnected);
+          setHostKind(m.hostKind === 'phone' || m.hostKind === 'web' ? m.hostKind : null);
         });
-        socket.on('support:host', (m: { connected: boolean }) => setHostConnected(!!m.connected));
+        socket.on('support:host', (m: { connected: boolean; kind?: 'web' | 'phone' }) => {
+          setHostConnected(!!m.connected);
+          if (m.kind === 'phone') setHostKind('phone');
+          else if (m.connected) setHostKind('web');
+        });
         socket.on('support:state', (m: { rev: number; state: SupportState }) => {
           // Defensive (the server already rebuilt it from a strict shape): never let a malformed snapshot reach the panels.
           if (typeof m?.rev !== 'number' || !isUsableState(m.state)) return;
           if (m.rev < revRef.current) return; // an older snapshot overtaken by a newer one
           revRef.current = m.rev;
           setState(m.state);
+          if (m.state.platform === 'android') setHostKind('phone');
         });
         socket.on('support:ack', (m: { id: string; ok: boolean; error?: string }) => patchEntry(m.id, { status: m.ok ? 'applied' : 'failed', error: m.ok ? undefined : m.error }));
         socket.on('support:ended', (m: { reason?: string }) => setEnded(m?.reason ?? 'ended'));
@@ -155,7 +163,7 @@ export function useSupportControl(streamId: string | undefined) {
   );
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { phase, error, stream, connected, hostConnected, state, ended, log, send, retry };
+  return { phase, error, stream, connected, hostConnected, hostKind, state, ended, log, send, retry };
 }
 
 function isUsableState(s: unknown): s is SupportState {

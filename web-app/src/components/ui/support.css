@@ -146,3 +146,7 @@ body[data-impersonating] {
 .support-log li[data-status='failed'] {
   color: var(--danger, #c0392b);
 }
+
+/* Controls the phone app does not have: listed greyed out, not as buttons. */
+.support-unavailable ul { list-style: none; margin: 0; padding: 0; }
+.support-unavailable li { color: var(--text-muted, #6b7280); opacity: 0.6; padding: 2px 0; }

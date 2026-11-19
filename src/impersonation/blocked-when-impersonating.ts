@@ -25,6 +25,7 @@ export const IMPERSONATION_BLOCK_CATEGORIES = {
   'customer-email': 'sending the customer a verification or deletion code',
   'guest-email': 'sending guest invitations',
   'guest-link': 'creating guest join links',
+  'phone-channel': "the phone app's remote-control channel (only the stream owner's own phone may use it)",
 } as const;
 
 export type ImpersonationBlockCategory = keyof typeof IMPERSONATION_BLOCK_CATEGORIES;
