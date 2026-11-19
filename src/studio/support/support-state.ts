@@ -18,6 +18,8 @@ export interface SanitizedSupportState {
   /** Only ever set by the server for a phone-hosted stream (`phone-mapping.ts`); sanitizeSupportState (web hosts) never returns it. */
   platform?: 'android';
   appVersion?: string;
+  /** Only ever set by the server for a phone-hosted stream: which optional capabilities the phone's last snapshot showed (older phones: all false). */
+  phoneCaps?: { kit: boolean; logo: boolean; lowerThird: boolean };
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';

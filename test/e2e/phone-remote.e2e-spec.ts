@@ -34,6 +34,14 @@ const phoneState = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The optional capability blocks of a phone app 1.0.15 snapshot. */
+const capable = () => ({
+  kits: [{ id: '11111111-1111-4111-8111-111111111111', name: 'Studio' }],
+  kit: null,
+  logo: { present: true, position: 'left', size: 90 },
+  lowerThird: { available: true, name: null, title: null, show: false },
+});
+
 describeE2E('phone remote control (Android app long poll)', () => {
   let h: Harness;
   let admin: Client;
@@ -236,15 +244,14 @@ describeE2E('phone remote control (Android app long poll)', () => {
       expect(p3).toBeDefined();
     });
 
-    it('commands the phone cannot do are answered by the server at once, audited, and never reach the phone', async () => {
+    it('layout and wallpaper are never relayed: answered by the server at once, audited, and never reach the phone', async () => {
       const c = await customer();
       await c.poll(0, 0);
+      await c.putState({ rev: 1, state: phoneState(capable()) }); // even a fully capable phone has no layouts or wallpaper
       const sup = await support(c);
       for (const [type, payload] of [
         ['layout.set', { mode: 'grid' }],
         ['wallpaper.dim', { n: 20 }],
-        ['logo.set', { position: 'right' }],
-        ['lowerThird.set', { name: 'Jo', show: true }],
       ] as const) {
         const r = await ask(sup, type, payload);
         expect(r.res).toEqual({ ok: true });
@@ -253,8 +260,154 @@ describeE2E('phone remote control (Android app long poll)', () => {
       }
       expect((await c.poll(0, 0)).status).toBe(204);
       const results = (await auditRows(c.accountId)).filter((r) => r.metadata.phase === 'result');
-      expect(results).toHaveLength(4);
+      expect(results).toHaveLength(2);
       expect(results.every((r) => r.metadata.hostReported === false && r.metadata.applied === false)).toBe(true);
+    });
+
+    describe('kit.apply, logo.set and the name banner (phone app 1.0.15+)', () => {
+      const UPDATE = 'This phone app version does not support that: update the app';
+
+      it('a phone that never reported the capabilities (older app) gets "update the app" at once: audited, not queued', async () => {
+        const c = await customer();
+        await c.poll(0, 0);
+        expect((await c.putState({ rev: 1, state: phoneState() })).status).toBe(204); // 1.0.14: no kits / logo / lowerThird
+        const own = (await c.client.post('/brand-kits', { name: 'Mine' })).body;
+        const sup = await support(c);
+        for (const [type, payload] of [
+          ['kit.apply', { kitId: own.id }],
+          ['logo.set', { position: 'right' }],
+          ['lowerThird.set', { name: 'Jo', show: true }],
+        ] as const) {
+          const r = await ask(sup, type, payload);
+          expect(r.res).toEqual({ ok: true });
+          expect((await sup.wait('support:ack', (m) => m.id === r.id))[0]).toMatchObject({ ok: false, error: UPDATE });
+        }
+        expect((await c.poll(0, 0)).status).toBe(204);
+        expect(phoneSvc.pendingCount(c.streamId)).toBe(0);
+        const rows = await auditRows(c.accountId);
+        expect(rows.filter((r) => r.metadata.phase === 'intent')).toHaveLength(3);
+        const results = rows.filter((r) => r.metadata.phase === 'result');
+        expect(results).toHaveLength(3);
+        expect(results.every((r) => r.metadata.applied === false && r.metadata.hostReported === false && r.metadata.error === UPDATE)).toBe(true);
+      });
+
+      it('capabilities are per feature and follow the LAST snapshot', async () => {
+        const c = await customer();
+        await c.poll(0, 0);
+        const sup = await support(c);
+        await c.putState({ rev: 1, state: phoneState({ logo: { present: false, position: 'left', size: 90 } }) });
+        const logo = await ask(sup, 'logo.set', { size: 100 });
+        expect((await c.poll(0, 1)).body.commands[0]).toMatchObject({ type: 'logo.set', payload: { size: 100 } });
+        expect(logo.res).toEqual({ ok: true });
+        const banner = await ask(sup, 'lowerThird.set', { show: false });
+        expect((await sup.wait('support:ack', (m) => m.id === banner.id))[0]).toMatchObject({ ok: false, error: UPDATE });
+        // the phone is updated mid-stream: a new snapshot with the name banner switches it on
+        await c.putState({ rev: 2, state: phoneState({ lowerThird: { available: true, name: null, title: null, show: false } }) });
+        await sleep(50);
+        expect((await ask(sup, 'lowerThird.set', { show: false })).res).toEqual({ ok: true });
+        // ... and one without logo switches the logo off again
+        const gone = await ask(sup, 'logo.set', { position: 'left' });
+        expect((await sup.wait('support:ack', (m) => m.id === gone.id))[0]).toMatchObject({ ok: false, error: UPDATE });
+      });
+
+      it('kit.apply of the customer\'s own kit is relayed unchanged and audited; a kit of another account is refused BEFORE the relay (IDOR)', async () => {
+        const c = await customer();
+        const other = await customer();
+        await c.poll(0, 0);
+        await c.putState({ rev: 1, state: phoneState(capable()) });
+        const own = (await c.client.post('/brand-kits', { name: 'Mine' })).body;
+        const foreign = (await other.client.post('/brand-kits', { name: 'Not yours' })).body;
+        const sup = await support(c);
+
+        const bad = await ask(sup, 'kit.apply', { kitId: foreign.id });
+        expect(bad.res).toEqual({ ok: false, error: 'Unknown brand kit' });
+        expect(phoneSvc.pendingCount(c.streamId)).toBe(0);
+        expect((await c.poll(0, 0)).status).toBe(204); // never queued
+        expect((await ask(sup, 'kit.apply', { kitId: '00000000-0000-4000-8000-000000000000' })).res).toEqual({ ok: false, error: 'Unknown brand kit' });
+
+        const ok = await ask(sup, 'kit.apply', { kitId: own.id });
+        expect(ok.res).toEqual({ ok: true });
+        const got = (await c.poll(0, 1)).body.commands[0];
+        expect(got).toMatchObject({ type: 'kit.apply', payload: { kitId: own.id } });
+        expect(Object.keys(got.payload)).toEqual(['kitId']);
+        expect((await c.ack({ id: got.id, ok: true })).status).toBe(204);
+        expect((await sup.wait('support:ack', (m) => m.id === ok.id))[0]).toMatchObject({ ok: true });
+        await sleep(150); // the result audit row is written right after the ack goes out
+        const rows = (await auditRows(c.accountId)).filter((r) => r.metadata.commandId === ok.id);
+        expect(rows.map((r) => r.metadata.phase)).toEqual(['intent', 'result']);
+        expect(rows[0].metadata.summary).toBe(`kit.apply{kitId=${own.id}}`);
+        expect(rows[1].metadata).toMatchObject({ applied: true, hostReported: true });
+        // the refused ones are audited as rejected, not as relayed
+        const rejected = (await auditRows(c.accountId)).filter((r) => r.metadata.phase === 'rejected' && r.metadata.error === 'Unknown brand kit');
+        expect(rejected).toHaveLength(2);
+      });
+
+      it('logo.set and lowerThird.set reach the phone with the payloads unchanged; out-of-range values never do', async () => {
+        const c = await customer();
+        await c.poll(0, 0);
+        await c.putState({ rev: 1, state: phoneState(capable()) });
+        const sup = await support(c);
+        const payloads: Array<[string, Record<string, unknown>]> = [
+          ['logo.set', { position: 'right', size: 200 }],
+          ['logo.set', { size: 16 }],
+          ['lowerThird.set', { name: 'Ada Lovelace', title: 'Guest', show: true }],
+          ['lowerThird.set', { title: null }],
+          ['lowerThird.set', { show: false }],
+        ];
+        for (const [type, payload] of payloads) expect((await ask(sup, type, payload)).res).toEqual({ ok: true });
+        const cmds = (await c.poll(0, 1)).body.commands as Array<{ type: string; payload: unknown }>;
+        expect(cmds.map((x) => [x.type, x.payload])).toEqual(payloads);
+        // whitelist ranges are enforced before anything is queued
+        for (const [type, payload] of [
+          ['logo.set', { size: 15 }],
+          ['logo.set', { size: 601 }],
+          ['logo.set', { position: 'top' }],
+          ['logo.set', {}],
+          ['lowerThird.set', { name: 'x'.repeat(81) }],
+          ['lowerThird.set', { title: 'x'.repeat(121) }],
+          ['lowerThird.set', { name: 'a\u0000b' }],
+          ['kit.apply', { kitId: 'nope' }],
+        ] as const) {
+          expect((await ask(sup, type, payload)).res).toMatchObject({ ok: false });
+        }
+        expect(phoneSvc.pendingCount(c.streamId)).toBe(5);
+      });
+
+      it('the state snapshot is rebuilt strictly: caps, sanitising, and the support page sees the same fields the web host uses', async () => {
+        const c = await customer();
+        await c.poll(0, 0);
+        const sup = await support(c);
+        const K1 = '11111111-1111-4111-8111-111111111111';
+        const K2 = '22222222-2222-4222-8222-222222222222';
+        const evil = '‮gnp.exe\u0000' + 'x'.repeat(200);
+        expect(
+          (
+            await c.putState({
+              rev: 1,
+              state: phoneState({
+                kits: [{ id: K1, name: 'Studio' }, { id: 'javascript:1', name: 'bad' }, { id: K2, name: evil, secret: 's3cr3t' }],
+                kit: { id: K2 },
+                logo: { present: true, position: 'right', size: 150, path: '/etc/passwd' },
+                lowerThird: { available: true, name: evil, title: null, show: true },
+                extra: 'dropped',
+              }),
+            })
+          ).status,
+        ).toBe(204);
+        const snap = (await sup.wait('support:state', (m) => m.state.phoneCaps?.kit === true))[0].state;
+        expect(snap).toMatchObject({ platform: 'android', phoneCaps: { kit: true, logo: true, lowerThird: true }, activeKitId: K2, logo: { position: 'right', size: 150, has: true } });
+        expect(snap.kits.map((k: any) => k.id)).toEqual([K1, K2]);
+        expect(snap.kits[1].name.length).toBeLessThanOrEqual(80);
+        expect(snap.lowerThird).toMatchObject({ allowed: true, live: true, title: '' });
+        expect(snap.lowerThird.name.length).toBeLessThanOrEqual(80);
+        const wire = JSON.stringify(snap);
+        for (const leaked of ['s3cr3t', '/etc/passwd', 'dropped', 'javascript:']) expect(wire).not.toContain(leaked);
+        expect(wire).not.toMatch(/[\u0000‮]/);
+        // too many kits: the kit capability is not offered, the rest of the state still is
+        expect((await c.putState({ rev: 2, state: phoneState({ kits: new Array(51).fill({ id: K1, name: 'k' }) }) })).status).toBe(204);
+        const capped = (await sup.wait('support:state', (m) => m.rev >= 2 && m.state.phoneCaps?.kit === false))[0].state;
+        expect(capped).toMatchObject({ phoneCaps: { kit: false, logo: false, lowerThird: false }, kits: [] });
+      });
     });
 
     it('validation, the whitelist and the rate limit still apply before anything is queued', async () => {

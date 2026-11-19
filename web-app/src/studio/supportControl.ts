@@ -80,6 +80,8 @@ export interface SupportState {
   /** Set by the SERVER only, for a stream hosted by the Android app (no web studio): the page then shows what the phone supports. */
   platform?: 'android';
   appVersion?: string;
+  /** Server-set, phone streams only: which optional controls the phone's last snapshot offered (an older app: all false). */
+  phoneCaps?: { kit: boolean; logo: boolean; lowerThird: boolean };
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';
@@ -426,5 +428,13 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
 }
 
 /** What the Android app can apply (mirrors `PHONE_SUPPORTED_TYPES` on the server); everything else is "Not available on the phone app". */
-export const PHONE_SUPPORTED_COMMANDS: readonly SupportCommandType[] = ['ads.manual', 'ads.enabled', 'ads.schedule', 'ads.shrink', 'ticker.set', 'clock.set'];
+export const PHONE_SUPPORTED_COMMANDS: readonly SupportCommandType[] = ['ads.manual', 'ads.enabled', 'ads.schedule', 'ads.shrink', 'ticker.set', 'clock.set', 'kit.apply', 'logo.set', 'lowerThird.set'];
+/** The panels an app version offers: Brand kit, Logo and Lower third need the capability in the phone's snapshot (Layout and Wallpaper dim never). */
+export function phonePanels(state: Pick<SupportState, 'phoneCaps'>): { kit: boolean; logo: boolean; lowerThird: boolean; unavailable: string[] } {
+  const c = state.phoneCaps;
+  const kit = !!c?.kit;
+  const logo = !!c?.logo;
+  const lowerThird = !!c?.lowerThird;
+  return { kit, logo, lowerThird, unavailable: ['Layout', ...(kit ? [] : ['Brand kit']), ...(lowerThird ? [] : ['Lower third']), ...(logo ? [] : ['Logo']), 'Wallpaper dim'] };
+}
 export const PHONE_UNAVAILABLE_NOTE = 'Not available on the phone app';

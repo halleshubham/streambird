@@ -1,5 +1,5 @@
 import { parseSupportCommand, SUPPORT_COMMAND_TYPES, type SupportCommand } from './support-command';
-import { PHONE_SUPPORTED_TYPES, PHONE_UNSUPPORTED_ERROR, phoneStateToSnapshot, toPhoneCommand } from './phone-mapping';
+import { PHONE_SUPPORTED_TYPES, PHONE_UNSUPPORTED_ERROR, PHONE_UPDATE_ERROR, phoneStateToSnapshot, toPhoneCommand } from './phone-mapping';
 
 const cmd = (type: string, payload: Record<string, unknown>): SupportCommand => {
   const r = parseSupportCommand({ id: 'c1', type, payload });
@@ -38,14 +38,42 @@ describe('toPhoneCommand (support command -> phone command)', () => {
   it('clock.set passes the kit clock fields through unchanged', () => {
     expect(mapped('clock.set', { enabled: true, position: 'top_left', timezone: null, alternate: false }).payload).toEqual({ enabled: true, position: 'top_left', timezone: null, alternate: false });
   });
-  it('the web-only commands are answered by the server, never queued', () => {
+  it('the layout and wallpaper commands are answered by the server, never queued', () => {
     const unsupported = SUPPORT_COMMAND_TYPES.filter((t) => !(PHONE_SUPPORTED_TYPES as readonly string[]).includes(t));
-    expect(unsupported.sort()).toEqual(['kit.apply', 'layout.set', 'logo.set', 'lowerThird.set', 'wallpaper.dim']);
-    expect(toPhoneCommand(cmd('layout.set', { mode: 'grid' }))).toEqual({ supported: false, error: PHONE_UNSUPPORTED_ERROR });
-    expect(toPhoneCommand(cmd('wallpaper.dim', { n: 10 }))).toEqual({ supported: false, error: PHONE_UNSUPPORTED_ERROR });
-    expect(toPhoneCommand(cmd('kit.apply', { kitId: '11111111-1111-4111-8111-111111111111' })).supported).toBe(false);
-    expect(toPhoneCommand(cmd('lowerThird.set', { show: false })).supported).toBe(false);
-    expect(toPhoneCommand(cmd('logo.set', { position: 'left' })).supported).toBe(false);
+    expect(unsupported.sort()).toEqual(['layout.set', 'wallpaper.dim']);
+    const all = { kit: true, logo: true, lowerThird: true };
+    expect(toPhoneCommand(cmd('layout.set', { mode: 'grid' }), all)).toEqual({ supported: false, error: PHONE_UNSUPPORTED_ERROR });
+    expect(toPhoneCommand(cmd('wallpaper.dim', { n: 10 }), all)).toEqual({ supported: false, error: PHONE_UNSUPPORTED_ERROR });
+  });
+  const KIT = '11111111-1111-4111-8111-111111111111';
+  it('kit.apply, logo.set and lowerThird.set are relayed UNCHANGED when the phone showed the capability', () => {
+    const all = { kit: true, logo: true, lowerThird: true };
+    const m = (type: string, payload: Record<string, unknown>) => {
+      const r = toPhoneCommand(cmd(type, payload), all);
+      if (!r.supported) throw new Error('unsupported');
+      return { type: r.type, payload: r.payload };
+    };
+    expect(m('kit.apply', { kitId: KIT })).toEqual({ type: 'kit.apply', payload: { kitId: KIT } });
+    expect(m('logo.set', { position: 'right' })).toEqual({ type: 'logo.set', payload: { position: 'right' } });
+    expect(m('logo.set', { size: 16 }).payload).toEqual({ size: 16 });
+    expect(m('logo.set', { position: 'left', size: 600 }).payload).toEqual({ position: 'left', size: 600 });
+    expect(m('lowerThird.set', { name: 'Ada', title: 'Host', show: true })).toEqual({ type: 'lowerThird.set', payload: { name: 'Ada', title: 'Host', show: true } });
+    expect(m('lowerThird.set', { title: null }).payload).toEqual({ title: null });
+    expect(m('lowerThird.set', { show: false }).payload).toEqual({ show: false });
+  });
+  it('capability gating: without the capability in the last snapshot the answer is "update the app" (per capability)', () => {
+    const want = { supported: false, error: PHONE_UPDATE_ERROR };
+    for (const caps of [undefined, null, { kit: false, logo: false, lowerThird: false }]) {
+      expect(toPhoneCommand(cmd('kit.apply', { kitId: KIT }), caps)).toEqual(want);
+      expect(toPhoneCommand(cmd('logo.set', { position: 'left' }), caps)).toEqual(want);
+      expect(toPhoneCommand(cmd('lowerThird.set', { show: false }), caps)).toEqual(want);
+    }
+    const onlyKit = { kit: true, logo: false, lowerThird: false };
+    expect(toPhoneCommand(cmd('kit.apply', { kitId: KIT }), onlyKit).supported).toBe(true);
+    expect(toPhoneCommand(cmd('logo.set', { size: 100 }), onlyKit)).toEqual(want);
+    expect(toPhoneCommand(cmd('lowerThird.set', { name: 'x' }), onlyKit)).toEqual(want);
+    // the older commands never need a capability
+    expect(toPhoneCommand(cmd('ads.shrink', { on: true })).supported).toBe(true);
   });
 });
 
@@ -79,6 +107,81 @@ describe('phoneStateToSnapshot (phone state -> control page snapshot)', () => {
     expect(s.clock).toEqual(clock);
     expect(s.lowerThird.allowed).toBe(false);
     expect(s.logo.has).toBe(false);
+    expect(s.phoneCaps).toEqual({ kit: false, logo: false, lowerThird: false }); // older phone: no optional blocks
+  });
+  describe('optional capability blocks (kits, kit, logo, lowerThird)', () => {
+    const K1 = '11111111-1111-4111-8111-111111111111';
+    const K2 = '22222222-2222-4222-8222-222222222222';
+    const full = () => ({
+      kits: [
+        { id: K1, name: 'Studio kit' },
+        { id: K2, name: 'Night' },
+      ],
+      kit: { id: K2 },
+      logo: { present: true, position: 'right', size: 120 },
+      lowerThird: { available: true, name: 'Ada', title: null, show: true },
+    });
+    it('maps into the web snapshot fields the existing panels render', () => {
+      const s = phoneStateToSnapshot(phoneState(full()))!;
+      expect(s.phoneCaps).toEqual({ kit: true, logo: true, lowerThird: true });
+      expect(s.kits).toEqual([
+        { id: K1, name: 'Studio kit' },
+        { id: K2, name: 'Night' },
+      ]);
+      expect(s.activeKitId).toBe(K2);
+      expect(s.logo).toEqual({ position: 'right', size: 120, has: true });
+      expect(s.lowerThird).toEqual({ name: 'Ada', title: '', live: true, allowed: true });
+      expect(s.layout).toBe('phone'); // layout and wallpaper stay inert
+      expect(s.wallpaper).toEqual({ dim: 0, has: false });
+    });
+    it('an empty kits array or only a kit key still switches the kit capability on', () => {
+      expect(phoneStateToSnapshot(phoneState({ kits: [] }))!.phoneCaps).toEqual({ kit: true, logo: false, lowerThird: false });
+      const k = phoneStateToSnapshot(phoneState({ kit: null }))!;
+      expect(k.phoneCaps?.kit).toBe(true);
+      expect(k.kits).toEqual([]);
+      expect(k.activeKitId).toBeNull();
+    });
+    it('malformed blocks switch just their capability off and never fail the snapshot', () => {
+      const s = phoneStateToSnapshot(
+        phoneState({
+          kits: 'nope',
+          kit: { id: 'not-a-uuid' },
+          logo: { present: true, position: 'top_left', size: 120 },
+          lowerThird: { available: false, name: 'x', title: 'y', show: true },
+        }),
+      )!;
+      expect(s.phoneCaps).toEqual({ kit: false, logo: false, lowerThird: false });
+      for (const logo of [{ present: 'yes', position: 'left', size: 10 }, { present: true, position: 'left', size: 1.5 }, { present: true, position: 'left', size: 2001 }, { present: true, position: 'left', size: -1 }, 'x', null]) {
+        expect(phoneStateToSnapshot(phoneState({ logo }))!.phoneCaps?.logo).toBe(false);
+      }
+      for (const lowerThird of [{ available: true, name: 5, title: null, show: true }, { available: true, name: 'a', title: null, show: 'yes' }, { available: 'true', name: 'a', title: null, show: true }, []]) {
+        expect(phoneStateToSnapshot(phoneState({ lowerThird }))!.phoneCaps?.lowerThird).toBe(false);
+      }
+      expect(phoneStateToSnapshot(phoneState({ kits: new Array(51).fill({ id: K1, name: 'k' }) }))!.phoneCaps?.kit).toBe(false); // over the cap of 50
+      expect(phoneStateToSnapshot(phoneState({ kits: new Array(50).fill({ id: K1, name: 'k' }) }))!.kits).toHaveLength(50);
+    });
+    it('drops kit entries with a bad id, strips control/bidi characters and limits lengths', () => {
+      const evil = '\u202Egnp.exe\u0000\u200B\n' + 'x'.repeat(200);
+      const s = phoneStateToSnapshot(
+        phoneState({
+          kits: [{ id: 'javascript:alert(1)', name: 'bad' }, { id: K1, name: evil }, { id: K2, name: '\u202E\u0007' }, { id: K1 }, 'str', null, { id: K2, name: 'ok', extra: 'dropped' }],
+          lowerThird: { available: true, name: evil, title: evil + 'y'.repeat(200), show: false },
+        }),
+      )!;
+      expect(s.kits.map((k) => k.id)).toEqual([K1, K2, K2]);
+      expect(s.kits[0].name).toMatch(/^gnp\.exe/);
+      expect(s.kits[0].name.length).toBeLessThanOrEqual(80);
+      expect(s.kits[1].name).toBe('Brand kit'); // nothing left after stripping
+      expect(Object.keys(s.kits[2])).toEqual(['id', 'name']);
+      expect(s.lowerThird.name.length).toBeLessThanOrEqual(80);
+      expect(s.lowerThird.title.length).toBeLessThanOrEqual(120);
+      expect(JSON.stringify(s)).not.toMatch(/[\u0000-\u001f\u202e\u200b]/);
+    });
+    it('uppercase uuids are normalised so the page selects the active kit', () => {
+      const s = phoneStateToSnapshot(phoneState({ kits: [{ id: K1.toUpperCase(), name: 'A' }], kit: { id: K1.toUpperCase() } }))!;
+      expect(s.kits[0].id).toBe(K1);
+      expect(s.activeKitId).toBe(K1);
+    });
   });
   it('freePlan maps to the free ads plan; a null ticker text becomes empty', () => {
     const s = phoneStateToSnapshot(phoneState({ freePlan: true, ticker: { text: null, on: false } }))!;
@@ -113,6 +216,6 @@ describe('phoneStateToSnapshot (phone state -> control page snapshot)', () => {
     const s = phoneStateToSnapshot({ ...phoneState(), secretToken: 'abc', ads: { ...phoneState().ads, lower_third: { ...phoneState().ads.lower_third, url: 'https://x' } } })!;
     expect(JSON.stringify(s)).not.toContain('abc');
     expect(JSON.stringify(s)).not.toContain('https://x');
-    expect(Object.keys(s).sort()).toEqual(['activeKitId', 'ads', 'adsPlan', 'adsShrink', 'appVersion', 'clock', 'kits', 'layout', 'logo', 'lowerThird', 'orientation', 'platform', 'ticker', 'v', 'wallpaper']);
+    expect(Object.keys(s).sort()).toEqual(['activeKitId', 'ads', 'adsPlan', 'adsShrink', 'appVersion', 'clock', 'kits', 'layout', 'logo', 'lowerThird', 'orientation', 'phoneCaps', 'platform', 'ticker', 'v', 'wallpaper']);
   });
 });

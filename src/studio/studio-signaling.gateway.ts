@@ -688,7 +688,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       timer,
     });
     if (viaPhone) {
-      const mapped = toPhoneCommand(cmd);
+      const mapped = toPhoneCommand(cmd, this.phone.getState(st.streamId)?.phoneCaps);
       // Commands the phone cannot do are answered here (saves a round trip); the intent above and the result below are still audited.
       if (!mapped.supported) setTimeout(() => this.resolvePending(key, { ok: false, error: mapped.error }), 0).unref?.();
       else {
