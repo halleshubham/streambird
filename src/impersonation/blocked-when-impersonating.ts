@@ -54,8 +54,17 @@ export const SUPPORT_SESSION_HEADER = 'x-support-session';
  * RTMP urls), guest join links / invite tokens and the invitation text (it embeds the join link). Add a word here to redact a new kind of secret everywhere.
  * (There is deliberately no `credentials` block category: customers have no password / email / API-key routes.)
  */
-export const IMPERSONATION_REDACTED_KEY = /stream_?key|ingest|whip|rtmp|publish_?url|join_?url|invite_?token|invitation_?text|host_?token|(^|_)token$|^token/i;
+export const IMPERSONATION_REDACTED_KEY = /stream_?key|ingest|whip|rtmp|publish_?url|join_?url|invite_?token|invitation_?text|host_?token|control_?token|(^|_)token$|^token/i;
 export const IMPERSONATION_REDACTED_VALUE = null;
+
+/**
+ * Marks THE one handler whose response may carry the support CONTROL token (POST streams/:id/support-control-token):
+ * the redaction interceptor then spares the top-level `controlToken` key of that response only. Everywhere else
+ * `control_?token` is redacted like any other credential. The token never yields publishing rights (see
+ * `src/studio/support/`), but it must not leak into any other payload.
+ */
+export const RETURNS_SUPPORT_CONTROL_TOKEN_KEY = 'returnsSupportControlToken';
+export const ReturnsSupportControlToken = () => SetMetadata(RETURNS_SUPPORT_CONTROL_TOKEN_KEY, true);
 
 /**
  * Mutating routes in sensitive modules that deliberately carry NO marker, with the reason. Keyed
@@ -116,4 +125,7 @@ export const IMPERSONATION_ACT_ALLOWED: Record<string, string> = {
   // Studio session settings (no credentials; join links are blocked / redacted).
   'DELETE studio-sessions/:id/invites/:inviteId': 'revoke a guest link',
   'PATCH studio-sessions/:id/layout': 'studio layout setting',
+  // Remote control of a LIVE studio (act mode only, checked in the service; never yields publishing rights: the
+  // gateway only relays a whitelist of picture-composition commands to the host). `host-token` stays blocked.
+  'POST streams/:id/support-control-token': 'live studio remote control: mints a short-lived support socket token (act mode, live stream of the customer)',
 };

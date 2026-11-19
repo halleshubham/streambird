@@ -350,6 +350,9 @@ export function AdminAccountDetailPage() {
           </>
         }
       >
+        <p className="field-hint" data-testid="impersonate-act-remote-note">
+          While the customer is live, their live studio controls (layout, ads, ticker, lower thirds, clock, logo and brand kit) can be changed remotely, silently: the customer sees no sign of it, and every command is recorded in the audit log. If the customer changes the same setting, their change wins.
+        </p>
         <p className="field-hint">Still blocked, even when acting as a customer:</p>
         <ul>
           {SUPPORT_BLOCKED_SUMMARY.map((line) => (

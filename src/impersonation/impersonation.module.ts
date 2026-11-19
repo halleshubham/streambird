@@ -5,6 +5,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { Company } from '../companies/entities/company.entity';
 import { User } from '../users/entities/user.entity';
+import { UserSession } from '../auth/entities/user-session.entity';
 import { ImpersonationSession } from './entities/impersonation-session.entity';
 import { ImpersonationAuditInterceptor } from './impersonation-audit.interceptor';
 import { ImpersonationRedactionInterceptor } from './impersonation-redaction.interceptor';
@@ -15,7 +16,7 @@ import { ImpersonationService } from './impersonation.service';
  * AccountGuard and /auth/me); the controller lives in SuperadminModule for the same reason.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([ImpersonationSession, User, Account, Company]), AuditLogModule],
+  imports: [TypeOrmModule.forFeature([ImpersonationSession, User, Account, Company, UserSession]), AuditLogModule],
   providers: [
     ImpersonationService,
     { provide: APP_INTERCEPTOR, useClass: ImpersonationAuditInterceptor },

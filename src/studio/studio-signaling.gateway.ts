@@ -7,13 +7,27 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Inject, Logger, forwardRef } from '@nestjs/common';
+import { Inject, Logger, OnModuleDestroy, OnModuleInit, forwardRef } from '@nestjs/common';
 import { Namespace, Socket } from 'socket.io';
 import { StudioSessionsService } from './studio-sessions.service';
 import { StreamsService } from '../streams/streams.service';
 import { GlitchRecoveryService } from '../streams/glitch-recovery.service';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 import { AccountsService } from '../accounts/accounts.service';
+import { ImpersonationService } from '../impersonation/impersonation.service';
+import { SupportControlService } from './support/support-control.service';
+import { sanitizeSupportState } from './support/support-state';
+import {
+  SUPPORT_ACK_TIMEOUT_MS,
+  SUPPORT_RATE_LIMIT,
+  SUPPORT_STATE_MAX_BYTES,
+  SUPPORT_MAX_SOCKETS_PER_SESSION,
+  SUPPORT_STATE_MIN_INTERVAL_MS,
+  SlidingWindowLimiter,
+  parseSupportCommand,
+  summarizeCommand,
+  type SupportCommand,
+} from './support/support-command';
 
 interface SocketState {
   sessionId: string;
@@ -21,6 +35,37 @@ interface SocketState {
   role: 'host' | 'guest';
   displayName?: string;
 }
+
+/**
+ * A superadmin support session attached to a LIVE stream (act mode only). Deliberately NOT in `socketState`: it is not a
+ * participant, never joins the participants room (`session:<id>`), so it gets no peer-joined / signal / media traffic
+ * and no guest ever sees it. It only sends whitelisted commands (relayed to the host) and receives the host's state.
+ */
+interface SupportSocketState {
+  studioSessionId: string;
+  streamId: string;
+  accountId: string;
+  impersonationSessionId: string;
+  adminUserId: string;
+  endReason?: string;
+}
+
+interface PendingSupportCommand {
+  supportSocketId: string;
+  studioSessionId: string;
+  hostSocketIds: Set<string>;
+  commandId: string;
+  type: string;
+  summary: string;
+  impersonationSessionId: string;
+  adminUserId: string;
+  accountId: string;
+  streamId: string;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const SUPPORT_REVALIDATE_MS = 5000;
+const SUPPORT_END_LINGER_MS = 100;
 
 // How long to wait after a host's socket disconnects before treating the
 // stream as actually over, rather than ending it the instant the socket
@@ -43,9 +88,22 @@ const HOST_DISCONNECT_GRACE_MS = 60_000;
  * real SFU later without touching this relay's message shape.
  */
 @WebSocketGateway({ namespace: '/studio', cors: { origin: '*' } })
-export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StudioSignalingGateway.name);
   private readonly socketState = new Map<string, SocketState>();
+  private readonly supportSockets = new Map<string, SupportSocketState>();
+  private readonly pendingSupportCommands = new Map<string, PendingSupportCommand>();
+  /** Last state snapshot the host published per studio session (controllable settings only), for a support socket that connects later. */
+  private readonly lastSupportState = new Map<string, { rev: number; state: unknown }>();
+  /** The server stamps `rev` itself (monotonic per studio session for the process lifetime), so a host reload that restarts ITS counter can never make the control page ignore fresh state. */
+  private readonly supportStateRev = new Map<string, number>();
+  /** Snapshot coalescing: at most one relay per SUPPORT_STATE_MIN_INTERVAL_MS per session, the latest wins. */
+  private readonly supportStateGate = new Map<string, { lastAt: number; timer: ReturnType<typeof setTimeout> | null; latest: unknown }>();
+  private readonly supportLimiter = new SlidingWindowLimiter(SUPPORT_RATE_LIMIT.limit, SUPPORT_RATE_LIMIT.windowMs);
+  private supportTimer: ReturnType<typeof setInterval> | null = null;
+  private offSessionEnded: (() => void) | null = null;
+  /** Overridable in tests. */
+  supportAckTimeoutMs = SUPPORT_ACK_TIMEOUT_MS;
   // Keyed by sessionId, not socket id -- a reconnecting host gets a brand
   // new socket id, so this has to survive that to be cancellable.
   private readonly pendingHostEndTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -67,7 +125,26 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     @Inject(forwardRef(() => GlitchRecoveryService))
     private readonly glitchRecovery: GlitchRecoveryService,
     private readonly accountsService: AccountsService,
+    private readonly impersonation: ImpersonationService,
+    private readonly supportControl: SupportControlService,
   ) {}
+
+  onModuleInit(): void {
+    // A support session that ends (Exit, expiry, logout, replaced, customer deleted) cuts its sockets at once; the
+    // timer is the backstop (the stream may also have ended meanwhile).
+    this.offSessionEnded = this.impersonation.onSessionEnded((id, reason) => this.endSupportSockets(id, reason));
+    this.supportTimer = setInterval(() => void this.revalidateSupportSockets().catch((e) => this.logger.warn(`support revalidation failed: ${(e as Error).message}`)), SUPPORT_REVALIDATE_MS);
+    this.supportTimer.unref();
+  }
+
+  onModuleDestroy(): void {
+    this.offSessionEnded?.();
+    if (this.supportTimer) clearInterval(this.supportTimer);
+    for (const p of this.pendingSupportCommands.values()) clearTimeout(p.timer);
+    this.pendingSupportCommands.clear();
+    for (const g of this.supportStateGate.values()) if (g.timer) clearTimeout(g.timer);
+    this.supportStateGate.clear();
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -80,8 +157,10 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
         await this.handleHostConnection(client);
       } else if (role === 'guest') {
         await this.handleGuestConnection(client);
+      } else if (role === 'support') {
+        await this.handleSupportConnection(client);
       } else {
-        throw new Error("query param 'role' must be 'host' or 'guest'");
+        throw new Error("query param 'role' must be 'host', 'guest' or 'support'");
       }
     } catch (err) {
       this.logger.warn(`Rejecting socket ${client.id}: ${(err as Error).message}`);
@@ -128,6 +207,12 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     }
 
     client.emit('joined', { sessionId, participantId: participant.id, role: 'host' });
+    this.server.to(this.supportRoom(sessionId)).emit('support:host', { connected: true });
+    // A support socket is already watching: give it a fresh snapshot from this (new) host connection.
+    if (this.supportCount(sessionId) > 0) {
+      client.emit('support:watching', { on: true });
+      client.emit('support:state-request', {});
+    }
 
     // A host that reloaded (or lost its connection long enough to lose its
     // peer connections) has no memory of the guests already in the room,
@@ -218,6 +303,27 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   }
 
   async handleDisconnect(client: Socket) {
+    const support = this.supportSockets.get(client.id);
+    if (support) {
+      this.supportSockets.delete(client.id);
+      for (const [key, p] of this.pendingSupportCommands) {
+        if (p.supportSocketId === client.id) {
+          clearTimeout(p.timer);
+          this.pendingSupportCommands.delete(key);
+        }
+      }
+      await this.impersonation
+        .recordStudioControl(
+          'impersonated_studio_control',
+          support.adminUserId,
+          support.accountId,
+          { event: 'disconnected', sessionId: support.impersonationSessionId, streamId: support.streamId, reason: support.endReason ?? 'closed' },
+          false,
+        )
+        .catch(() => undefined);
+      this.notifyWatching(support.studioSessionId);
+      return;
+    }
     const state = this.socketState.get(client.id);
     if (!state) return;
     this.socketState.delete(client.id);
@@ -231,6 +337,12 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
 
     if (state.role === 'host') {
       this.scheduleStreamEndIfHostGone(state.sessionId);
+      if (!this.hostSocketIds(state.sessionId).length) {
+        // No host any more: whatever it last reported is stale (the studio may come back reloaded, with other state).
+        this.lastSupportState.delete(state.sessionId);
+        this.server.to(this.supportRoom(state.sessionId)).emit('support:host', { connected: false });
+        this.failPendingForHost(state.sessionId, client.id, 'The host studio disconnected');
+      }
     }
   }
 
@@ -339,5 +451,286 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
 
   private roomName(sessionId: string): string {
     return `session:${sessionId}`;
+  }
+
+  /** The room support sockets live in: separate from the participants room, so they never receive participant / media traffic. */
+  private supportRoom(sessionId: string): string {
+    return `support:${sessionId}`;
+  }
+
+  private hostSocketIds(sessionId: string): string[] {
+    const ids: string[] = [];
+    for (const [socketId, st] of this.socketState) if (st.sessionId === sessionId && st.role === 'host') ids.push(socketId);
+    return ids;
+  }
+
+  // ---- Support control (superadmin support session, act mode) ----------------------------------------------
+
+  private async handleSupportConnection(client: Socket) {
+    const { sessionId, controlToken } = client.handshake.auth as { sessionId?: string; controlToken?: string };
+    if (!sessionId || !controlToken) throw new Error('support connections require sessionId and controlToken');
+    const row = this.supportControl.resolve(controlToken);
+    if (!row || row.studioSessionId !== sessionId) throw new Error('Invalid or expired control token');
+    // On connect AND before every command: the support session must still be active, in ACT mode, the same admin and customer.
+    const check = await this.impersonation.checkControlSession(row.impersonationSessionId);
+    if (!check.ok) throw new Error('The support session is no longer active');
+    if (check.session.adminUserId !== row.adminUserId || check.session.targetAccountId !== row.accountId) throw new Error('The control token does not match the support session');
+    if (!(await this.supportControl.isLive(row.studioSessionId, row.accountId))) throw new Error('The stream is not live');
+    if (this.supportCount(row.studioSessionId) >= SUPPORT_MAX_SOCKETS_PER_SESSION) throw new Error('Too many control windows are open for this stream');
+
+    // Fail closed: no audit entry, no connection.
+    await this.impersonation.recordStudioControl(
+      'impersonated_studio_control',
+      row.adminUserId,
+      row.accountId,
+      { event: 'connected', sessionId: row.impersonationSessionId, streamId: row.streamId },
+      true,
+    );
+    // The socket may have dropped during the awaits above: handleDisconnect already ran and would never clean this entry up.
+    if (!client.connected) {
+      await this.impersonation
+        .recordStudioControl('impersonated_studio_control', row.adminUserId, row.accountId, { event: 'disconnected', sessionId: row.impersonationSessionId, streamId: row.streamId, reason: 'dropped_while_connecting' }, false)
+        .catch(() => undefined);
+      return;
+    }
+    this.supportSockets.set(client.id, {
+      studioSessionId: row.studioSessionId,
+      streamId: row.streamId,
+      accountId: row.accountId,
+      impersonationSessionId: row.impersonationSessionId,
+      adminUserId: row.adminUserId,
+    });
+    await client.join(this.supportRoom(row.studioSessionId));
+    const hosts = this.hostSocketIds(row.studioSessionId);
+    client.emit('support:joined', { streamId: row.streamId, hostConnected: hosts.length > 0 });
+    const last = this.lastSupportState.get(row.studioSessionId);
+    if (last && hosts.length) client.emit('support:state', last);
+    // Ask the host studio for a fresh snapshot (only the server can emit this; the host ignores anything else).
+    for (const id of hosts) {
+      this.server.sockets.get(id)?.emit('support:watching', { on: true });
+      this.server.sockets.get(id)?.emit('support:state-request', {});
+    }
+  }
+
+  private supportCount(sessionId: string): number {
+    let n = 0;
+    for (const st of this.supportSockets.values()) if (st.studioSessionId === sessionId) n++;
+    return n;
+  }
+
+  /** Tells the host(s) whether any support socket is watching, so the studio publishes snapshots only then. */
+  private notifyWatching(sessionId: string): void {
+    if (this.supportCount(sessionId) > 0) return; // still watched: nothing changes
+    for (const id of this.hostSocketIds(sessionId)) this.server.sockets.get(id)?.emit('support:watching', { on: false });
+  }
+
+  /** Cuts every support socket of an ended support session ("support:ended"). */
+  private endSupportSockets(impersonationSessionId: string, reason: string): void {
+    this.supportControl.revokeForSession(impersonationSessionId);
+    this.supportLimiter.forget(impersonationSessionId);
+    for (const [socketId, st] of this.supportSockets) {
+      if (st.impersonationSessionId === impersonationSessionId) this.endSupportSocket(socketId, reason);
+    }
+  }
+
+  private endSupportSocket(socketId: string, reason: string): void {
+    const st = this.supportSockets.get(socketId);
+    const socket = this.server.sockets.get(socketId);
+    if (st) st.endReason = reason;
+    socket?.emit('support:ended', { reason });
+    // A short linger so the ack of the command that found the session over still reaches the client first.
+    if (socket) setTimeout(() => socket.disconnect(true), SUPPORT_END_LINGER_MS).unref?.();
+  }
+
+  private async revalidateSupportSockets(): Promise<void> {
+    for (const [socketId, st] of [...this.supportSockets]) {
+      if (!this.server.sockets.get(socketId)) {
+        // A ghost entry (the socket is gone): drop it instead of querying the DB for it every 5 s.
+        this.supportSockets.delete(socketId);
+        this.notifyWatching(st.studioSessionId);
+        continue;
+      }
+      const check = await this.impersonation.checkControlSession(st.impersonationSessionId);
+      if (!check.ok) {
+        this.endSupportSocket(socketId, check.reason);
+      } else if (!(await this.supportControl.isLive(st.studioSessionId, st.accountId))) {
+        this.endSupportSocket(socketId, 'stream_ended');
+      }
+    }
+  }
+
+  /**
+   * A whitelisted command from a support socket, relayed ONLY to the host socket(s) of that stream. The return value is
+   * the socket.io ack: `{ok:true}` = relayed (the host's own result follows as `support:ack`), `{ok:false,error}` = refused.
+   * An event with this name from ANY other socket (a guest, the host) is dropped: only the server may relay it.
+   */
+  @SubscribeMessage('support:command')
+  async handleSupportCommand(@ConnectedSocket() client: Socket, @MessageBody() body: unknown): Promise<{ ok: boolean; error?: string } | undefined> {
+    const st = this.supportSockets.get(client.id);
+    if (!st) {
+      this.logger.warn(`Dropped support:command from non-support socket ${client.id}`);
+      return undefined;
+    }
+    const refuse = async (error: string, command?: string): Promise<{ ok: false; error: string }> => {
+      await this.impersonation
+        .recordStudioControl(
+          'impersonated_studio_command',
+          st.adminUserId,
+          st.accountId,
+          { phase: 'rejected', sessionId: st.impersonationSessionId, streamId: st.streamId, command: command ?? 'invalid', error: error.slice(0, 100) },
+          false,
+        )
+        .catch(() => undefined);
+      return { ok: false, error };
+    };
+
+    if (!this.supportLimiter.allow(st.impersonationSessionId, Date.now())) return { ok: false, error: 'Too many commands: slow down' };
+
+    const parsed = parseSupportCommand(body);
+    if (!parsed.ok) {
+      const type = typeof (body as { type?: unknown })?.type === 'string' ? String((body as { type: string }).type).slice(0, 32) : 'invalid';
+      return refuse(parsed.error, type);
+    }
+    const cmd: SupportCommand = parsed.command;
+
+    // Re-validated before EVERY command: ended / expired / view mode / customer suspended / stream over -> cut off.
+    const check = await this.impersonation.checkControlSession(st.impersonationSessionId);
+    if (!check.ok) {
+      this.endSupportSocket(client.id, check.reason);
+      return { ok: false, error: 'The support session has ended' };
+    }
+    if (!(await this.supportControl.isLive(st.studioSessionId, st.accountId))) {
+      this.endSupportSocket(client.id, 'stream_ended');
+      return { ok: false, error: 'The stream is not live' };
+    }
+    if (cmd.type === 'kit.apply' && !(await this.supportControl.kitBelongsTo(st.accountId, String(cmd.payload.kitId)))) {
+      return refuse('Unknown brand kit', cmd.type);
+    }
+    const hosts = this.hostSocketIds(st.studioSessionId);
+    if (!hosts.length) return refuse('The host studio is not connected', cmd.type);
+    const key = `${client.id}:${cmd.id}`;
+    if (this.pendingSupportCommands.has(key)) return { ok: false, error: 'Duplicate command id' };
+
+    const summary = summarizeCommand(cmd);
+    try {
+      // Fail closed: the intent is recorded (strict) before anything reaches the host.
+      await this.impersonation.recordStudioControl(
+        'impersonated_studio_command',
+        st.adminUserId,
+        st.accountId,
+        { phase: 'intent', sessionId: st.impersonationSessionId, streamId: st.streamId, commandId: cmd.id, command: cmd.type, summary },
+        true,
+      );
+    } catch {
+      return { ok: false, error: 'Audit log unavailable; command refused' };
+    }
+
+    const timer = setTimeout(() => this.resolvePending(key, { ok: false, error: 'The host studio did not respond' }), this.supportAckTimeoutMs);
+    timer.unref?.();
+    this.pendingSupportCommands.set(key, {
+      supportSocketId: client.id,
+      studioSessionId: st.studioSessionId,
+      hostSocketIds: new Set(hosts),
+      commandId: cmd.id,
+      type: cmd.type,
+      summary,
+      impersonationSessionId: st.impersonationSessionId,
+      adminUserId: st.adminUserId,
+      accountId: st.accountId,
+      streamId: st.streamId,
+      timer,
+    });
+    const relayed = { id: cmd.id, type: cmd.type, payload: cmd.payload, at: Date.now(), source: 'support-session' };
+    for (const id of hosts) this.server.sockets.get(id)?.emit('support:command', relayed);
+    return { ok: true };
+  }
+
+  /** The host's result for a relayed command, passed back to the support socket that sent it. Only a host socket of the same session counts. */
+  @SubscribeMessage('support:ack')
+  handleSupportAck(@ConnectedSocket() client: Socket, @MessageBody() body: { id?: unknown; ok?: unknown; error?: unknown; appliedAt?: unknown }) {
+    const st = this.socketState.get(client.id);
+    if (!st || st.role !== 'host' || typeof body?.id !== 'string' || typeof body.ok !== 'boolean') return;
+    for (const [key, p] of this.pendingSupportCommands) {
+      if (p.studioSessionId === st.sessionId && p.commandId === body.id && p.hostSocketIds.has(client.id)) {
+        const error = typeof body.error === 'string' ? body.error.slice(0, 200) : undefined;
+        this.resolvePending(key, body.ok ? { ok: true, hostReported: true, appliedAt: typeof body.appliedAt === 'number' ? body.appliedAt : Date.now() } : { ok: false, hostReported: true, error: error || 'The host studio could not apply it' });
+        return;
+      }
+    }
+  }
+
+  /**
+   * The host studio publishes a compact snapshot of the controllable settings. It is untrusted input: rebuilt from a strict
+   * shape (malformed = dropped), re-stamped with the server's own monotonic `rev`, coalesced to at most one relay per
+   * SUPPORT_STATE_MIN_INTERVAL_MS (the latest wins) and relayed to support sockets only.
+   */
+  @SubscribeMessage('support:state')
+  handleSupportState(@ConnectedSocket() client: Socket, @MessageBody() body: { rev?: unknown; state?: unknown }) {
+    const st = this.socketState.get(client.id);
+    if (!st || st.role !== 'host' || typeof body?.state !== 'object' || body.state === null) return;
+    if (this.supportCount(st.sessionId) === 0) return;
+    let size = 0;
+    try {
+      size = Buffer.byteLength(JSON.stringify(body.state));
+    } catch {
+      return;
+    }
+    if (size > SUPPORT_STATE_MAX_BYTES) return;
+    const clean = sanitizeSupportState(body.state);
+    if (!clean) {
+      this.logger.warn(`Dropped a malformed support state snapshot from host ${client.id}`);
+      return;
+    }
+    const gate = this.supportStateGate.get(st.sessionId) ?? { lastAt: 0, timer: null, latest: null };
+    this.supportStateGate.set(st.sessionId, gate);
+    gate.latest = clean;
+    const wait = gate.lastAt + SUPPORT_STATE_MIN_INTERVAL_MS - Date.now();
+    if (wait <= 0) this.flushSupportState(st.sessionId);
+    else if (!gate.timer) {
+      gate.timer = setTimeout(() => this.flushSupportState(st.sessionId), wait);
+      gate.timer.unref?.();
+    }
+  }
+
+  private flushSupportState(sessionId: string): void {
+    const gate = this.supportStateGate.get(sessionId);
+    if (!gate || gate.latest === null) return;
+    if (gate.timer) clearTimeout(gate.timer);
+    gate.timer = null;
+    const state = gate.latest;
+    gate.latest = null;
+    gate.lastAt = Date.now();
+    if (this.hostSocketIds(sessionId).length === 0) return; // the host left while this waited: it is stale
+    const rev = (this.supportStateRev.get(sessionId) ?? 0) + 1;
+    this.supportStateRev.set(sessionId, rev);
+    const snapshot = { rev, state };
+    this.lastSupportState.set(sessionId, snapshot);
+    if (this.lastSupportState.size > 500) this.lastSupportState.delete(this.lastSupportState.keys().next().value as string);
+    this.server.to(this.supportRoom(sessionId)).emit('support:state', snapshot);
+  }
+
+  private resolvePending(key: string, result: { ok: boolean; error?: string; appliedAt?: number; hostReported?: boolean }): void {
+    const p = this.pendingSupportCommands.get(key);
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pendingSupportCommands.delete(key);
+    this.server.sockets.get(p.supportSocketId)?.emit('support:ack', { id: p.commandId, ok: result.ok, ...(result.error ? { error: result.error } : {}), appliedAt: result.appliedAt ?? Date.now() });
+    void this.impersonation
+      .recordStudioControl(
+        'impersonated_studio_command',
+        p.adminUserId,
+        p.accountId,
+        { phase: 'result', sessionId: p.impersonationSessionId, streamId: p.streamId, commandId: p.commandId, command: p.type, summary: p.summary, applied: result.ok, hostReported: result.hostReported === true, ...(result.ok ? {} : { error: String(result.error ?? '').slice(0, 100) }) },
+        false,
+      )
+      .catch(() => undefined);
+  }
+
+  private failPendingForHost(sessionId: string, hostSocketId: string, error: string): void {
+    for (const [key, p] of this.pendingSupportCommands) {
+      if (p.studioSessionId !== sessionId || !p.hostSocketIds.has(hostSocketId)) continue;
+      p.hostSocketIds.delete(hostSocketId);
+      if (p.hostSocketIds.size === 0) this.resolvePending(key, { ok: false, error });
+    }
   }
 }

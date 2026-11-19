@@ -17,6 +17,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { Company } from '../companies/entities/company.entity';
 import { Role } from '../common/enums/role.enum';
 import { User } from '../users/entities/user.entity';
+import { UserSession } from '../auth/entities/user-session.entity';
 import { StartImpersonationDto } from './dto/start-impersonation.dto';
 import { ImpersonationEndReason, ImpersonationMode, ImpersonationSession } from './entities/impersonation-session.entity';
 
@@ -75,12 +76,14 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   /** Overridable in unit tests. */
   now: () => Date = () => new Date();
+  private readonly endListeners = new Set<(sessionId: string, reason: ImpersonationEndReason) => void>();
 
   constructor(
     @InjectRepository(ImpersonationSession) private readonly sessions: Repository<ImpersonationSession>,
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Account) private readonly accounts: Repository<Account>,
     @InjectRepository(Company) private readonly companies: Repository<Company>,
+    @InjectRepository(UserSession) private readonly adminSessions: Repository<UserSession>,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -273,6 +276,77 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     await this.audit.log({ id: imp.adminUserId } as User, 'impersonated_read', 'account', imp.targetAccountId, this.entry(imp, info, { status: info.status }));
   }
 
+  /** Called (synchronously, never throwing into the caller) whenever a support session row ends, for any reason. The studio gateway uses it to cut a support socket at once. */
+  onSessionEnded(fn: (sessionId: string, reason: ImpersonationEndReason) => void): () => void {
+    this.endListeners.add(fn);
+    return () => this.endListeners.delete(fn);
+  }
+
+  /**
+   * Re-validation for the live studio control channel (token mint, socket connect and EVERY command): the support
+   * session must still be unended and unexpired, in ACT mode, for a customer that is not suspended. An expired row is
+   * ended here (audit entry) exactly like AccountGuard does.
+   */
+  async checkControlSession(sessionId: string): Promise<{ ok: true; session: ImpersonationSession } | { ok: false; reason: 'ended' | 'expired' | 'view' | 'suspended' }> {
+    const row = await this.sessions.findOne({ where: { id: sessionId } });
+    if (!row || row.endedAt || !row.adminUserId || !row.targetAccountId || !row.targetUserId) return { ok: false, reason: 'ended' };
+    if (row.expiresAt.getTime() <= this.now().getTime()) {
+      await this.endRow(row, 'expired');
+      return { ok: false, reason: 'expired' };
+    }
+    // The ADMIN must still be who they were: a superadmin, not suspended, on a login session that is still valid
+    // (the same conditions AccountGuard applies to every request). Otherwise the support session is over.
+    const admin = await this.users.findOne({ where: { id: row.adminUserId }, relations: ['account'] });
+    const login = row.adminSessionId ? await this.adminSessions.findOne({ where: { id: row.adminSessionId } }) : null;
+    if (
+      !admin ||
+      admin.role !== Role.SUPERADMIN ||
+      admin.suspendedAt ||
+      admin.account?.suspendedAt ||
+      !login ||
+      login.userId !== admin.id ||
+      login.revokedAt ||
+      login.expiresAt.getTime() <= this.now().getTime()
+    ) {
+      await this.endRow(row, 'invalid');
+      return { ok: false, reason: 'ended' };
+    }
+    if (row.mode !== 'act') return { ok: false, reason: 'view' };
+    const account = await this.accounts.findOne({ where: { id: row.targetAccountId } });
+    const user = await this.users.findOne({ where: { id: row.targetUserId } });
+    if (!account || account.deletedAt || !user) {
+      await this.endRow(row, 'target_gone');
+      return { ok: false, reason: 'ended' };
+    }
+    if (account.suspendedAt || user.suspendedAt) return { ok: false, reason: 'suspended' };
+    return { ok: true, session: row };
+  }
+
+  /**
+   * Live studio remote control audit (`impersonated_studio_control` for token / connect / disconnect events,
+   * `impersonated_studio_command` for commands). STRICT entries are awaited and throw when the audit log cannot take
+   * them, so the caller refuses the action: nothing happens unrecorded. Metadata is ids, enums and a sanitised
+   * summary only: never a token, never free text.
+   */
+  async recordStudioControl(
+    action: 'impersonated_studio_control' | 'impersonated_studio_command',
+    adminUserId: string,
+    targetAccountId: string,
+    meta: Record<string, unknown>,
+    strict: boolean,
+  ): Promise<void> {
+    if (strict) {
+      try {
+        await this.audit.logStrict(adminUserId, action, 'account', targetAccountId, meta);
+      } catch (e) {
+        this.logger.error(`audit log unavailable, studio control refused: ${(e as Error).message}`);
+        throw new ServiceUnavailableException('Audit log unavailable; action refused');
+      }
+      return;
+    }
+    await this.audit.log({ id: adminUserId } as User, action, 'account', targetAccountId, meta);
+  }
+
   /** The customer (or their account) is being deleted: end every support session on it first, with an audit entry. */
   async endForTarget(target: { accountId?: string; userId?: string }): Promise<void> {
     const where = target.userId ? { targetUserId: target.userId, endedAt: IsNull() } : { targetAccountId: target.accountId, endedAt: IsNull() };
@@ -309,6 +383,13 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     if (!res.affected) return; // someone else ended it first: one audit entry only
     row.endedAt = endedAt;
     row.endReason = reason;
+    for (const fn of this.endListeners) {
+      try {
+        fn(row.id, reason);
+      } catch (e) {
+        this.logger.warn(`end listener failed: ${(e as Error).message}`);
+      }
+    }
     const meta = {
       sessionId: row.id,
       mode: row.mode,

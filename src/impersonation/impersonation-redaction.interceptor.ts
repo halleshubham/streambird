@@ -1,16 +1,19 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor, StreamableFile } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { map, Observable } from 'rxjs';
-import { IMPERSONATION_REDACTED_KEY, IMPERSONATION_REDACTED_VALUE } from './blocked-when-impersonating';
+import { IMPERSONATION_REDACTED_KEY, IMPERSONATION_REDACTED_VALUE, RETURNS_SUPPORT_CONTROL_TOKEN_KEY } from './blocked-when-impersonating';
 import { RequestImpersonation } from './impersonation.service';
 
-function redact(value: unknown, depth = 0): unknown {
+function redact(value: unknown, depth = 0, keep: string | null = null): unknown {
   if (value === null || typeof value !== 'object' || depth > 12) return value;
   if (value instanceof Date || Buffer.isBuffer(value) || value instanceof StreamableFile || typeof (value as { pipe?: unknown }).pipe === 'function') return value;
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = IMPERSONATION_REDACTED_KEY.test(k) && v !== null && v !== undefined ? IMPERSONATION_REDACTED_VALUE : redact(v, depth + 1);
+    // `keep`: the one top-level key (the control token) the mint response is allowed to carry.
+    if (depth === 0 && keep !== null && k === keep) out[k] = v;
+    else out[k] = IMPERSONATION_REDACTED_KEY.test(k) && v !== null && v !== undefined ? IMPERSONATION_REDACTED_VALUE : redact(v, depth + 1);
   }
   return out;
 }
@@ -24,10 +27,13 @@ function redact(value: unknown, depth = 0): unknown {
  */
 @Injectable()
 export class ImpersonationRedactionInterceptor implements NestInterceptor {
+  constructor(private readonly reflector: Reflector) {}
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
     const req = context.switchToHttp().getRequest<Request & { impersonation?: RequestImpersonation }>();
     if (!req.impersonation) return next.handle();
-    return next.handle().pipe(map((body) => redact(body)));
+    const keep = this.reflector.get<boolean | undefined>(RETURNS_SUPPORT_CONTROL_TOKEN_KEY, context.getHandler()) ? 'controlToken' : null;
+    return next.handle().pipe(map((body) => redact(body, 0, keep)));
   }
 }

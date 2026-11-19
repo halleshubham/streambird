@@ -1,6 +1,20 @@
 import { StudioSignalingGateway } from './studio-signaling.gateway';
 import { StreamStatus } from '../common/enums/stream-status.enum';
 
+// The gateway's support-control collaborators are not under test in the suites below; inert stand-ins.
+const noImpersonation = { onSessionEnded: () => () => undefined };
+const noSupportControl = {};
+/** Namespace stand-in: `.to(room).emit()`, `.sockets`, `.adapter.rooms`. */
+function withServer(gateway: StudioSignalingGateway, sockets = new Map<string, unknown>()) {
+  const emitted: Array<{ room: string; event: string; data: unknown }> = [];
+  (gateway as any).server = {
+    sockets,
+    adapter: { rooms: new Map() },
+    to: (room: string) => ({ emit: (event: string, data: unknown) => emitted.push({ room, event, data }) }),
+  };
+  return emitted;
+}
+
 describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
   let gateway: StudioSignalingGateway;
   let sessionsService: {
@@ -38,7 +52,8 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
     streamsService = { end: jest.fn(async () => undefined) };
     glitchRecovery = { isWatching: jest.fn(() => false) };
     accountsService = { getLimits: jest.fn(async () => ({ maxGuests: 2, planName: 'Free' })) };
-    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any, accountsService as any);
+    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any, accountsService as any, noImpersonation as any, noSupportControl as any);
+    withServer(gateway);
   });
 
   afterEach(() => {
@@ -183,7 +198,8 @@ describe('StudioSignalingGateway -- host-disconnect auto-end', () => {
       joinAsGuest: jest.fn(async () => ({ id: 'participant_2', studioSessionId: 'session_1' })),
     };
     glitchRecovery = { isWatching: jest.fn(() => false) };
-    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any, accountsService as any);
+    gateway = new StudioSignalingGateway(sessionsService as any, streamsService as any, glitchRecovery as any, accountsService as any, noImpersonation as any, noSupportControl as any);
+    withServer(gateway);
 
     await gateway.handleConnection(socket as any);
     await gateway.handleDisconnect(socket as any);
@@ -219,7 +235,8 @@ describe('StudioSignalingGateway -- rtc-state diagnostics', () => {
       recordParticipantLeft: jest.fn(async () => undefined),
       findByIdWithLiveStream: jest.fn(),
     };
-    gateway = new StudioSignalingGateway(sessionsService as any, {} as any, { isWatching: () => false } as any, {} as any);
+    gateway = new StudioSignalingGateway(sessionsService as any, {} as any, { isWatching: () => false } as any, {} as any, noImpersonation as any, noSupportControl as any);
+    withServer(gateway);
     loggerWarnSpy = jest.spyOn((gateway as any).logger, 'warn').mockImplementation(() => undefined);
     loggerLogSpy = jest.spyOn((gateway as any).logger, 'log').mockImplementation(() => undefined);
   });
