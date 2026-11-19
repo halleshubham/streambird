@@ -6,6 +6,7 @@ import {
   BLOCKED_WHEN_IMPERSONATING_KEY,
   IMPERSONATION_BLOCK_CATEGORIES,
   impersonationBlockMessage,
+  START_STOP_MESSAGE,
 } from './blocked-when-impersonating';
 import { IMPERSONATION_TTL_MS, ImpersonationService } from './impersonation.service';
 
@@ -254,7 +255,9 @@ describe('blocked-when-impersonating registry', () => {
   it('every category has a plain-language label and the message names it', () => {
     for (const [key, label] of Object.entries(IMPERSONATION_BLOCK_CATEGORIES)) {
       expect(label.length).toBeGreaterThan(5);
-      expect(impersonationBlockMessage(key)).toBe(`Not allowed while acting as a customer: ${label}`);
+      expect(impersonationBlockMessage(key)).toBe(
+        key === 'go-live' || key === 'live-control' ? START_STOP_MESSAGE : `Not allowed while acting as a customer: ${label}`,
+      );
     }
   });
 
