@@ -112,7 +112,7 @@ export class SupportControlService {
 
   /** `kit.apply` may only name a kit of the impersonated account. */
   async kitBelongsTo(accountId: string, kitId: string): Promise<boolean> {
-    return (await this.kits.count({ where: { id: kitId, accountId } })) > 0;
+    return (await this.kits.count({ where: { id: kitId.toLowerCase(), accountId } })) > 0;
   }
 
   /** Is this studio session's stream still LIVE (and still the customer's)? */

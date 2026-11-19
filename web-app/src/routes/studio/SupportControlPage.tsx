@@ -7,7 +7,7 @@ import { ClockFields } from '../../components/ClockFields';
 import { BirdLoader } from '../../components/BirdLoader';
 import { BRANDING_RANGES, LAYOUTS, WALLPAPER_RANGES } from '../../studio/compose';
 import { useSupportControl, type CommandEntry } from '../../studio/useSupportControl';
-import { PHONE_UNAVAILABLE_NOTE, type SupportCommandType, type SupportState } from '../../studio/supportControl';
+import { PHONE_UNAVAILABLE_NOTE, phonePanels, type SupportCommandType, type SupportState } from '../../studio/supportControl';
 import '../../components/ui/support.css';
 
 type Send = (type: SupportCommandType, payload: Record<string, unknown>, label: string) => void;
@@ -127,12 +127,7 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
               : 'The host studio is not connected. Controls appear when the host opens the studio.'}
         </p>
       ) : state.platform === 'android' ? (
-        <div className="support-control-grid" data-testid="support-phone-grid">
-          <AdsControls state={state} send={send} />
-          <TickerPanel state={state} send={send} />
-          <ClockPanel state={state} send={send} />
-          <PhoneUnavailablePanel />
-        </div>
+        <PhoneGrid state={state} send={send} />
       ) : (
         <div className="support-control-grid">
           <LayoutPanel state={state} send={send} />
@@ -149,14 +144,30 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
   );
 }
 
+/** A phone stream: the panels the phone's app version supports (from its snapshot), the same panels as the web host; the rest greyed. */
+function PhoneGrid({ state, send }: { state: SupportState; send: Send }) {
+  const panels = phonePanels(state);
+  return (
+    <div className="support-control-grid" data-testid="support-phone-grid">
+      <AdsControls state={state} send={send} />
+      {panels.kit && <KitPanel state={state} send={send} />}
+      <TickerPanel state={state} send={send} />
+      {panels.lowerThird && <LowerThirdPanel state={state} send={send} phone />}
+      <ClockPanel state={state} send={send} />
+      {panels.logo && <LogoPanel state={state} send={send} phone />}
+      <PhoneUnavailablePanel names={panels.unavailable} />
+    </div>
+  );
+}
+
 /** Controls the Android app cannot do live: shown greyed out in one place, never as buttons that would only fail. */
-function PhoneUnavailablePanel() {
+function PhoneUnavailablePanel({ names }: { names: string[] }) {
   return (
     <section className="panel support-unavailable" aria-label="Not available on the phone app" data-testid="support-phone-unavailable">
       <h2 className="studio-section-label">{PHONE_UNAVAILABLE_NOTE}</h2>
-      <p className="field-hint">Layout, brand kit, lower third, logo and wallpaper dim cannot be changed on a stream started from the phone app.</p>
+      <p className="field-hint">These cannot be changed on a stream started from the phone app{names.length > 2 ? ' (some need a newer app version)' : ''}.</p>
       <ul>
-        {['Layout', 'Brand kit', 'Lower third', 'Logo', 'Wallpaper dim'].map((name) => (
+        {names.map((name) => (
           <li key={name} aria-disabled="true">
             {name}
           </li>
@@ -314,7 +325,7 @@ function KitPanel({ state, send }: { state: SupportState; send: Send }) {
           </button>
         </div>
       )}
-      <p className="field-hint">Applying a kit loads its logo, clock, lower-third look, wallpaper and ads, as if the host picked it.</p>
+      <p className="field-hint">{state.platform === 'android' ? 'Applying a kit loads its ads, logo and clock settings on the phone.' : 'Applying a kit loads its logo, clock, lower-third look, wallpaper and ads, as if the host picked it.'}</p>
     </section>
   );
 }
@@ -338,7 +349,7 @@ function TickerPanel({ state, send }: { state: SupportState; send: Send }) {
   );
 }
 
-function LowerThirdPanel({ state, send }: { state: SupportState; send: Send }) {
+function LowerThirdPanel({ state, send, phone = false }: { state: SupportState; send: Send; phone?: boolean }) {
   const [name, setName] = useState(state.lowerThird.name);
   const [title, setTitle] = useState(state.lowerThird.title);
   useEffect(() => setName(state.lowerThird.name), [state.lowerThird.name]);
@@ -352,12 +363,12 @@ function LowerThirdPanel({ state, send }: { state: SupportState; send: Send }) {
     );
   }
   return (
-    <section className="panel" aria-label="Lower third">
-      <h2 className="studio-section-label">Lower third</h2>
+    <section className="panel" aria-label={phone ? 'Name banner' : 'Lower third'}>
+      <h2 className="studio-section-label">{phone ? 'Name banner' : 'Lower third'}</h2>
       <input type="text" aria-label="Lower third name" data-testid="support-lt-name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
       <input type="text" aria-label="Lower third title" data-testid="support-lt-title" maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
       <div className="support-row">
-        <button type="button" className="chip-link chip-link--sm" disabled={!name.trim()} data-testid="support-lt-show" onClick={() => send('lowerThird.set', { name, title, show: true }, 'Lower third: show')}>
+        <button type="button" className="chip-link chip-link--sm" disabled={!name.trim()} data-testid="support-lt-show" onClick={() => send('lowerThird.set', { name, title: phone ? title.trim() || null : title, show: true }, 'Lower third: show')}>
           Show
         </button>
         <button type="button" className="chip-link chip-link--sm" disabled={!state.lowerThird.live} data-testid="support-lt-hide" onClick={() => send('lowerThird.set', { show: false }, 'Lower third: hide')}>
@@ -377,11 +388,11 @@ function ClockPanel({ state, send }: { state: SupportState; send: Send }) {
   );
 }
 
-function LogoPanel({ state, send }: { state: SupportState; send: Send }) {
+function LogoPanel({ state, send, phone = false }: { state: SupportState; send: Send; phone?: boolean }) {
   return (
-    <section className="panel" aria-label="Logo and wallpaper">
+    <section className="panel" aria-label={phone ? 'Logo' : 'Logo and wallpaper'}>
       <h2 className="studio-section-label">Logo</h2>
-      {!state.logo.has && <p className="field-hint">No logo is loaded in the studio.</p>}
+      {!state.logo.has && <p className="field-hint">{phone ? 'No logo is loaded on the phone.' : 'No logo is loaded in the studio.'}</p>}
       <div className="segmented" role="group" aria-label="Logo position">
         {(['left', 'right'] as const).map((pos) => (
           <button key={pos} type="button" className={state.logo.position === pos ? 'active' : ''} aria-pressed={state.logo.position === pos} data-testid={`support-logo-${pos}`} onClick={() => send('logo.set', { position: pos }, `Logo: ${pos}`)}>
@@ -390,7 +401,7 @@ function LogoPanel({ state, send }: { state: SupportState; send: Send }) {
         ))}
       </div>
       <NumberSend label="Logo size" testId="support-logo-size" min={BRANDING_RANGES.logoSize.min} max={BRANDING_RANGES.logoSize.max} value={state.logo.size} onSend={(n) => send('logo.set', { size: n }, 'Logo size')} />
-      <NumberSend label="Wallpaper dim (%)" testId="support-wallpaper-dim" min={WALLPAPER_RANGES.dim.min} max={WALLPAPER_RANGES.dim.max} value={state.wallpaper.dim} onSend={(n) => send('wallpaper.dim', { n }, 'Wallpaper dim')} />
+      {!phone && <NumberSend label="Wallpaper dim (%)" testId="support-wallpaper-dim" min={WALLPAPER_RANGES.dim.min} max={WALLPAPER_RANGES.dim.max} value={state.wallpaper.dim} onSend={(n) => send('wallpaper.dim', { n }, 'Wallpaper dim')} />}
     </section>
   );
 }
