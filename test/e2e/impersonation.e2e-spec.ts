@@ -1,3 +1,4 @@
+import { PNG } from 'pngjs';
 import { ModulesContainer } from '@nestjs/core';
 import { RequestMethod } from '@nestjs/common';
 import * as crypto from 'crypto';
@@ -13,6 +14,7 @@ import {
 import { ROLES_KEY } from '../../src/common/decorators/roles.decorator';
 
 const BLOCKED = 'Not allowed while acting as a customer';
+const START_STOP = 'Starting and stopping streams is not allowed while acting as a customer';
 /** Nest wraps the sentence: the filter's `message` is the exception response `{message, error, statusCode}`. */
 const msg = (r: { body: any }): string => r.body?.message?.message ?? r.body?.message;
 
@@ -194,7 +196,7 @@ describeE2E('superadmin support sessions (impersonation)', () => {
 
     const refused = (r: { status: number; body: any }, label: string) => {
       expect(r.status).toBe(403);
-      expect(msg(r)).toBe(`${BLOCKED}: ${label}`);
+      expect(msg(r)).toBe(label === START_STOP ? label : `${BLOCKED}: ${label}`);
     };
 
     it('payments and plan changes', async () => {
@@ -239,7 +241,7 @@ describeE2E('superadmin support sessions (impersonation)', () => {
     });
 
     it('going live: start, go-live-now, retry, host token, preset start', async () => {
-      const label = IMPERSONATION_BLOCK_CATEGORIES['go-live'];
+      const label = START_STOP;
       refused(await admin.post('/streams', { title: 't', destinationConnectionIds: [conn] }), label);
       refused(await admin.post(`/streams/${crypto.randomUUID()}/start`), label);
       refused(await admin.post(`/studio-sessions/${crypto.randomUUID()}/host-token`), label);
@@ -249,7 +251,7 @@ describeE2E('superadmin support sessions (impersonation)', () => {
     });
 
     it('live control: ending, retrying a destination (both change a running stream)', async () => {
-      const label = IMPERSONATION_BLOCK_CATEGORIES['live-control'];
+      const label = START_STOP;
       refused(await admin.post(`/streams/${crypto.randomUUID()}/end`), label);
       refused(await admin.post(`/streams/${crypto.randomUUID()}/destinations/${crypto.randomUUID()}/retry`), label);
     });
@@ -506,6 +508,50 @@ describeE2E('superadmin support sessions (impersonation)', () => {
         await admin.del('/superadmin/impersonation');
       }
     });
+  });
+
+  it('LIVE stream: act mode can still update its thumbnail and its kit L-shaped ad, while start and end are refused', async () => {
+    const png = (w: number, h: number, window: boolean) => {
+      const img = new PNG({ width: w, height: h });
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          const inside = window && x >= w * 0.1 && x < w * 0.9 && y >= h * 0.1 && y < h * 0.9;
+          img.data.set(inside ? [0, 0, 0, 0] : [30, 60, 200, 255], (y * w + x) * 4);
+        }
+      return PNG.sync.write(img);
+    };
+    const multipart = (fields: Record<string, string>, file: Buffer) => {
+      const boundary = `----sb${crypto.randomBytes(6).toString('hex')}`;
+      const part = (n: string, v: string) => `--${boundary}\r\nContent-Disposition: form-data; name="${n}"\r\n\r\n${v}\r\n`;
+      const body = Buffer.concat([
+        Buffer.from(Object.entries(fields).map(([k, v]) => part(k, v)).join('')),
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="f.png"\r\nContent-Type: image/png\r\n\r\n`),
+        file,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+      return { raw: body, headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` } };
+    };
+    const cust = await h.signIn();
+    const conn = await twitch(cust.client, 'Live chan');
+    const ad = (await cust.client.call('POST', '/assets', multipart({ kind: 'ad', name: 'Frame' }, png(320, 180, true)))).body;
+    const kit = (await cust.client.post('/brand-kits', { name: 'Live kit', isDefault: true })).body;
+    const live = (await cust.client.post('/streams', { title: 'On air', destinationConnectionIds: [conn] })).body;
+    expect(live.status).toBe('live');
+
+    await start(admin, { accountId: cust.accountId, mode: 'act' });
+    // Configuration of the running stream is still allowed ...
+    const thumb = await admin.call('PUT', `/streams/${live.id}/thumbnail`, multipart({}, png(1280, 720, false)));
+    expect(thumb.status).toBe(200);
+    const updated = await admin.patch(`/brand-kits/${kit.id}`, { ads: [{ placement: 'l_shape', assetId: ad.id, mode: 'interval', showSec: 20, everySec: 180 }] });
+    expect(updated.status).toBe(200);
+    expect((await cust.client.get('/brand-kits')).body[0].ads).toMatchObject([{ placement: 'l_shape', assetId: ad.id }]);
+    expect((await cust.client.get(`/streams/${live.id}`)).body.status).toBe('live');
+    // ... while starting and stopping are not.
+    const end = await admin.post(`/streams/${live.id}/end`);
+    expect(end.status).toBe(403);
+    expect(msg(end)).toBe(START_STOP);
+    expect(msg(await admin.post('/streams', { title: 'x', destinationConnectionIds: [conn] }))).toBe(START_STOP);
+    expect((await cust.client.get(`/streams/${live.id}`)).body.status).toBe('live');
   });
 
   describe('guest emails', () => {

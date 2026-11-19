@@ -20,6 +20,7 @@ export const SUPPORT_BLOCKED_SUMMARY = [
   'Payments and plan changes',
   'Password, email, API key or login changes',
   'Connecting or disconnecting channels, and stream keys',
-  'Going live, starting a stream, or opening the live studio as the host',
+  'Starting or stopping streams, or opening the live studio as the host',
+  'Live studio controls (layout, ads, ticker, lower thirds, clock) cannot be changed remotely yet',
   'Inviting or removing team members',
 ];

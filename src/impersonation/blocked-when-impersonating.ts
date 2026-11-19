@@ -32,7 +32,12 @@ export type ImpersonationBlockCategory = keyof typeof IMPERSONATION_BLOCK_CATEGO
 export const BlockedWhenImpersonating = (category: ImpersonationBlockCategory) =>
   SetMetadata(BLOCKED_WHEN_IMPERSONATING_KEY, category);
 
+/** Categories whose 403 text is a whole sentence of its own (founder wording) instead of "Not allowed ...: <label>". */
+export const START_STOP_MESSAGE = 'Starting and stopping streams is not allowed while acting as a customer';
+const FULL_MESSAGES: Record<string, string> = { 'go-live': START_STOP_MESSAGE, 'live-control': START_STOP_MESSAGE };
+
 export function impersonationBlockMessage(category: string): string {
+  if (FULL_MESSAGES[category]) return FULL_MESSAGES[category];
   const label = (IMPERSONATION_BLOCK_CATEGORIES as Record<string, string>)[category] ?? category;
   return `Not allowed while acting as a customer: ${label}`;
 }
