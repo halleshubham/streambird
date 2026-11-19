@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client';
 import { UsageBar } from '../../components/UsageMeter';
 import { BirdLoader } from '../../components/BirdLoader';
 import type { AccountDetail, AdminPlan } from '../../types/api';
+import { AccountBrandKits } from '../../components/admin/AccountBrandKits';
 import { Badge, DataTable, Empty, Notice, PageHeader, ROLE_LABEL, Section, When, fmtDate, planLabel, statusTone } from '../../components/admin/adminKit';
 import { Button, Card, Input, Modal, SelectField, confirm, toast } from '../../components/ui';
 
@@ -411,6 +412,8 @@ export function AdminAccountDetailPage() {
           </DataTable>
         )}
       </Card>
+
+      <AccountBrandKits accountId={account.id} />
 
       <Section
         title={account.suspendedAt ? 'Reactivate account' : 'Danger zone'}
