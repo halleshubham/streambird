@@ -208,6 +208,41 @@ test.describe('support control of a live studio (two browsers)', () => {
     await r.close();
   });
 
+  test('the customer reloads the studio: the control page follows with the fresh state, and its commands still work', async ({ page, context, browser }) => {
+    const r = await rig(browser, page, context, 'act');
+    const { host: A, admin: B } = r;
+    await openControl(r);
+    await expect(B.getByTestId('support-layout')).toBeVisible();
+    // The host picks Spotlight (saved per stream in the browser), then reloads the whole studio.
+    await A.locator('#layoutSelect').selectOption('spotlight');
+    await expect(B.getByTestId('support-layout')).toHaveValue('spotlight', { timeout: 8000 });
+    await A.reload();
+    await A.locator('canvas.studio-canvas').waitFor();
+    await expect(A.getByText('Connected to the studio as host.')).toBeVisible();
+    await expect(A.locator('#layoutSelect')).toHaveValue('spotlight');
+    // B shows the host again, with the state of the NEW studio (not the pre-reload snapshot), and controls it.
+    await expect(B.getByTestId('support-host-status')).toHaveAttribute('data-connected', '1', { timeout: 10_000 });
+    await expect(B.getByTestId('support-layout')).toHaveValue('spotlight', { timeout: 10_000 });
+    await A.waitForTimeout(3300); // clear the host's conflict window from the page load
+    await B.getByTestId('support-layout').selectOption('podcast-split');
+    await expect(A.locator('#layoutSelect')).toHaveValue('podcast-split', { timeout: 8000 });
+    await expect(B.getByTestId('support-layout')).toHaveValue('podcast-split', { timeout: 8000 });
+    await r.close();
+  });
+
+  test('when the support session ends the controls are switched off at once with a clear message', async ({ page, context, browser }) => {
+    const r = await rig(browser, page, context, 'act');
+    await openControl(r);
+    await expect(r.admin.getByTestId('support-layout')).toBeVisible();
+    // The session ends from elsewhere (another tab / Exit): the socket is cut with support:ended.
+    const res = await r.adminCtx.request.delete(`${APP}/api/superadmin/impersonation`, { headers: { Origin: APP } });
+    expect(res.status()).toBe(204);
+    await expect(r.admin.getByTestId('support-ended')).toContainText('Support session ended', { timeout: 8000 });
+    await expect(r.admin.getByTestId('support-layout')).toHaveCount(0);
+    await expect(r.admin.getByTestId('support-ad-lower_third-hide')).toHaveCount(0);
+    await r.close();
+  });
+
   test('ending the support session closes the control page and the host is untouched', async ({ page, context, browser }) => {
     const r = await rig(browser, page, context, 'act');
     await openControl(r);

@@ -32,7 +32,7 @@ import {
   type Facing,
 } from './cameraDevices';
 import { recordingFileName, recordingSupported, startRecording as beginRecording, type StartedRecording } from './recorder';
-import { SNAPSHOT_DEBOUNCE_MS, HostChangeTracker, applySupportCommand, buildSupportState, trackedValues, type HostControls, type RelayedSupportCommand } from './supportControl';
+import { SNAPSHOT_DEBOUNCE_MS, HostChangeTracker, applySupportCommand, isStaleCommand, buildSupportState, trackedValues, type HostControls, type RelayedSupportCommand } from './supportControl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { getMyLimits } from '../api/plans';
@@ -1547,6 +1547,11 @@ export function useHostStudio(streamId: string | undefined) {
     // Support remote control: trusted ONLY because it arrives on this authenticated host socket from the server, which
     // validates the support session and the command whitelist and never relays anything a guest emits.
     socket.on('support:state-request', () => supportHandlersRef.current?.request());
+    // The server says whether any support socket is watching: snapshots are published only then.
+    socket.on('support:watching', (m: { on?: boolean }) => {
+      supportWatchingRef.current = m?.on === true;
+      if (supportWatchingRef.current) supportHandlersRef.current?.request();
+    });
     socket.on('support:command', (cmd: unknown) => supportHandlersRef.current?.command(cmd));
   }
 
@@ -3437,10 +3442,13 @@ export function useHostStudio(streamId: string | undefined) {
       if (!cmd || cmd.source !== 'support-session' || typeof cmd.id !== 'string' || typeof cmd.type !== 'string' || typeof cmd.payload !== 'object' || cmd.payload === null) return;
       const { id } = cmd;
       supportWatchingRef.current = true;
+      const receivedPerf = performance.now();
       // One at a time, in order (a brand kit loads files asynchronously).
       supportQueueRef.current = supportQueueRef.current.then(async () => {
         let result: { ok: boolean; error?: string };
         try {
+          // Too old (it waited behind a slow command, or travelled for long): the controller was already told it timed out.
+          if (isStaleCommand(cmd.at, receivedPerf, performance.now(), Date.now())) throw new Error('The command was too old to apply');
           result = await applySupportCommand(cmd as RelayedSupportCommand, {
             controls: supportControlsRef.current,
             tracker: supportTrackerRef.current,

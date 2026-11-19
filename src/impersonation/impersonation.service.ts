@@ -17,6 +17,7 @@ import { Account } from '../accounts/entities/account.entity';
 import { Company } from '../companies/entities/company.entity';
 import { Role } from '../common/enums/role.enum';
 import { User } from '../users/entities/user.entity';
+import { UserSession } from '../auth/entities/user-session.entity';
 import { StartImpersonationDto } from './dto/start-impersonation.dto';
 import { ImpersonationEndReason, ImpersonationMode, ImpersonationSession } from './entities/impersonation-session.entity';
 
@@ -82,6 +83,7 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Account) private readonly accounts: Repository<Account>,
     @InjectRepository(Company) private readonly companies: Repository<Company>,
+    @InjectRepository(UserSession) private readonly adminSessions: Repository<UserSession>,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -291,6 +293,23 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     if (row.expiresAt.getTime() <= this.now().getTime()) {
       await this.endRow(row, 'expired');
       return { ok: false, reason: 'expired' };
+    }
+    // The ADMIN must still be who they were: a superadmin, not suspended, on a login session that is still valid
+    // (the same conditions AccountGuard applies to every request). Otherwise the support session is over.
+    const admin = await this.users.findOne({ where: { id: row.adminUserId }, relations: ['account'] });
+    const login = row.adminSessionId ? await this.adminSessions.findOne({ where: { id: row.adminSessionId } }) : null;
+    if (
+      !admin ||
+      admin.role !== Role.SUPERADMIN ||
+      admin.suspendedAt ||
+      admin.account?.suspendedAt ||
+      !login ||
+      login.userId !== admin.id ||
+      login.revokedAt ||
+      login.expiresAt.getTime() <= this.now().getTime()
+    ) {
+      await this.endRow(row, 'invalid');
+      return { ok: false, reason: 'ended' };
     }
     if (row.mode !== 'act') return { ok: false, reason: 'view' };
     const account = await this.accounts.findOne({ where: { id: row.targetAccountId } });

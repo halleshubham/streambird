@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Megaphone, RadioTower } from 'lucide-react';
 import { AD_EVERY_SEC_RANGE, AD_PLACEMENTS, AD_PLACEMENT_LABEL, AD_SHOW_SEC_RANGE, describeSchedule, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from '../../studio/ads';
@@ -27,11 +27,35 @@ export function SupportControlPage({ streamId, mode }: { streamId: string | unde
       </div>
     );
   }
-  return <ControlStudio streamId={streamId} />;
+  return (
+    <ControlErrorBoundary>
+      <ControlStudio streamId={streamId} />
+    </ControlErrorBoundary>
+  );
+}
+
+/** A panel that throws must not blank the whole page: the admin gets a message and a reload button. */
+class ControlErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="support-control" data-testid="support-control-crashed">
+        <h1 className="support-control-title">Support control</h1>
+        <p className="error">Something went wrong showing the controls.</p>
+        <button type="button" className="chip-link chip-link--sm" onClick={() => this.setState({ failed: false })}>
+          Try again
+        </button>
+      </div>
+    );
+  }
 }
 
 function ControlStudio({ streamId }: { streamId: string | undefined }) {
-  const { phase, error, stream, connected, hostConnected, state, ended, log, send } = useSupportControl(streamId);
+  const { phase, error, stream, connected, hostConnected, state, ended, log, send, retry } = useSupportControl(streamId);
 
   if (phase === 'loading') {
     return (
@@ -66,15 +90,30 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
         <p className="field-hint">
           No camera, microphone or publishing here: you change the picture the customer is broadcasting. Everything you change is recorded in the audit log. If the host changes the same setting, the host wins.
         </p>
-        {error && !ended && <p className="error">{error}</p>}
+        {error && !ended && (
+          <p className="error" data-testid="support-control-error">
+            {error}{' '}
+            {!connected && (
+              <button type="button" className="chip-link chip-link--sm" data-testid="support-control-retry" onClick={retry}>
+                Retry
+              </button>
+            )}
+          </p>
+        )}
       </header>
 
-      {!state || !hostConnected ? (
+      {ended ? (
+        <section className="panel" data-testid="support-ended">
+          <h2 className="studio-section-label">Support session ended</h2>
+          <p>The support session is over, so these controls are switched off. Nothing more can be changed.</p>
+          <Link to="/admin" className="chip-link chip-link--sm">Back to the admin area</Link>
+        </section>
+      ) : !state || !hostConnected ? (
         <p className="panel" data-testid="support-waiting">
           {hostConnected ? 'Waiting for the host studio to report its settings…' : 'The host studio is not connected. Controls appear when the host opens the studio.'}
         </p>
       ) : (
-        <div className="support-control-grid" aria-disabled={!!ended}>
+        <div className="support-control-grid">
           <LayoutPanel state={state} send={send} />
           <AdsControls state={state} send={send} />
           <KitPanel state={state} send={send} />

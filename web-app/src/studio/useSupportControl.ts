@@ -40,6 +40,7 @@ export function useSupportControl(streamId: string | undefined) {
   const [state, setState] = useState<SupportState | null>(null);
   const [ended, setEnded] = useState<string | null>(null);
   const [log, setLog] = useState<CommandEntry[]>([]);
+  const [attempt, setAttempt] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const revRef = useRef(-1);
   const seqRef = useRef(0);
@@ -62,6 +63,9 @@ export function useSupportControl(streamId: string | undefined) {
     }
     let cancelled = false;
     const timers = timersRef.current;
+    setPhase('loading');
+    setError(null);
+    revRef.current = -1;
     (async () => {
       try {
         const row = await getStream(streamId);
@@ -83,7 +87,11 @@ export function useSupportControl(streamId: string | undefined) {
               firstToken = null;
               use(t);
             } else {
-              mintToken(streamId).then(use, () => cb({ role: 'support' }));
+              // A failed re-mint must not leave a dead page: the server refuses the empty auth, and the page shows the error with Retry.
+              mintToken(streamId).then(use, (e: unknown) => {
+                setError(e instanceof Error ? e.message : 'Could not renew the control token');
+                cb({ role: 'support' });
+              });
             }
           },
         });
@@ -95,7 +103,8 @@ export function useSupportControl(streamId: string | undefined) {
         });
         socket.on('support:host', (m: { connected: boolean }) => setHostConnected(!!m.connected));
         socket.on('support:state', (m: { rev: number; state: SupportState }) => {
-          if (typeof m?.rev !== 'number' || !m.state) return;
+          // Defensive (the server already rebuilt it from a strict shape): never let a malformed snapshot reach the panels.
+          if (typeof m?.rev !== 'number' || !isUsableState(m.state)) return;
           if (m.rev < revRef.current) return; // an older snapshot overtaken by a newer one
           revRef.current = m.rev;
           setState(m.state);
@@ -122,7 +131,7 @@ export function useSupportControl(streamId: string | undefined) {
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
     };
-  }, [streamId, patchEntry]);
+  }, [streamId, patchEntry, attempt]);
 
   const send = useCallback(
     (type: SupportCommandType, payload: Record<string, unknown>, label: string) => {
@@ -145,7 +154,13 @@ export function useSupportControl(streamId: string | undefined) {
     [patchEntry],
   );
 
-  return { phase, error, stream, connected, hostConnected, state, ended, log, send };
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { phase, error, stream, connected, hostConnected, state, ended, log, send, retry };
+}
+
+function isUsableState(s: unknown): s is SupportState {
+  const o = s as Partial<SupportState> | null;
+  return !!o && o.v === 1 && typeof o.layout === 'string' && !!o.ads && !!o.clock && Array.isArray(o.kits) && !!o.ticker && !!o.lowerThird && !!o.logo && !!o.wallpaper;
 }
 
 function mintToken(streamId: string): Promise<ControlTokenResponse> {

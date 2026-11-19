@@ -11,7 +11,7 @@
  * made after a support command simply overrides it (the host's own changes always win).
  */
 import { AD_PLACEMENTS, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
-import { isValidTimeZone, type ClockSettings } from './clock';
+import { CLOCK_POSITIONS, CLOCK_SIZES, CLOCK_STYLES, isValidTimeZone, type ClockSettings } from './clock';
 import { isLayoutId } from './compose';
 import type { LowerThirdSettings } from './lowerThird';
 
@@ -24,6 +24,24 @@ export const SUPPORT_EXPECT_HOLD_MS = 400;
 /** A brand kit loads files asynchronously, so its changes arrive over a few seconds and are all attributed to it. */
 export const SUPPORT_KIT_HOLD_MS = 4000;
 export const SNAPSHOT_DEBOUNCE_MS = 300;
+/** A relayed command older than this is dropped unapplied: the server already told the controller "the host did not respond". */
+export const SUPPORT_COMMAND_MAX_AGE_MS = 8000;
+/** A brand kit load that takes longer than this fails the command, so a hung download cannot stall the queue. */
+export const SUPPORT_KIT_TIMEOUT_MS = 10_000;
+/** Beyond this the server and host clocks are assumed to disagree and `at` is not trusted. */
+const CLOCK_SKEW_GUARD_MS = 5 * 60_000;
+
+/**
+ * Is a relayed command too old to apply? Two independent measures: how long it has waited in THIS browser (monotonic, immune
+ * to clock differences: a hung earlier command), and the server's `at` stamp against this clock (ignored when the two
+ * clocks are minutes apart).
+ */
+export function isStaleCommand(at: unknown, receivedPerf: number, nowPerf: number, nowWall: number, maxAgeMs = SUPPORT_COMMAND_MAX_AGE_MS): boolean {
+  if (nowPerf - receivedPerf > maxAgeMs) return true;
+  if (typeof at !== 'number' || !Number.isFinite(at)) return false;
+  const age = nowWall - at;
+  return age > maxAgeMs && age < CLOCK_SKEW_GUARD_MS;
+}
 export const HOST_CHANGED_MESSAGE = 'host changed it just now';
 
 export type SupportCommandType =
@@ -249,6 +267,8 @@ export interface ApplyEnv {
   now: () => number;
   /** The last ticker text while the support session has the ticker switched off (so "on" brings it back). */
   tickerStash: { text: string };
+  /** Overridable in tests. */
+  kitTimeoutMs?: number;
 }
 
 const isPlacement = (v: unknown): v is AdPlacement => typeof v === 'string' && (AD_PLACEMENTS as readonly string[]).includes(v);
@@ -316,7 +336,13 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
       const id = String(payload.kitId ?? '');
       if (!c.hasKit(id)) return { ok: false, error: 'Unknown brand kit' };
       tracker.expect(keys, env.now(), SUPPORT_KIT_HOLD_MS, false);
-      await c.applyKit(id);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), env.kitTimeoutMs ?? SUPPORT_KIT_TIMEOUT_MS);
+      });
+      const outcome = await Promise.race([c.applyKit(id).then(() => 'done' as const), timedOut]);
+      clearTimeout(timer);
+      if (outcome === 'timeout') return { ok: false, error: 'The brand kit took too long to load' };
       tracker.expect(keys, env.now(), SUPPORT_KIT_HOLD_MS, false); // the kit's files load asynchronously: hold until the last change has rendered
       return { ok: true };
     }
@@ -324,6 +350,7 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
       const hasText = Object.prototype.hasOwnProperty.call(payload, 'text');
       const text = payload.text === null || payload.text === undefined ? '' : String(payload.text);
       const on = typeof payload.on === 'boolean' ? payload.on : undefined;
+      if (text.length > 200) return { ok: false, error: 'Ticker text is too long' };
       expect();
       if (hasText && text.trim()) {
         env.tickerStash.text = text.trim();
@@ -342,6 +369,7 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
     }
     case 'lowerThird.set': {
       const patch: Partial<LowerThirdSettings> = {};
+      if ((typeof payload.name === 'string' && payload.name.length > 80) || (typeof payload.title === 'string' && payload.title.length > 120)) return { ok: false, error: 'Lower third text is too long' };
       if (typeof payload.name === 'string') patch.title = payload.name;
       if (payload.title !== undefined) patch.subtitle = payload.title === null ? '' : String(payload.title);
       if (payload.show === true && !c.canLowerThird()) return { ok: false, error: 'Lower thirds are not available on this plan' };
@@ -356,10 +384,16 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
     case 'clock.set': {
       const patch: Partial<ClockSettings> = {};
       for (const k of ['enabled', 'showDate', 'showSeconds', 'alternate'] as const) if (typeof payload[k] === 'boolean') patch[k] = payload[k] as boolean;
-      if (typeof payload.position === 'string') patch.position = payload.position as ClockSettings['position'];
-      if (typeof payload.format === 'string') patch.format = payload.format as ClockSettings['format'];
-      if (typeof payload.size === 'string') patch.size = payload.size as ClockSettings['size'];
-      if (typeof payload.style === 'string') patch.style = payload.style as ClockSettings['style'];
+      // Defence in depth: the server validated these, but normalizeClock would silently RESET an unknown value to its default.
+      const enumOf = (key: 'position' | 'format' | 'size' | 'style', allowed: readonly string[]): string | null => {
+        if (payload[key] === undefined) return null;
+        if (typeof payload[key] !== 'string' || !allowed.includes(payload[key] as string)) return `Invalid clock ${key}`;
+        (patch as Record<string, unknown>)[key] = payload[key];
+        return null;
+      };
+      const badEnum =
+        enumOf('position', CLOCK_POSITIONS.map((x) => x.id)) ?? enumOf('format', ['12h', '24h']) ?? enumOf('size', CLOCK_SIZES.map((x) => x.id)) ?? enumOf('style', CLOCK_STYLES.map((x) => x.id));
+      if (badEnum) return { ok: false, error: badEnum };
       if (payload.timezone === null) patch.timezone = null;
       else if (typeof payload.timezone === 'string') {
         if (!isValidTimeZone(payload.timezone)) return { ok: false, error: 'Unknown time zone' };
@@ -371,13 +405,14 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
     }
     case 'logo.set': {
       if (payload.position !== undefined && payload.position !== 'left' && payload.position !== 'right') return { ok: false, error: 'Invalid logo position' };
+      if (payload.size !== undefined && !(typeof payload.size === 'number' && Number.isInteger(payload.size) && payload.size >= 16 && payload.size <= 600)) return { ok: false, error: 'Invalid logo size' };
       expect();
       if (payload.position !== undefined) c.setLogoPosition(payload.position as 'left' | 'right');
       if (typeof payload.size === 'number') c.setLogoSize(payload.size);
       return { ok: true };
     }
     case 'wallpaper.dim': {
-      if (typeof payload.n !== 'number' || !Number.isFinite(payload.n)) return { ok: false, error: 'Invalid value' };
+      if (typeof payload.n !== 'number' || !Number.isInteger(payload.n) || payload.n < 0 || payload.n > 70) return { ok: false, error: 'Invalid value' };
       expect();
       c.setWallpaperDim(payload.n);
       return { ok: true };

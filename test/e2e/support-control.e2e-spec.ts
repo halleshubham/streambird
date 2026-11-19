@@ -21,6 +21,24 @@ interface Conn {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** A complete, valid host snapshot (the server rebuilds it from a strict shape and drops anything else). */
+const noAd = { hasMedia: false, name: null, enabled: false, schedule: { mode: 'continuous' }, manual: null };
+const validState = (layout = 'grid') => ({
+  v: 1,
+  layout,
+  orientation: 'landscape',
+  adsPlan: 'custom',
+  ads: { lower_third: noAd, side_third: noAd, full_screen: noAd, l_shape: noAd },
+  adsShrink: true,
+  kits: [{ id: 'k1', name: 'Kit one' }],
+  activeKitId: null,
+  ticker: { text: '', on: false },
+  lowerThird: { name: '', title: '', live: false, allowed: true },
+  clock: { enabled: false, position: 'top_right', format: '12h', showDate: true, showSeconds: false, timezone: null, size: 'small', style: 'text', alternate: true },
+  logo: { position: 'left', size: 90, has: false },
+  wallpaper: { dim: 0, has: false },
+});
+
 describeE2E('support control of a live studio', () => {
   let h: Harness;
   let admin: Client;
@@ -232,11 +250,11 @@ describeE2E('support control of a live studio', () => {
       expect(conn.got('support:joined')[0][0]).toMatchObject({ streamId: c.streamId, hostConnected: true });
       // The host is asked (by the server) for a snapshot, and answers.
       await c.host!.wait('support:state-request');
-      c.host!.socket.emit('support:state', { rev: 1, state: { v: 1, layout: 'grid' } });
+      c.host!.socket.emit('support:state', { rev: 1, state: validState('grid') });
       const [snap] = await conn.wait('support:state');
-      expect(snap).toEqual({ rev: 1, state: { v: 1, layout: 'grid' } });
+      expect(snap).toEqual({ rev: 1, state: validState('grid') });
       // A guest forging a snapshot is dropped; an oversize one too.
-      guest.socket.emit('support:state', { rev: 99, state: { v: 1, layout: 'evil' } });
+      guest.socket.emit('support:state', { rev: 99, state: validState('evil') });
       c.host!.socket.emit('support:state', { rev: 2, state: { pad: 'x'.repeat(30_000) } });
       await sleep(300);
       expect(conn.got('support:state')).toHaveLength(1);
@@ -245,7 +263,7 @@ describeE2E('support control of a live studio', () => {
       // A second support socket (e.g. a reload of the control page) gets the last snapshot at once.
       const m2 = await mint(c.streamId);
       const again = await connect({ role: 'support', sessionId: m2.body.studioSessionId, controlToken: m2.body.controlToken }, 'support:joined');
-      expect((await again.wait('support:state'))[0]).toEqual({ rev: 1, state: { v: 1, layout: 'grid' } });
+      expect((await again.wait('support:state'))[0]).toEqual({ rev: 1, state: validState('grid') });
       // Host leaves / returns: support learns it.
       c.host!.socket.disconnect();
       await conn.wait('support:host', (m) => m.connected === false);
@@ -282,7 +300,7 @@ describeE2E('support control of a live studio', () => {
       const rows = await auditRows(c.accountId, 'impersonated_studio_command');
       expect(rows.map((r) => r.metadata.phase)).toEqual(['intent', 'result']);
       expect(rows[0].metadata).toMatchObject({ command: 'ticker.set', summary: 'ticker.set{text[len=24],on=true}', streamId: c.streamId, commandId: id });
-      expect(rows[1].metadata).toMatchObject({ applied: true, command: 'ticker.set' });
+      expect(rows[1].metadata).toMatchObject({ applied: true, hostReported: true, command: 'ticker.set' }); // host-reported: the intent entry is the trusted record
       const all = JSON.stringify((await h.db.query('SELECT metadata FROM superadmin_audit_log WHERE target_id = $1', [c.accountId])).rows);
       expect(all).not.toContain('TOPSECRET');
       expect(rows[0].actor_user_id).toBeTruthy();

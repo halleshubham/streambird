@@ -44,6 +44,10 @@ function fakeRepo<T extends { id?: string }>(rows: T[] = []) {
   };
 }
 
+const FAR = new Date('2040-01-01T00:00:00Z');
+/** The admin's own login sessions ('s' and 'adm_sess' are the ids the tests start support sessions with). */
+const LOGINS = () => ['s', 'adm_sess'].map((id) => ({ id, userId: 'admin', revokedAt: null, expiresAt: FAR }));
+
 describe('ImpersonationService', () => {
   const t0 = new Date('2030-01-01T10:00:00Z');
   const admin: any = { id: 'admin', role: Role.SUPERADMIN, accountId: 'acc_admin' };
@@ -55,12 +59,13 @@ describe('ImpersonationService', () => {
     const sessions = fakeRepo<any>();
     const users = fakeRepo<any>(over.users ?? [customer]);
     const accounts = fakeRepo<any>(over.accounts ?? [account]);
+    const logins = fakeRepo<any>(LOGINS());
     const companies = fakeRepo<any>([{ id: 'co', accountId: 'acc_c', name: 'Acme Inc' }]);
     const audit = { log: jest.fn(async () => undefined), logStrict: jest.fn(async () => undefined), logAnonymous: jest.fn(async () => undefined), ...over.audit };
-    const service = new ImpersonationService(sessions as any, users as any, accounts as any, companies as any, audit as any);
+    const service = new ImpersonationService(sessions as any, users as any, accounts as any, companies as any, logins as any, audit as any);
     let now = t0;
     service.now = () => now;
-    return { service, sessions, users, accounts, audit, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
+    return { service, sessions, users, accounts, audit, logins, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
   }
 
   describe('start', () => {
@@ -259,13 +264,15 @@ describe('ImpersonationService: live studio control checks', () => {
 
   function build(audit: any = {}) {
     const sessions = fakeRepo<any>();
-    const users = fakeRepo<any>([customer]);
+    const adminUser: any = { id: 'admin', role: Role.SUPERADMIN, accountId: 'acc_admin', suspendedAt: null, account: { id: 'acc_admin', suspendedAt: null } };
+    const users = fakeRepo<any>([customer, adminUser]);
     const accounts = fakeRepo<any>([account]);
+    const logins = fakeRepo<any>(LOGINS());
     const a = { log: jest.fn(async () => undefined), logStrict: jest.fn(async () => undefined), logAnonymous: jest.fn(async () => undefined), ...audit };
-    const service = new ImpersonationService(sessions as any, users as any, accounts as any, fakeRepo<any>() as any, a as any);
+    const service = new ImpersonationService(sessions as any, users as any, accounts as any, fakeRepo<any>() as any, logins as any, a as any);
     let now = t0;
     service.now = () => now;
-    return { service, sessions, accounts, audit: a, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
+    return { service, sessions, accounts, users, logins, audit: a, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
   }
 
   it('accepts an active ACT session, refuses view mode, an ended, an expired and a suspended one', async () => {
@@ -282,6 +289,24 @@ describe('ImpersonationService: live studio control checks', () => {
     expect(await service.checkControlSession('nope')).toEqual({ ok: false, reason: 'ended' });
     const view = await service.start(admin, 's', { userId: 'cust', mode: 'view' });
     expect(await service.checkControlSession(view.id)).toEqual({ ok: false, reason: 'view' });
+  });
+
+  it('the ADMIN is re-checked: demoted, suspended, login revoked or expired = the support session is over (invalid)', async () => {
+    for (const breakIt of [
+      (c: any) => (c.users.rows.find((u: any) => u.id === 'admin').role = Role.USER),
+      (c: any) => (c.users.rows.find((u: any) => u.id === 'admin').suspendedAt = t0),
+      (c: any) => (c.users.rows.find((u: any) => u.id === 'admin').account.suspendedAt = t0),
+      (c: any) => (c.logins.rows.find((l: any) => l.id === 's').revokedAt = t0),
+      (c: any) => (c.logins.rows.find((l: any) => l.id === 's').expiresAt = new Date(0)),
+      (c: any) => c.logins.rows.splice(0),
+    ]) {
+      const c = build();
+      const act = await c.service.start(admin, 's', { userId: 'cust', mode: 'act' });
+      expect(await c.service.checkControlSession(act.id)).toMatchObject({ ok: true });
+      breakIt(c);
+      expect(await c.service.checkControlSession(act.id)).toEqual({ ok: false, reason: 'ended' });
+      expect(c.sessions.rows[0]).toMatchObject({ endReason: 'invalid' });
+    }
   });
 
   it('tells listeners when a session ends, whatever the reason', async () => {

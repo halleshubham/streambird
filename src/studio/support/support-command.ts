@@ -192,3 +192,7 @@ export const SUPPORT_CONFLICT_WINDOW_MS = 3000;
 /** How long the server waits for the host's `support:ack` before telling the support socket. */
 export const SUPPORT_ACK_TIMEOUT_MS = 8000;
 export const SUPPORT_STATE_MAX_BYTES = 24 * 1024;
+/** Host snapshots are coalesced to at most 5 per second per studio session. */
+export const SUPPORT_STATE_MIN_INTERVAL_MS = 200;
+/** Control windows (support sockets) per stream. */
+export const SUPPORT_MAX_SOCKETS_PER_SESSION = 3;
