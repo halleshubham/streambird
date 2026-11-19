@@ -16,6 +16,8 @@ export const PHONE_UNSUPPORTED_ERROR = 'Not supported on the phone app';
 export const PHONE_SUPPORTED_TYPES = ['ads.manual', 'ads.enabled', 'ads.schedule', 'ads.shrink', 'ticker.set', 'clock.set', 'kit.apply', 'logo.set', 'lowerThird.set'] as const;
 /** Answered (audited, never queued) when the phone's last snapshot does not show the capability a command needs. */
 export const PHONE_UPDATE_ERROR = 'This phone app version does not support that: update the app';
+/** Answered (audited, never queued) while the phone has not reported any state yet (just reconnected, or its state expired). */
+export const PHONE_WAITING_ERROR = 'Waiting for the phone app to report its state. Try again in a few seconds.';
 export type PhoneCommandType = (typeof PHONE_SUPPORTED_TYPES)[number];
 
 export type PhoneCommandMapping = { supported: true; type: PhoneCommandType; payload: Record<string, unknown> } | { supported: false; error: string };
@@ -25,7 +27,8 @@ export type PhoneCaps = SanitizedSupportState['phoneCaps'];
 
 /**
  * `caps` = the capabilities of the phone's last snapshot. The three newer commands (kit.apply, logo.set, lowerThird.set) are only
- * relayed when the snapshot shows the matching capability; an older phone app gets PHONE_UPDATE_ERROR at once.
+ * relayed when the snapshot shows the matching capability; an older phone app gets PHONE_UPDATE_ERROR at once. With NO snapshot
+ * yet (`caps` null/undefined) the answer is PHONE_WAITING_ERROR instead: the phone may well be capable.
  */
 export function toPhoneCommand(cmd: SupportCommand, caps?: PhoneCaps | null): PhoneCommandMapping {
   const p = cmd.payload;
@@ -53,13 +56,16 @@ export function toPhoneCommand(cmd: SupportCommand, caps?: PhoneCaps | null): Ph
     case 'clock.set':
       return { supported: true, type: 'clock.set', payload: { ...p } }; // identical names and values (the kit clock contract)
     case 'kit.apply':
-      if (!caps?.kit) return { supported: false, error: PHONE_UPDATE_ERROR };
-      return { supported: true, type: 'kit.apply', payload: { kitId: p.kitId } };
+      if (!caps) return { supported: false, error: PHONE_WAITING_ERROR };
+      if (!caps.kit) return { supported: false, error: PHONE_UPDATE_ERROR };
+      return { supported: true, type: 'kit.apply', payload: { kitId: String(p.kitId).toLowerCase() } }; // the snapshot lists lower-case ids
     case 'logo.set':
-      if (!caps?.logo) return { supported: false, error: PHONE_UPDATE_ERROR };
+      if (!caps) return { supported: false, error: PHONE_WAITING_ERROR };
+      if (!caps.logo) return { supported: false, error: PHONE_UPDATE_ERROR };
       return { supported: true, type: 'logo.set', payload: { ...p } }; // {position?, size?} unchanged
     case 'lowerThird.set':
-      if (!caps?.lowerThird) return { supported: false, error: PHONE_UPDATE_ERROR };
+      if (!caps) return { supported: false, error: PHONE_WAITING_ERROR };
+      if (!caps.lowerThird) return { supported: false, error: PHONE_UPDATE_ERROR };
       return { supported: true, type: 'lowerThird.set', payload: { ...p } }; // {name?, title?|null, show?} unchanged
     case 'layout.set':
     case 'wallpaper.dim':
@@ -102,8 +108,9 @@ function phoneCapabilities(raw: Record<string, unknown>): {
     for (const k of raw.kits as unknown[]) {
       if (!isObj(k) || typeof k.id !== 'string' || !UUID_RE.test(k.id)) continue;
       const name = cleanText(k.name, 80);
-      if (name === null) continue;
-      out.kits.push({ id: k.id.toLowerCase(), name: name || 'Brand kit' });
+      const id = k.id.toLowerCase();
+      if (name === null || out.kits.some((x) => x.id === id)) continue; // duplicate ids: the first wins
+      out.kits.push({ id, name: name || 'Brand kit' });
     }
   }
   if (hasKits || hasKitKey) {
@@ -158,8 +165,9 @@ export function phoneStateToSnapshot(raw: unknown): SanitizedSupportState | null
     }
 
     if (!isObj(raw.ticker) || typeof raw.ticker.on !== 'boolean') return null;
-    const tickerText = raw.ticker.text === null || raw.ticker.text === undefined ? '' : raw.ticker.text;
-    if (typeof tickerText !== 'string' || tickerText.length > SUPPORT_STATE_TEXT_MAX) return null;
+    const rawTicker = raw.ticker.text === null || raw.ticker.text === undefined ? '' : raw.ticker.text;
+    if (typeof rawTicker !== 'string' || rawTicker.length > SUPPORT_STATE_TEXT_MAX) return null;
+    const tickerText = rawTicker.replace(UNSAFE_CHARS_RE, ''); // control / bidi / format characters never reach the support page
 
     // Layout and wallpaper never exist on the phone (inert placeholders; `platform` tells the page to hide them). Kits, logo and the
     // name banner come from the phone's optional capability blocks (inert placeholders when an older phone omits them).

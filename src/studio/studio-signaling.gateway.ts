@@ -635,6 +635,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       return refuse(parsed.error, type);
     }
     const cmd: SupportCommand = parsed.command;
+    if (cmd.type === 'kit.apply') cmd.payload.kitId = String(cmd.payload.kitId).toLowerCase(); // uuids compare lower-case everywhere (check, audit, phone)
 
     // Re-validated before EVERY command: ended / expired / view mode / customer suspended / stream over -> cut off.
     const check = await this.impersonation.checkControlSession(st.impersonationSessionId);

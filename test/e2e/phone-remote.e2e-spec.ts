@@ -291,6 +291,40 @@ describeE2E('phone remote control (Android app long poll)', () => {
         expect(results.every((r) => r.metadata.applied === false && r.metadata.hostReported === false && r.metadata.error === UPDATE)).toBe(true);
       });
 
+      it('no snapshot yet (phone just reconnected): a distinct "waiting" answer, audited, not queued; once a snapshot exists the capability decides', async () => {
+        const c = await customer();
+        await c.poll(0, 0); // the phone is on but has not uploaded any state
+        const sup = await support(c);
+        const r = await ask(sup, 'logo.set', { size: 100 });
+        expect(r.res).toEqual({ ok: true });
+        expect((await sup.wait('support:ack', (m) => m.id === r.id))[0]).toMatchObject({ ok: false, error: 'Waiting for the phone app to report its state. Try again in a few seconds.' });
+        expect(phoneSvc.pendingCount(c.streamId)).toBe(0);
+        await sleep(150);
+        const res = (await auditRows(c.accountId)).filter((x) => x.metadata.commandId === r.id && x.metadata.phase === 'result');
+        expect(res[0].metadata).toMatchObject({ applied: false, hostReported: false, error: 'Waiting for the phone app to report its state. Try again in a few seconds.' });
+        await c.putState({ rev: 1, state: phoneState() }); // older app: the snapshot exists and lacks the capability
+        await sleep(50);
+        const r2 = await ask(sup, 'logo.set', { size: 100 });
+        expect((await sup.wait('support:ack', (m) => m.id === r2.id))[0]).toMatchObject({ ok: false, error: 'This phone app version does not support that: update the app' });
+      });
+
+      it('an UPPERCASE kit uuid from a hand-crafted socket command passes the ownership check and reaches the phone lower-cased; a foreign one is still refused', async () => {
+        const c = await customer();
+        const other = await customer();
+        await c.poll(0, 0);
+        await c.putState({ rev: 1, state: phoneState(capable()) });
+        const own = (await c.client.post('/brand-kits', { name: 'Mine' })).body;
+        const foreign = (await other.client.post('/brand-kits', { name: 'Not yours' })).body;
+        const sup = await support(c);
+        expect((await ask(sup, 'kit.apply', { kitId: foreign.id.toUpperCase() })).res).toEqual({ ok: false, error: 'Unknown brand kit' });
+        expect((await ask(sup, 'kit.apply', { kitId: own.id.toUpperCase() })).res).toEqual({ ok: true });
+        const got = (await c.poll(0, 1)).body.commands;
+        expect(got).toHaveLength(1);
+        expect(got[0].payload).toEqual({ kitId: own.id.toLowerCase() });
+        const intent = (await auditRows(c.accountId)).find((x) => x.metadata.phase === 'intent' && x.metadata.command === 'kit.apply');
+        expect(intent.metadata.summary).toBe(`kit.apply{kitId=${own.id.toLowerCase()}}`);
+      });
+
       it('capabilities are per feature and follow the LAST snapshot', async () => {
         const c = await customer();
         await c.poll(0, 0);

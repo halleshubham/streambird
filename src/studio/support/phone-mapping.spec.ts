@@ -1,5 +1,5 @@
 import { parseSupportCommand, SUPPORT_COMMAND_TYPES, type SupportCommand } from './support-command';
-import { PHONE_SUPPORTED_TYPES, PHONE_UNSUPPORTED_ERROR, PHONE_UPDATE_ERROR, phoneStateToSnapshot, toPhoneCommand } from './phone-mapping';
+import { PHONE_SUPPORTED_TYPES, PHONE_UNSUPPORTED_ERROR, PHONE_UPDATE_ERROR, PHONE_WAITING_ERROR, phoneStateToSnapshot, toPhoneCommand } from './phone-mapping';
 
 const cmd = (type: string, payload: Record<string, unknown>): SupportCommand => {
   const r = parseSupportCommand({ id: 'c1', type, payload });
@@ -54,6 +54,7 @@ describe('toPhoneCommand (support command -> phone command)', () => {
       return { type: r.type, payload: r.payload };
     };
     expect(m('kit.apply', { kitId: KIT })).toEqual({ type: 'kit.apply', payload: { kitId: KIT } });
+    expect(m('kit.apply', { kitId: 'ABCDEF01-2345-4678-89AB-CDEF01234567' }).payload).toEqual({ kitId: 'abcdef01-2345-4678-89ab-cdef01234567' }); // lower-cased for the phone
     expect(m('logo.set', { position: 'right' })).toEqual({ type: 'logo.set', payload: { position: 'right' } });
     expect(m('logo.set', { size: 16 }).payload).toEqual({ size: 16 });
     expect(m('logo.set', { position: 'left', size: 600 }).payload).toEqual({ position: 'left', size: 600 });
@@ -63,10 +64,18 @@ describe('toPhoneCommand (support command -> phone command)', () => {
   });
   it('capability gating: without the capability in the last snapshot the answer is "update the app" (per capability)', () => {
     const want = { supported: false, error: PHONE_UPDATE_ERROR };
-    for (const caps of [undefined, null, { kit: false, logo: false, lowerThird: false }]) {
+    for (const caps of [{ kit: false, logo: false, lowerThird: false }]) {
       expect(toPhoneCommand(cmd('kit.apply', { kitId: KIT }), caps)).toEqual(want);
       expect(toPhoneCommand(cmd('logo.set', { position: 'left' }), caps)).toEqual(want);
       expect(toPhoneCommand(cmd('lowerThird.set', { show: false }), caps)).toEqual(want);
+    }
+    // no snapshot at all (just reconnected / state expired): a distinct "try again" answer, not "update the app"
+    const waiting = { supported: false, error: PHONE_WAITING_ERROR };
+    expect(PHONE_WAITING_ERROR).not.toBe(PHONE_UPDATE_ERROR);
+    for (const caps of [undefined, null]) {
+      expect(toPhoneCommand(cmd('kit.apply', { kitId: KIT }), caps)).toEqual(waiting);
+      expect(toPhoneCommand(cmd('logo.set', { position: 'left' }), caps)).toEqual(waiting);
+      expect(toPhoneCommand(cmd('lowerThird.set', { show: false }), caps)).toEqual(waiting);
     }
     const onlyKit = { kit: true, logo: false, lowerThird: false };
     expect(toPhoneCommand(cmd('kit.apply', { kitId: KIT }), onlyKit).supported).toBe(true);
@@ -158,7 +167,8 @@ describe('phoneStateToSnapshot (phone state -> control page snapshot)', () => {
         expect(phoneStateToSnapshot(phoneState({ lowerThird }))!.phoneCaps?.lowerThird).toBe(false);
       }
       expect(phoneStateToSnapshot(phoneState({ kits: new Array(51).fill({ id: K1, name: 'k' }) }))!.phoneCaps?.kit).toBe(false); // over the cap of 50
-      expect(phoneStateToSnapshot(phoneState({ kits: new Array(50).fill({ id: K1, name: 'k' }) }))!.kits).toHaveLength(50);
+      const fifty = Array.from({ length: 50 }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, name: `k${i}` }));
+      expect(phoneStateToSnapshot(phoneState({ kits: fifty }))!.kits).toHaveLength(50);
     });
     it('drops kit entries with a bad id, strips control/bidi characters and limits lengths', () => {
       const evil = '\u202Egnp.exe\u0000\u200B\n' + 'x'.repeat(200);
@@ -168,14 +178,22 @@ describe('phoneStateToSnapshot (phone state -> control page snapshot)', () => {
           lowerThird: { available: true, name: evil, title: evil + 'y'.repeat(200), show: false },
         }),
       )!;
-      expect(s.kits.map((k) => k.id)).toEqual([K1, K2, K2]);
+      expect(s.kits.map((k) => k.id)).toEqual([K1, K2]); // the second K2 entry is a duplicate
       expect(s.kits[0].name).toMatch(/^gnp\.exe/);
       expect(s.kits[0].name.length).toBeLessThanOrEqual(80);
-      expect(s.kits[1].name).toBe('Brand kit'); // nothing left after stripping
-      expect(Object.keys(s.kits[2])).toEqual(['id', 'name']);
+      expect(s.kits[1].name).toBe('Brand kit'); // nothing left after stripping (first K2 entry wins)
+      expect(Object.keys(s.kits[1])).toEqual(['id', 'name']);
       expect(s.lowerThird.name.length).toBeLessThanOrEqual(80);
       expect(s.lowerThird.title.length).toBeLessThanOrEqual(120);
       expect(JSON.stringify(s)).not.toMatch(/[\u0000-\u001f\u202e\u200b]/);
+    });
+    it('duplicate kit ids are skipped (first wins, also across letter case)', () => {
+      const s = phoneStateToSnapshot(phoneState({ kits: [{ id: K1, name: 'First' }, { id: K1.toUpperCase(), name: 'Second' }, { id: K2, name: 'Other' }, { id: K1, name: 'Third' }] }))!;
+      expect(s.kits).toEqual([{ id: K1, name: 'First' }, { id: K2, name: 'Other' }]);
+    });
+    it('the phone ticker text loses control, bidi and format characters', () => {
+      const s = phoneStateToSnapshot(phoneState({ ticker: { text: 'Hi\u202E\u0000 there\u200B\u2028!', on: true } }))!;
+      expect(s.ticker.text).toBe('Hi there!');
     });
     it('uppercase uuids are normalised so the page selects the active kit', () => {
       const s = phoneStateToSnapshot(phoneState({ kits: [{ id: K1.toUpperCase(), name: 'A' }], kit: { id: K1.toUpperCase() } }))!;
