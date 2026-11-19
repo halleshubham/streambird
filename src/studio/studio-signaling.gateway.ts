@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import {
   ConnectedSocket,
   MessageBody,
@@ -16,6 +17,9 @@ import { StreamStatus } from '../common/enums/stream-status.enum';
 import { AccountsService } from '../accounts/accounts.service';
 import { ImpersonationService } from '../impersonation/impersonation.service';
 import { SupportControlService } from './support/support-control.service';
+import { PhoneRemoteService } from './support/phone-remote.service';
+import { toPhoneCommand } from './support/phone-mapping';
+import type { SanitizedSupportState } from './support/support-state';
 import { sanitizeSupportState } from './support/support-state';
 import {
   SUPPORT_ACK_TIMEOUT_MS,
@@ -55,6 +59,10 @@ interface PendingSupportCommand {
   studioSessionId: string;
   hostSocketIds: Set<string>;
   commandId: string;
+  /** Relayed to the Android app's long poll instead of a host socket. */
+  phone?: boolean;
+  /** The id the PHONE knows this command by: generated here, so two support sockets reusing one client id never collide. */
+  phoneId?: string;
   type: string;
   summary: string;
   impersonationSessionId: string;
@@ -98,7 +106,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
   /** The server stamps `rev` itself (monotonic per studio session for the process lifetime), so a host reload that restarts ITS counter can never make the control page ignore fresh state. */
   private readonly supportStateRev = new Map<string, number>();
   /** Snapshot coalescing: at most one relay per SUPPORT_STATE_MIN_INTERVAL_MS per session, the latest wins. */
-  private readonly supportStateGate = new Map<string, { lastAt: number; timer: ReturnType<typeof setTimeout> | null; latest: unknown }>();
+  private readonly supportStateGate = new Map<string, { lastAt: number; timer: ReturnType<typeof setTimeout> | null; latest: unknown; present: () => boolean }>();
   private readonly supportLimiter = new SlidingWindowLimiter(SUPPORT_RATE_LIMIT.limit, SUPPORT_RATE_LIMIT.windowMs);
   private supportTimer: ReturnType<typeof setInterval> | null = null;
   private offSessionEnded: (() => void) | null = null;
@@ -127,6 +135,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     private readonly accountsService: AccountsService,
     private readonly impersonation: ImpersonationService,
     private readonly supportControl: SupportControlService,
+    private readonly phone: PhoneRemoteService,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +144,34 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     this.offSessionEnded = this.impersonation.onSessionEnded((id, reason) => this.endSupportSockets(id, reason));
     this.supportTimer = setInterval(() => void this.revalidateSupportSockets().catch((e) => this.logger.warn(`support revalidation failed: ${(e as Error).message}`)), SUPPORT_REVALIDATE_MS);
     this.supportTimer.unref();
+    // The Android app's long-poll channel (PhoneRemoteService) feeds the same support-room events as a web host socket.
+    this.phone.onHost((e) => {
+      const room = this.supportRoom(e.studioSessionId);
+      // A connected web host studio always wins: the phone's presence changes nothing the support page shows.
+      const webHost = this.hostSocketIds(e.studioSessionId).length > 0;
+      if (!e.connected) this.failPendingPhone(e.streamId, 'The phone app is not connected');
+      if (webHost) return;
+      if (e.connected) {
+        this.server?.to(room).emit('support:host', { connected: true, kind: 'phone' });
+        const state = this.phone.getState(e.streamId);
+        if (state && this.supportCount(e.studioSessionId) > 0) this.queueSupportState(e.studioSessionId, state, () => this.phone.isActive(e.streamId));
+      } else {
+        this.lastSupportState.delete(e.studioSessionId);
+        this.server?.to(room).emit('support:host', { connected: false, kind: 'phone' });
+      }
+    });
+    this.phone.onState((e) => {
+      if (this.hostSocketIds(e.studioSessionId).length > 0) return; // web host wins
+      if (this.supportCount(e.studioSessionId) > 0) this.queueSupportState(e.studioSessionId, e.state, () => this.phone.isActive(e.streamId));
+    });
+    this.phone.onAck((e) => {
+      for (const [key, p] of this.pendingSupportCommands) {
+        if (p.phone && p.streamId === e.streamId && p.phoneId === e.id) {
+          this.resolvePending(key, e.ok ? { ok: true, hostReported: true, appliedAt: e.appliedAt } : { ok: false, hostReported: true, error: e.error || 'The phone app could not apply it' });
+          return;
+        }
+      }
+    });
   }
 
   onModuleDestroy(): void {
@@ -309,6 +346,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       for (const [key, p] of this.pendingSupportCommands) {
         if (p.supportSocketId === client.id) {
           clearTimeout(p.timer);
+          if (p.phone && p.phoneId) this.phone.cancel(p.streamId, p.phoneId);
           this.pendingSupportCommands.delete(key);
         }
       }
@@ -502,9 +540,14 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     });
     await client.join(this.supportRoom(row.studioSessionId));
     const hosts = this.hostSocketIds(row.studioSessionId);
-    client.emit('support:joined', { streamId: row.streamId, hostConnected: hosts.length > 0 });
+    const phoneHost = hosts.length === 0 && this.phone.isActive(row.streamId);
+    client.emit('support:joined', { streamId: row.streamId, hostConnected: hosts.length > 0 || phoneHost, hostKind: phoneHost ? 'phone' : hosts.length > 0 ? 'web' : this.phone.wasPhone(row.streamId) ? 'phone' : null });
     const last = this.lastSupportState.get(row.studioSessionId);
-    if (last && hosts.length) client.emit('support:state', last);
+    if (last && (hosts.length || phoneHost)) client.emit('support:state', last);
+    else if (phoneHost) {
+      const state = this.phone.getState(row.streamId);
+      if (state) this.queueSupportState(row.studioSessionId, state, () => this.phone.isActive(row.streamId));
+    }
     // Ask the host studio for a fresh snapshot (only the server can emit this; the host ignores anything else).
     for (const id of hosts) {
       this.server.sockets.get(id)?.emit('support:watching', { on: true });
@@ -607,7 +650,9 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       return refuse('Unknown brand kit', cmd.type);
     }
     const hosts = this.hostSocketIds(st.studioSessionId);
-    if (!hosts.length) return refuse('The host studio is not connected', cmd.type);
+    // No web host studio: the host may be the Android app, which receives commands through its long poll.
+    const viaPhone = hosts.length === 0 && this.phone.isActive(st.streamId);
+    if (!hosts.length && !viaPhone) return refuse(this.phone.wasPhone(st.streamId) ? 'The phone app is not connected' : 'The host studio is not connected', cmd.type);
     const key = `${client.id}:${cmd.id}`;
     if (this.pendingSupportCommands.has(key)) return { ok: false, error: 'Duplicate command id' };
 
@@ -625,13 +670,15 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       return { ok: false, error: 'Audit log unavailable; command refused' };
     }
 
-    const timer = setTimeout(() => this.resolvePending(key, { ok: false, error: 'The host studio did not respond' }), this.supportAckTimeoutMs);
+    const phoneId = crypto.randomUUID();
+    const timer = setTimeout(() => this.resolvePending(key, { ok: false, error: viaPhone ? 'The phone app did not respond' : 'The host studio did not respond' }), this.supportAckTimeoutMs);
     timer.unref?.();
     this.pendingSupportCommands.set(key, {
       supportSocketId: client.id,
       studioSessionId: st.studioSessionId,
       hostSocketIds: new Set(hosts),
       commandId: cmd.id,
+      ...(viaPhone ? { phone: true, phoneId: phoneId } : {}),
       type: cmd.type,
       summary,
       impersonationSessionId: st.impersonationSessionId,
@@ -640,6 +687,16 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       streamId: st.streamId,
       timer,
     });
+    if (viaPhone) {
+      const mapped = toPhoneCommand(cmd);
+      // Commands the phone cannot do are answered here (saves a round trip); the intent above and the result below are still audited.
+      if (!mapped.supported) setTimeout(() => this.resolvePending(key, { ok: false, error: mapped.error }), 0).unref?.();
+      else {
+        const queued = this.phone.enqueue(st.streamId, { id: phoneId, type: mapped.type, payload: mapped.payload });
+        if (!queued.ok) setTimeout(() => this.resolvePending(key, { ok: false, error: queued.error }), 0).unref?.();
+      }
+      return { ok: true };
+    }
     const relayed = { id: cmd.id, type: cmd.type, payload: cmd.payload, at: Date.now(), source: 'support-session' };
     for (const id of hosts) this.server.sockets.get(id)?.emit('support:command', relayed);
     return { ok: true };
@@ -681,13 +738,19 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
       this.logger.warn(`Dropped a malformed support state snapshot from host ${client.id}`);
       return;
     }
-    const gate = this.supportStateGate.get(st.sessionId) ?? { lastAt: 0, timer: null, latest: null };
-    this.supportStateGate.set(st.sessionId, gate);
+    this.queueSupportState(st.sessionId, clean, () => this.hostSocketIds(st.sessionId).length > 0);
+  }
+
+  /** Coalesces a sanitised snapshot (from a web host socket or the phone channel): at most one relay per interval, the latest wins. */
+  private queueSupportState(sessionId: string, clean: SanitizedSupportState, present: () => boolean): void {
+    const gate = this.supportStateGate.get(sessionId) ?? { lastAt: 0, timer: null, latest: null, present };
+    this.supportStateGate.set(sessionId, gate);
     gate.latest = clean;
+    gate.present = present;
     const wait = gate.lastAt + SUPPORT_STATE_MIN_INTERVAL_MS - Date.now();
-    if (wait <= 0) this.flushSupportState(st.sessionId);
+    if (wait <= 0) this.flushSupportState(sessionId);
     else if (!gate.timer) {
-      gate.timer = setTimeout(() => this.flushSupportState(st.sessionId), wait);
+      gate.timer = setTimeout(() => this.flushSupportState(sessionId), wait);
       gate.timer.unref?.();
     }
   }
@@ -700,7 +763,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     const state = gate.latest;
     gate.latest = null;
     gate.lastAt = Date.now();
-    if (this.hostSocketIds(sessionId).length === 0) return; // the host left while this waited: it is stale
+    if (!gate.present()) return; // the host left while this waited: it is stale
     const rev = (this.supportStateRev.get(sessionId) ?? 0) + 1;
     this.supportStateRev.set(sessionId, rev);
     const snapshot = { rev, state };
@@ -714,6 +777,7 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
     if (!p) return;
     clearTimeout(p.timer);
     this.pendingSupportCommands.delete(key);
+    if (p.phone && p.phoneId) this.phone.cancel(p.streamId, p.phoneId); // answered / timed out: the phone must not apply it later
     this.server.sockets.get(p.supportSocketId)?.emit('support:ack', { id: p.commandId, ok: result.ok, ...(result.error ? { error: result.error } : {}), appliedAt: result.appliedAt ?? Date.now() });
     void this.impersonation
       .recordStudioControl(
@@ -724,6 +788,10 @@ export class StudioSignalingGateway implements OnGatewayConnection, OnGatewayDis
         false,
       )
       .catch(() => undefined);
+  }
+
+  private failPendingPhone(streamId: string, error: string): void {
+    for (const [key, p] of this.pendingSupportCommands) if (p.phone && p.streamId === streamId) this.resolvePending(key, { ok: false, error });
   }
 
   private failPendingForHost(sessionId: string, hostSocketId: string, error: string): void {

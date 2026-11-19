@@ -713,6 +713,10 @@ describeE2E('superadmin support sessions (impersonation)', () => {
         'POST streams/:id/schedule/guests': 'guest-email',
         'POST streams/:id/schedule/guests/:inviteId/resend': 'guest-email',
         'POST studio-sessions/:id/invites': 'guest-link',
+        // The Android app's remote-control channel is OWNER-only: a support session (view or act, any method incl. GET) gets 403.
+        'GET streams/:id/remote-control': 'phone-channel',
+        'POST streams/:id/remote-control/ack': 'phone-channel',
+        'PUT streams/:id/remote-control/state': 'phone-channel',
       };
       for (const [key, category] of Object.entries(expected)) expect([key, routes.find((x) => x.key === key)?.marker]).toEqual([key, category]);
     });

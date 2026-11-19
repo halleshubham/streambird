@@ -77,6 +77,9 @@ export interface SupportAdState {
 /** The compact snapshot of the controllable settings (no secrets, no media, no tokens). */
 export interface SupportState {
   v: 1;
+  /** Set by the SERVER only, for a stream hosted by the Android app (no web studio): the page then shows what the phone supports. */
+  platform?: 'android';
+  appVersion?: string;
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';
@@ -421,3 +424,7 @@ export async function applySupportCommand(cmd: Pick<RelayedSupportCommand, 'type
       return { ok: false, error: 'Unknown command' };
   }
 }
+
+/** What the Android app can apply (mirrors `PHONE_SUPPORTED_TYPES` on the server); everything else is "Not available on the phone app". */
+export const PHONE_SUPPORTED_COMMANDS: readonly SupportCommandType[] = ['ads.manual', 'ads.enabled', 'ads.schedule', 'ads.shrink', 'ticker.set', 'clock.set'];
+export const PHONE_UNAVAILABLE_NOTE = 'Not available on the phone app';

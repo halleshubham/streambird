@@ -15,6 +15,9 @@ const int = (v: unknown, min: number, max: number): number | null => (typeof v =
 
 export interface SanitizedSupportState {
   v: 1;
+  /** Only ever set by the server for a phone-hosted stream (`phone-mapping.ts`); sanitizeSupportState (web hosts) never returns it. */
+  platform?: 'android';
+  appVersion?: string;
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';

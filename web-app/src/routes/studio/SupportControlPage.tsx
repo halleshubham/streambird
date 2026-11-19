@@ -7,7 +7,7 @@ import { ClockFields } from '../../components/ClockFields';
 import { BirdLoader } from '../../components/BirdLoader';
 import { BRANDING_RANGES, LAYOUTS, WALLPAPER_RANGES } from '../../studio/compose';
 import { useSupportControl, type CommandEntry } from '../../studio/useSupportControl';
-import type { SupportCommandType, SupportState } from '../../studio/supportControl';
+import { PHONE_UNAVAILABLE_NOTE, type SupportCommandType, type SupportState } from '../../studio/supportControl';
 import '../../components/ui/support.css';
 
 type Send = (type: SupportCommandType, payload: Record<string, unknown>, label: string) => void;
@@ -55,7 +55,9 @@ class ControlErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 }
 
 function ControlStudio({ streamId }: { streamId: string | undefined }) {
-  const { phase, error, stream, connected, hostConnected, state, ended, log, send, retry } = useSupportControl(streamId);
+  const { phase, error, stream, connected, hostConnected, hostKind, state, ended, log, send, retry } = useSupportControl(streamId);
+  const phone = hostKind === 'phone' || state?.platform === 'android';
+  const hostLabel = phone ? 'phone app' : 'host studio';
 
   if (phase === 'loading') {
     return (
@@ -83,8 +85,16 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
         <h1 className="support-control-title" data-testid="support-control-header">
           <RadioTower size={18} aria-hidden="true" /> Support control: {title} <span className="support-control-live">(LIVE)</span>
         </h1>
-        <p className="support-control-host" data-testid="support-host-status" data-connected={hostConnected ? '1' : '0'}>
-          {ended ? 'The support session has ended' : hostConnected ? 'host studio connected' : 'The host studio is not connected'}
+        <p className="support-control-host" data-testid="support-host-status" data-connected={hostConnected ? '1' : '0'} data-host-kind={phone ? 'phone' : 'web'}>
+          {ended
+            ? 'The support session has ended'
+            : phone
+              ? hostConnected
+                ? `Phone app${state?.appVersion ? ` (version ${state.appVersion})` : ''} connected`
+                : 'The phone app is not connected'
+              : hostConnected
+                ? 'host studio connected'
+                : 'The host studio is not connected'}
           {!connected && !ended && ' · connecting to the server…'}
         </p>
         <p className="field-hint">
@@ -110,8 +120,19 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
         </section>
       ) : !state || !hostConnected ? (
         <p className="panel" data-testid="support-waiting">
-          {hostConnected ? 'Waiting for the host studio to report its settings…' : 'The host studio is not connected. Controls appear when the host opens the studio.'}
+          {hostConnected
+            ? `Waiting for the ${hostLabel} to report its settings…`
+            : phone
+              ? 'The phone app is not connected. Controls appear when it reconnects.'
+              : 'The host studio is not connected. Controls appear when the host opens the studio.'}
         </p>
+      ) : state.platform === 'android' ? (
+        <div className="support-control-grid" data-testid="support-phone-grid">
+          <AdsControls state={state} send={send} />
+          <TickerPanel state={state} send={send} />
+          <ClockPanel state={state} send={send} />
+          <PhoneUnavailablePanel />
+        </div>
       ) : (
         <div className="support-control-grid">
           <LayoutPanel state={state} send={send} />
@@ -125,6 +146,23 @@ function ControlStudio({ streamId }: { streamId: string | undefined }) {
       )}
       <CommandLog log={log} />
     </div>
+  );
+}
+
+/** Controls the Android app cannot do live: shown greyed out in one place, never as buttons that would only fail. */
+function PhoneUnavailablePanel() {
+  return (
+    <section className="panel support-unavailable" aria-label="Not available on the phone app" data-testid="support-phone-unavailable">
+      <h2 className="studio-section-label">{PHONE_UNAVAILABLE_NOTE}</h2>
+      <p className="field-hint">Layout, brand kit, lower third, logo and wallpaper dim cannot be changed on a stream started from the phone app.</p>
+      <ul>
+        {['Layout', 'Brand kit', 'Lower third', 'Logo', 'Wallpaper dim'].map((name) => (
+          <li key={name} aria-disabled="true">
+            {name}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

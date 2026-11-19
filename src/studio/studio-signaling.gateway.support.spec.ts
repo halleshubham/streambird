@@ -1,5 +1,7 @@
 import { StudioSignalingGateway } from './studio-signaling.gateway';
 
+const noPhone = { onHost: () => undefined, onState: () => undefined, onAck: () => undefined, isActive: () => false, wasPhone: () => false, getState: () => null, cancel: () => undefined };
+
 describe('StudioSignalingGateway -- support socket bookkeeping', () => {
   const row = { studioSessionId: 'session_1', streamId: 'st', accountId: 'acc', impersonationSessionId: 'imp', adminUserId: 'adm', expiresAt: Date.now() + 60_000 };
 
@@ -10,7 +12,7 @@ describe('StudioSignalingGateway -- support socket bookkeeping', () => {
       recordStudioControl: jest.fn(async () => undefined),
     };
     const supportControl = { resolve: jest.fn(() => row), isLive: jest.fn(async () => true), revokeForSession: jest.fn(), kitBelongsTo: jest.fn() };
-    const gateway = new StudioSignalingGateway({} as any, {} as any, {} as any, {} as any, impersonation as any, supportControl as any);
+    const gateway = new StudioSignalingGateway({} as any, {} as any, {} as any, {} as any, impersonation as any, supportControl as any, noPhone as any);
     (gateway as any).server = { sockets: new Map(), adapter: { rooms: new Map() }, to: () => ({ emit: jest.fn() }) };
     const socket = {
       id: 's1',
