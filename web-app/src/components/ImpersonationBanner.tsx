@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { endImpersonation } from '../api/superadmin';
-import { ApiError } from '../api/client';
+import { ApiError, SUPPORT_SESSION_ENDED_EVENT } from '../api/client';
 import { toast } from './ui';
 import { BirdBusy } from './BirdBusy';
 import { IMPERSONATION_MODE_LABEL, formatCountdown, impersonationTargetName } from '../lib/impersonation';
@@ -49,6 +49,9 @@ export function ImpersonationBanner() {
     const tick = setInterval(() => setNow(Date.now()), 1000);
     const poll = setInterval(() => void refresh(), POLL_MS);
     // Coming back to this tab: ask right away (it may have ended or been replaced meanwhile).
+    // A request was refused with 409 support_session_ended: re-read who we are right now (the admin again).
+    const onEnded = () => void refresh();
+    window.addEventListener(SUPPORT_SESSION_ENDED_EVENT, onEnded);
     const onBack = () => {
       if (document.visibilityState !== 'hidden') void refresh();
     };
@@ -57,6 +60,7 @@ export function ImpersonationBanner() {
     return () => {
       clearInterval(tick);
       clearInterval(poll);
+      window.removeEventListener(SUPPORT_SESSION_ENDED_EVENT, onEnded);
       window.removeEventListener('focus', onBack);
       document.removeEventListener('visibilitychange', onBack);
     };

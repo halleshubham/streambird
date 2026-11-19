@@ -1,13 +1,14 @@
 import {
   CanActivate,
   ExecutionContext,
+  ConflictException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AccountsService } from '../../accounts/accounts.service';
 import { AuthService } from '../../auth/auth.service';
 import { Account } from '../../accounts/entities/account.entity';
@@ -18,6 +19,8 @@ import { ROLES_KEY } from '../decorators/roles.decorator';
 import {
   BLOCKED_WHEN_IMPERSONATING_KEY,
   impersonationBlockMessage,
+  SUPPORT_SESSION_ENDED_CODE,
+  SUPPORT_SESSION_HEADER,
   VIEW_ONLY_MESSAGE,
 } from '../../impersonation/blocked-when-impersonating';
 import { ImpersonationService, RequestImpersonation } from '../../impersonation/impersonation.service';
@@ -138,41 +141,56 @@ export class AccountGuard implements CanActivate {
     // routes that are not superadmin routes (those always authenticate as the real admin, so an impersonated
     // customer can never reach them), and only while the server-side session row is unended and unexpired.
     // Everything above (approval, suspension, CSRF origin) was checked against the REAL admin.
-    if (resolved.user.role === Role.SUPERADMIN && !this.isSuperadminRoute(context)) {
-      const imp = await this.impersonation.resolveForGuard(resolved.sessionId, resolved.user);
-      if (imp) {
-        const req = this.impersonation.toRequestImpersonation(imp.session);
-        const refuse = async (message: string, blocked: string): Promise<never> => {
-          await this.impersonation.recordAction(req, {
-            method: request.method,
-            route: `${request.baseUrl ?? ''}${request.route?.path ?? ''}`,
-            status: 403,
-            blocked,
-            params: request.params,
-          });
-          throw new ForbiddenException(message);
-        };
-        // View mode is read-only for every request that is not a plain read.
-        if (imp.session.mode === 'view' && !SAFE_METHODS.has(request.method)) {
-          return refuse(VIEW_ONLY_MESSAGE, 'view-only');
-        }
-        // The blocked list (see impersonation/blocked-when-impersonating.ts): both modes, any method.
-        const category = this.reflector.getAllAndOverride<string | undefined>(BLOCKED_WHEN_IMPERSONATING_KEY, [
-          context.getHandler(),
-          context.getClass(),
-        ]);
-        if (category) return refuse(impersonationBlockMessage(category), category);
-        // A customer suspended after the session started can still be looked at, no longer changed.
-        if (imp.session.mode === 'act' && (imp.account.suspendedAt || imp.user.suspendedAt)) {
-          return refuse('This account has been suspended. Support sessions on suspended accounts are view-only.', 'suspended');
-        }
-        request.actor = resolved.user;
-        request.sessionId = resolved.sessionId;
-        request.impersonation = req;
-        request.user = imp.user;
-        request.account = imp.account;
-        return true;
+    const superadminRoute = this.isSuperadminRoute(context);
+    const imp =
+      resolved.user.role === Role.SUPERADMIN && !superadminRoute
+        ? await this.impersonation.resolveForGuard(resolved.sessionId, resolved.user)
+        : null;
+
+    // The web client names the support session it believes it is in (X-Support-Session) on EVERY request. If that
+    // session is not the ACTIVE one for this login (expired, ended in another tab, replaced ...) the request is
+    // refused instead of silently falling back to the admin's OWN account: a customer screen that is still open
+    // must never read or write the admin's data. Superadmin routes ignore it (Exit must keep working).
+    const claimed = request.headers[SUPPORT_SESSION_HEADER];
+    if (claimed && !superadminRoute && (!imp || imp.session.id !== claimed)) {
+      throw new ConflictException({ code: SUPPORT_SESSION_ENDED_CODE, message: 'Support session ended' });
+    }
+
+    if (imp) {
+      const req = this.impersonation.toRequestImpersonation(imp.session);
+      const info = { method: request.method, route: `${request.baseUrl ?? ''}${request.route?.path ?? ''}`, params: request.params };
+      const refuse = async (message: string, blocked: string): Promise<never> => {
+        await this.impersonation.recordRefused(req, { ...info, blocked });
+        throw new ForbiddenException(message);
+      };
+      // View mode is read-only for every request that is not a plain read.
+      if (imp.session.mode === 'view' && !SAFE_METHODS.has(request.method)) {
+        return refuse(VIEW_ONLY_MESSAGE, 'view-only');
       }
+      // The blocked list (see impersonation/blocked-when-impersonating.ts): both modes, any method.
+      const category = this.reflector.getAllAndOverride<string | undefined>(BLOCKED_WHEN_IMPERSONATING_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (category) return refuse(impersonationBlockMessage(category), category);
+      // A customer suspended after the session started can still be looked at, no longer changed.
+      if (imp.session.mode === 'act' && (imp.account.suspendedAt || imp.user.suspendedAt)) {
+        return refuse('This account has been suspended. Support sessions on suspended accounts are view-only.', 'suspended');
+      }
+      // Fail closed: the intent is on record (strict) before the handler can change anything.
+      if (!SAFE_METHODS.has(request.method)) await this.impersonation.recordIntent(req, info);
+      // Nothing seen in a support session may be cached by the browser or a proxy (customer files, thumbnails ...).
+      const res = context.switchToHttp().getResponse<Response>();
+      const setHeader = res.setHeader.bind(res);
+      res.setHeader = ((name: string, value: unknown) =>
+        setHeader(name, name.toLowerCase() === 'cache-control' ? 'no-store' : (value as string))) as Response['setHeader'];
+      res.setHeader('Cache-Control', 'no-store');
+      request.actor = resolved.user;
+      request.sessionId = resolved.sessionId;
+      request.impersonation = req;
+      request.user = imp.user;
+      request.account = imp.account;
+      return true;
     }
 
     request.account = resolved.account;

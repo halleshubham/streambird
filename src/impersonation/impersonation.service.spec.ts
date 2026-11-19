@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { FindOperator } from 'typeorm';
 import { Role } from '../common/enums/role.enum';
 import {
@@ -50,12 +50,12 @@ describe('ImpersonationService', () => {
   const account: any = { id: 'acc_c', name: 'Acme', deletedAt: null, suspendedAt: null };
   customer.account = account;
 
-  function build(over: { users?: any[]; accounts?: any[]; audit?: Partial<{ log: jest.Mock; logStrict: jest.Mock }> } = {}) {
+  function build(over: { users?: any[]; accounts?: any[]; audit?: Partial<{ log: jest.Mock; logStrict: jest.Mock; logAnonymous: jest.Mock }> } = {}) {
     const sessions = fakeRepo<any>();
     const users = fakeRepo<any>(over.users ?? [customer]);
     const accounts = fakeRepo<any>(over.accounts ?? [account]);
     const companies = fakeRepo<any>([{ id: 'co', accountId: 'acc_c', name: 'Acme Inc' }]);
-    const audit = { log: jest.fn(async () => undefined), logStrict: jest.fn(async () => undefined), ...over.audit };
+    const audit = { log: jest.fn(async () => undefined), logStrict: jest.fn(async () => undefined), logAnonymous: jest.fn(async () => undefined), ...over.audit };
     const service = new ImpersonationService(sessions as any, users as any, accounts as any, companies as any, audit as any);
     let now = t0;
     service.now = () => now;
@@ -200,23 +200,52 @@ describe('ImpersonationService', () => {
     });
   });
 
-  describe('recordAction', () => {
-    it('logs ids, method, route template and status only', async () => {
+  describe('audit entries', () => {
+    const imp = { sessionId: 's1', mode: 'act' as const, adminUserId: 'admin', targetUserId: 'cust', targetAccountId: 'acc_c' };
+    const uuid = '3f2b6a52-0c1e-4b8e-9d57-1a2b3c4d5e6f';
+
+    it('intent (strict, before the handler) and result carry ids, method, route template and UUID params only', async () => {
       const { service, audit } = build();
-      await service.recordAction(
-        { sessionId: 's1', mode: 'act', adminUserId: 'admin', targetUserId: 'cust', targetAccountId: 'acc_c' },
-        { method: 'PATCH', route: '/api/brand-kits/:id', status: 200, params: { id: '3f2b6a52-0c1e-4b8e-9d57-1a2b3c4d5e6f', token: 'not-a-uuid-secret' } },
-      );
-      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ id: 'admin' }), 'impersonated_action', 'account', 'acc_c', {
-        sessionId: 's1',
-        mode: 'act',
-        targetUserId: 'cust',
-        targetAccountId: 'acc_c',
-        method: 'PATCH',
-        route: '/api/brand-kits/:id',
-        status: 200,
-        resourceIds: ['3f2b6a52-0c1e-4b8e-9d57-1a2b3c4d5e6f'],
+      await service.recordIntent(imp, { method: 'PATCH', route: '/api/brand-kits/:id', params: { id: uuid, token: 'not-a-uuid-secret' } });
+      await service.recordResult(imp, { method: 'PATCH', route: '/api/brand-kits/:id', params: { id: uuid }, status: 200 });
+      expect(audit.logStrict).toHaveBeenCalledWith('admin', 'impersonated_action', 'account', 'acc_c', {
+        sessionId: 's1', mode: 'act', targetUserId: 'cust', targetAccountId: 'acc_c', method: 'PATCH', route: '/api/brand-kits/:id', resourceIds: [uuid], phase: 'intent',
       });
+      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ id: 'admin' }), 'impersonated_action_result', 'account', 'acc_c', expect.objectContaining({ status: 200, resourceIds: [uuid] }));
+      expect(JSON.stringify(audit.logStrict.mock.calls)).not.toContain('not-a-uuid-secret');
+    });
+
+    it('fails closed: when the intent cannot be written the action is refused with 503', async () => {
+      const { service } = build({ audit: { logStrict: jest.fn(async () => Promise.reject(new Error('db down'))) } });
+      await expect(service.recordIntent(imp, { method: 'POST', route: '/api/presets' })).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('a refused request is one entry with its reason; a read is logged once per (session, route)', async () => {
+      const { service, audit } = build();
+      await service.recordRefused(imp, { method: 'POST', route: '/api/billing/orders', blocked: 'billing' });
+      expect(audit.log).toHaveBeenCalledWith(expect.anything(), 'impersonated_action', 'account', 'acc_c', expect.objectContaining({ status: 403, blocked: 'billing' }));
+      audit.log.mockClear();
+      await service.recordRead(imp, { method: 'GET', route: '/api/brand-kits', status: 200 });
+      await service.recordRead(imp, { method: 'GET', route: '/api/brand-kits', status: 200 });
+      await service.recordRead(imp, { method: 'GET', route: '/api/presets', status: 200 });
+      await service.recordRead({ ...imp, sessionId: 's2' }, { method: 'GET', route: '/api/brand-kits', status: 200 });
+      expect(audit.log.mock.calls.map((c: any[]) => c[1])).toEqual(['impersonated_read', 'impersonated_read', 'impersonated_read']);
+    });
+
+    it('endForTarget ends the sessions on a customer that is being deleted, with an audit entry', async () => {
+      const { service, sessions, audit } = build();
+      await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+      await service.endForTarget({ accountId: 'acc_c' });
+      expect(sessions.rows[0].endReason).toBe('target_gone');
+      expect(audit.log.mock.calls.filter((c: any[]) => c[1] === 'impersonation_ended')).toHaveLength(1);
+    });
+
+    it('an ended row whose admin is gone is still audited (anonymous actor, email kept)', async () => {
+      const { service, sessions, audit } = build();
+      await service.start(admin, 's', { userId: 'cust', mode: 'act' });
+      sessions.rows[0].adminUserId = null;
+      await service.endForAdminSession('s');
+      expect(audit.logAnonymous).toHaveBeenCalledWith('impersonation_ended', 'account', 'acc_c', expect.objectContaining({ endReason: 'logout' }));
     });
   });
 });

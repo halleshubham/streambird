@@ -12,18 +12,28 @@ export class ImpersonationSession {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'uuid' })
-  adminUserId!: string;
+  /** The reference columns go to NULL when the person/account/login is deleted (history is kept); the *Email/Name copies stay. */
+  @Column({ type: 'uuid', nullable: true })
+  adminUserId!: string | null;
 
   /** The admin's own `user_sessions` row (the browser/app login this support session belongs to). */
   @Column({ type: 'uuid', nullable: true })
   adminSessionId!: string | null;
 
-  @Column({ type: 'uuid' })
-  targetUserId!: string;
+  @Column({ type: 'uuid', nullable: true })
+  targetUserId!: string | null;
 
-  @Column({ type: 'uuid' })
-  targetAccountId!: string;
+  @Column({ type: 'uuid', nullable: true })
+  targetAccountId!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  adminEmail!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  targetEmail!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  targetAccountName!: string | null;
 
   @Column({ type: 'varchar', length: 4 })
   mode!: ImpersonationMode;

@@ -7,6 +7,7 @@ import { Company } from '../companies/entities/company.entity';
 import { User } from '../users/entities/user.entity';
 import { ImpersonationSession } from './entities/impersonation-session.entity';
 import { ImpersonationAuditInterceptor } from './impersonation-audit.interceptor';
+import { ImpersonationRedactionInterceptor } from './impersonation-redaction.interceptor';
 import { ImpersonationService } from './impersonation.service';
 
 /**
@@ -15,7 +16,11 @@ import { ImpersonationService } from './impersonation.service';
  */
 @Module({
   imports: [TypeOrmModule.forFeature([ImpersonationSession, User, Account, Company]), AuditLogModule],
-  providers: [ImpersonationService, { provide: APP_INTERCEPTOR, useClass: ImpersonationAuditInterceptor }],
+  providers: [
+    ImpersonationService,
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationAuditInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationRedactionInterceptor },
+  ],
   exports: [ImpersonationService],
 })
 export class ImpersonationModule {}

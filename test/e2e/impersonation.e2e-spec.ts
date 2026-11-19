@@ -3,9 +3,11 @@ import { RequestMethod } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { describeE2E, bootApp, Client, Harness } from './harness';
 import { ImpersonationService } from '../../src/impersonation/impersonation.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import {
   BLOCKED_WHEN_IMPERSONATING_KEY,
   IMPERSONATION_BLOCK_CATEGORIES,
+  IMPERSONATION_ACT_ALLOWED,
   IMPERSONATION_EXEMPT_ROUTES,
 } from '../../src/impersonation/blocked-when-impersonating';
 import { ROLES_KEY } from '../../src/common/decorators/roles.decorator';
@@ -240,11 +242,22 @@ describeE2E('superadmin support sessions (impersonation)', () => {
       const label = IMPERSONATION_BLOCK_CATEGORIES['go-live'];
       refused(await admin.post('/streams', { title: 't', destinationConnectionIds: [conn] }), label);
       refused(await admin.post(`/streams/${crypto.randomUUID()}/start`), label);
-      refused(await admin.post(`/streams/${crypto.randomUUID()}/destinations/${crypto.randomUUID()}/retry`), label);
       refused(await admin.post(`/studio-sessions/${crypto.randomUUID()}/host-token`), label);
       refused(await admin.post(`/presets/${crypto.randomUUID()}/start`, {}), label);
       const { rows } = await h.db.query('SELECT 1 FROM live_streams WHERE account_id = $1', [custAccount]);
       expect(rows).toHaveLength(0);
+    });
+
+    it('live control: ending, retrying a destination (both change a running stream)', async () => {
+      const label = IMPERSONATION_BLOCK_CATEGORIES['live-control'];
+      refused(await admin.post(`/streams/${crypto.randomUUID()}/end`), label);
+      refused(await admin.post(`/streams/${crypto.randomUUID()}/destinations/${crypto.randomUUID()}/retry`), label);
+    });
+
+    it('guest emails and guest links: add / resend / create link are blocked outright', async () => {
+      refused(await admin.post(`/streams/${crypto.randomUUID()}/schedule/guests`, { emails: ['g@test.dev'] }), IMPERSONATION_BLOCK_CATEGORIES['guest-email']);
+      refused(await admin.post(`/streams/${crypto.randomUUID()}/schedule/guests/${crypto.randomUUID()}/resend`), IMPERSONATION_BLOCK_CATEGORIES['guest-email']);
+      refused(await admin.post(`/studio-sessions/${crypto.randomUUID()}/invites`, {}), IMPERSONATION_BLOCK_CATEGORIES['guest-link']);
     });
 
     it('also blocked in view mode', async () => {
@@ -357,20 +370,25 @@ describeE2E('superadmin support sessions (impersonation)', () => {
     expect(started[0].actor_user_id).toBeTruthy();
     expect(started[0].metadata).toMatchObject({ mode: 'act', reason: 'audit check', sessionId: s.body.id, targetAccountId: cust.accountId });
 
+    // Strict INTENT entries (written before the handler) and refused attempts; outcomes are separate entries.
     const actions = await audit('impersonated_action', cust.accountId);
-    const seen = actions.map((a: any) => `${a.metadata.method} ${a.metadata.route} ${a.metadata.status}${a.metadata.blocked ? ' ' + a.metadata.blocked : ''}`);
+    const seen = actions.map((a: any) => `${a.metadata.method} ${a.metadata.route} ${a.metadata.blocked ? a.metadata.status + ' ' + a.metadata.blocked : a.metadata.phase}`);
     expect(seen).toEqual([
-      'POST /api/brand-kits 201',
-      'PATCH /api/brand-kits/:id 200',
+      'POST /api/brand-kits intent',
+      'PATCH /api/brand-kits/:id intent',
       'POST /api/billing/orders 403 billing',
-      'DELETE /api/brand-kits/:id 204',
+      'DELETE /api/brand-kits/:id intent',
     ]);
+    const results = await audit('impersonated_action_result', cust.accountId);
+    expect(results.map((a: any) => `${a.metadata.method} ${a.metadata.status}`)).toEqual(['POST 201', 'PATCH 200', 'DELETE 204']);
     // Which kit was changed / deleted is recorded (a uuid from the route); what was typed is not.
     expect(actions[1].metadata.resourceIds).toEqual([kit.body.id]);
     expect(actions[3].metadata.resourceIds).toEqual([kit.body.id]);
     expect(actions[0].metadata.resourceIds).toBeUndefined();
-    // The GET was a read: not logged. Nothing the customer or admin typed is in the log.
-    const dump = JSON.stringify([...started, ...actions, ...(await audit('impersonation_ended', cust.accountId))]);
+    // The GET is logged once as a read. Nothing the customer or admin typed is in the log.
+    const reads = await audit('impersonated_read', cust.accountId);
+    expect(reads.map((a: any) => `${a.metadata.method} ${a.metadata.route}`)).toEqual(['GET /api/brand-kits']);
+    const dump = JSON.stringify([...started, ...actions, ...results, ...reads, ...(await audit('impersonation_ended', cust.accountId))]);
     for (const secret of [secretName, 'private title', 'pro', 'key-', 'Cookie', 'sb_session']) {
       expect(dump).not.toContain(secret);
     }
@@ -383,6 +401,140 @@ describeE2E('superadmin support sessions (impersonation)', () => {
     await admin.post('/presets', { name: 'x', config: {} });
     const later = await audit('impersonated_action', cust.accountId);
     expect(later[later.length - 1].metadata).toMatchObject({ method: 'POST', route: '/api/presets', status: 403, blocked: 'view-only', mode: 'view' });
+    // View mode reads are logged too, once per (session, route).
+    await admin.get('/presets');
+    await admin.get('/presets');
+    const viewReads = (await audit('impersonated_read', cust.accountId)).filter((a: any) => a.metadata.mode === 'view');
+    expect(viewReads.map((a: any) => a.metadata.route)).toEqual(['/api/presets']);
+  });
+
+  it('fail closed: when the audit log cannot take the intent, an act-mode change is refused (503) and nothing changes', async () => {
+    const cust = await h.signIn();
+    await start(admin, { accountId: cust.accountId, mode: 'act' });
+    const log = h.app.get(AuditLogService);
+    const original = log.logStrict.bind(log);
+    log.logStrict = async () => {
+      throw new Error('audit down');
+    };
+    try {
+      const r = await admin.post('/brand-kits', { name: 'must not exist' });
+      expect(r.status).toBe(503);
+      expect(msg(r)).toBe('Audit log unavailable; action refused');
+    } finally {
+      log.logStrict = original;
+    }
+    expect((await cust.client.get('/brand-kits')).body).toEqual([]);
+    expect((await admin.post('/brand-kits', { name: 'now fine' })).status).toBe(201);
+  });
+
+  it('nothing from a support session is cacheable', async () => {
+    const cust = await h.signIn();
+    await start(admin, { accountId: cust.accountId, mode: 'view' });
+    expect((await admin.getBytes('/brand-kits')).cacheControl).toBe('no-store');
+  });
+
+  it('X-Support-Session: a stale customer screen gets 409 support_session_ended instead of acting on the admin own account', async () => {
+    const cust = await h.signIn();
+    await admin.post('/brand-kits', { name: 'Admin kit (must stay alone)' });
+    const s = await start(admin, { accountId: cust.accountId, mode: 'act' });
+    const withHeader = (method: string, path: string, body?: unknown) => admin.call(method, path, { body, headers: { 'X-Support-Session': s.body.id } });
+    expect((await withHeader('POST', '/brand-kits', { name: 'customer kit' })).status).toBe(201);
+    expect((await withHeader('GET', '/brand-kits')).body.map((k: any) => k.name)).toEqual(['customer kit']);
+    // The session is over (expired / ended in another tab).
+    await h.db.query(`UPDATE impersonation_sessions SET expires_at = now() - interval '1 minute' WHERE id = $1`, [s.body.id]);
+    for (const [method, path] of [['GET', '/brand-kits'], ['POST', '/brand-kits'], ['DELETE', '/presets/' + crypto.randomUUID()], ['PATCH', '/presets/' + crypto.randomUUID()]]) {
+      const r = await withHeader(method, path, method === 'POST' ? { name: 'WRONG TENANT' } : undefined);
+      expect(r.status).toBe(409);
+      expect(r.body.message.code).toBe('support_session_ended');
+    }
+    // Nothing was created in the admin's own account; without the header the admin is simply themselves again.
+    const own = (await admin.get('/brand-kits')).body.map((k: any) => k.name);
+    expect(own).toContain('Admin kit (must stay alone)');
+    expect(own).not.toContain('WRONG TENANT');
+    // Exit still works with the header (superadmin routes ignore it), and a different session id is also stale.
+    const s2 = await start(admin, { accountId: cust.accountId, mode: 'view' });
+    expect((await admin.call('GET', '/brand-kits', { headers: { 'X-Support-Session': s.body.id } })).status).toBe(409);
+    expect((await admin.call('DELETE', '/superadmin/impersonation', { headers: { 'X-Support-Session': s2.body.id } })).status).toBe(204);
+  });
+
+  describe('publishing credentials and join links never reach a support session', () => {
+    const SECRET_KEY = /stream_?key|ingest|whip|rtmp|join_?url|invite_?token|invitation_?text|host_?token|^token$/i;
+    /** Every non-empty string value whose key looks like a credential, anywhere in a JSON tree. */
+    const secrets = (node: unknown, out: string[] = []): string[] => {
+      if (Array.isArray(node)) node.forEach((n) => secrets(n, out));
+      else if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node)) {
+          if (SECRET_KEY.test(k) && typeof v === 'string' && v) out.push(v);
+          else secrets(v, out);
+        }
+      }
+      return out;
+    };
+
+    it('stream, schedule, participants and list responses are redacted in view and act mode (while the customer still gets them)', async () => {
+      const cust = await h.signIn();
+      const conn = await twitch(cust.client, 'Secret chan');
+      const live = await cust.client.post('/streams', { title: 'Live now', destinationConnectionIds: [conn] });
+      expect(live.status).toBe(201);
+      const sched = await cust.client.post('/streams/schedule', {
+        title: 'Later',
+        scheduledAt: new Date(Date.now() + 3 * 3600_000).toISOString(),
+        timezone: 'UTC',
+        destinationConnectionIds: [conn],
+        guestEmails: ['guest@test.dev'],
+      });
+      expect(sched.status).toBe(201);
+      const urls = [`/streams/${live.body.id}`, `/streams/${sched.body.id}/schedule`, '/streams', `/streams/${live.body.id}/status`];
+      // The customer's own responses DO carry credentials (otherwise this test proves nothing).
+      const ownResponses = await Promise.all(urls.map((u) => cust.client.get(u)));
+      const own = [...ownResponses.flatMap((r) => secrets(r.body)), ...secrets(live.body)];
+      expect(own.length).toBeGreaterThanOrEqual(3);
+      expect(JSON.stringify(ownResponses.map((r) => r.body))).toMatch(/\/join\//);
+
+      for (const mode of ['view', 'act']) {
+        await start(admin, { accountId: cust.accountId, mode });
+        const seen: unknown[] = [];
+        for (const u of urls) {
+          const r = await admin.get(u);
+          expect(r.status).toBe(200);
+          seen.push(r.body);
+        }
+        seen.push((await admin.get(`/studio-sessions/${live.body.studioSessionId}/participants`)).body);
+        const dump = JSON.stringify(seen);
+        expect(secrets(seen)).toEqual([]); // every credential-looking key is null
+        for (const v of own) expect(dump).not.toContain(v); // and no value leaked anywhere, under any key
+        await admin.del('/superadmin/impersonation');
+      }
+    });
+  });
+
+  describe('guest emails', () => {
+    it('scheduling without guests stays allowed; with guests, notifying edits and cancels are refused', async () => {
+      const cust = await h.signIn();
+      const conn = await twitch(cust.client, 'Guest chan');
+      const at = () => new Date(Date.now() + 3 * 3600_000).toISOString();
+      const plain = (await cust.client.post('/streams/schedule', { title: 'No guests', scheduledAt: at(), timezone: 'UTC', destinationConnectionIds: [conn] })).body;
+      const withGuests = (await cust.client.post('/streams/schedule', { title: 'With guests', scheduledAt: at(), timezone: 'UTC', destinationConnectionIds: [conn], guestEmails: ['g1@test.dev'] })).body;
+      await start(admin, { accountId: cust.accountId, mode: 'act' });
+      const refusedMsg = 'Guest invitations cannot be sent while acting as a customer';
+
+      const made = await admin.post('/streams/schedule', { title: 'By support', scheduledAt: at(), timezone: 'UTC', destinationConnectionIds: [conn] });
+      expect(made.status).toBe(201);
+      const bad = await admin.post('/streams/schedule', { title: 'By support 2', scheduledAt: at(), timezone: 'UTC', destinationConnectionIds: [conn], guestEmails: ['x@test.dev'] });
+      expect(bad.status).toBe(403);
+      expect(msg(bad)).toBe(refusedMsg);
+      expect((await admin.patch(`/streams/${plain.id}/schedule`, { title: 'Renamed, nobody to tell' })).status).toBe(200);
+      const upd = await admin.patch(`/streams/${withGuests.id}/schedule`, { title: 'Renamed' });
+      expect(upd.status).toBe(403);
+      expect(msg(upd)).toBe(refusedMsg);
+      expect((await cust.client.get(`/streams/${withGuests.id}/schedule`)).body.title).toBe('With guests');
+      expect((await admin.patch(`/streams/${withGuests.id}/schedule`, { title: 'Renamed quietly', notifyGuests: false })).status).toBe(200);
+      const cancel = await admin.post(`/streams/${withGuests.id}/schedule/cancel`);
+      expect(cancel.status).toBe(403);
+      expect(msg(cancel)).toBe(refusedMsg);
+      expect((await admin.post(`/streams/${plain.id}/schedule/cancel`)).status).toBe(204);
+      expect((await admin.del(`/streams/${made.body.id}/schedule`)).status).toBe(204);
+    });
   });
 
   it('the customer is not emailed by any support action that would normally email them', async () => {
@@ -463,12 +615,32 @@ describeE2E('superadmin support sessions (impersonation)', () => {
       expect(bad.map((r) => r.key)).toEqual([]);
     });
 
-    it('every mutating route of the sensitive modules has a marker or a documented exemption', () => {
-      const SENSITIVE = ['billing', 'auth', 'accounts', 'account', 'platform-connections', 'team'];
-      const unmarked = allRoutes().filter(
-        (r) => SENSITIVE.includes(r.controller) && r.method !== 'GET' && r.method !== 'HEAD' && !r.marker && !IMPERSONATION_EXEMPT_ROUTES[r.key],
+    it('ALLOWLIST: every non-GET route outside the superadmin controllers is blocked, exempt (public / own login), or explicitly allowed in act mode', () => {
+      const unclassified = allRoutes().filter(
+        (r) =>
+          !r.superadmin &&
+          r.method !== 'GET' &&
+          r.method !== 'HEAD' &&
+          !r.marker &&
+          !IMPERSONATION_EXEMPT_ROUTES[r.key] &&
+          !IMPERSONATION_ACT_ALLOWED[r.key],
       );
-      expect(unmarked.map((r) => r.key)).toEqual([]);
+      // A NEW route lands here until someone decides: mark it @BlockedWhenImpersonating(...) or add it, with a
+      // reason, to IMPERSONATION_ACT_ALLOWED / IMPERSONATION_EXEMPT_ROUTES (src/impersonation/blocked-when-impersonating.ts).
+      expect(unclassified.map((r) => r.key)).toEqual([]);
+    });
+
+    it('the allow lists have no stale entries, no entry is also marked blocked, and every entry has a reason', () => {
+      const routes = allRoutes();
+      const byKey = new Map(routes.map((r) => [r.key, r]));
+      for (const [name, list] of [['EXEMPT', IMPERSONATION_EXEMPT_ROUTES], ['ACT_ALLOWED', IMPERSONATION_ACT_ALLOWED]] as const) {
+        for (const [key, reason] of Object.entries(list)) {
+          const r = byKey.get(key);
+          expect([name, key, !!r]).toEqual([name, key, true]);
+          expect([name, key, r?.marker]).toEqual([name, key, undefined]);
+          expect(reason.length).toBeGreaterThanOrEqual(8);
+        }
+      }
     });
 
     it('OAuth "connect"/"callback" GET routes (side effects on a GET) are marked too', () => {
@@ -476,11 +648,10 @@ describeE2E('superadmin support sessions (impersonation)', () => {
       expect(bad.map((r) => r.key)).toEqual([]);
     });
 
-    it('go-live routes (stream start/create, retry, host token, preset start) are marked', () => {
+    it('go-live, live-control, guest-email and guest-link routes are marked', () => {
       const must = [
         'POST streams/',
         'POST streams/:id/start',
-        'POST streams/:id/destinations/:destinationId/retry',
         'POST studio-sessions/:id/host-token',
         'POST presets/:id/start',
       ];
@@ -490,38 +661,14 @@ describeE2E('superadmin support sessions (impersonation)', () => {
         expect(r?.key).toBe(key);
         expect(r?.marker).toBe('go-live');
       }
-    });
-
-    it('any other route whose path smells like start / token / password / key / credentials is marked or explicitly exempt', () => {
-      const SMELLS = /(^|[/:-])(start|token|host-token|password|api-?key|credentials?|secret|mfa|otp|connect|disconnect|callback|login)($|[/-])/i;
-      const EXEMPT_PUBLIC = new Set([
-        // Public guest-link endpoints and the signature-checked webhook: no account principal at all.
-        'POST studio-sessions/invites/:token/check-password',
-        'GET studio-sessions/invites/:token',
-        'GET studio-sessions/turn-credentials',
-      ]);
-      const hits = allRoutes().filter(
-        (r) =>
-          !r.superadmin &&
-          !r.marker &&
-          r.method !== 'HEAD' &&
-          SMELLS.test(`${r.controller}/${r.path}`.replace(/^\//, '')) &&
-          // Plain reads are covered by view/act mode; only things with side effects matter here.
-          (r.method !== 'GET' || /connect|callback|start/.test(r.path)) &&
-          !IMPERSONATION_EXEMPT_ROUTES[r.key] &&
-          !EXEMPT_PUBLIC.has(r.key) &&
-          // Sign-in routes live under auth/ and are listed (or fail the previous test).
-          r.controller !== 'auth',
-      );
-      expect(hits.map((r) => r.key)).toEqual([]);
-    });
-
-    it('every exemption is a real route (no stale entries) and has a reason', () => {
-      const keys = new Set(allRoutes().map((r) => r.key));
-      for (const [key, reason] of Object.entries(IMPERSONATION_EXEMPT_ROUTES)) {
-        expect(keys.has(key)).toBe(true);
-        expect(reason.length).toBeGreaterThan(10);
-      }
+      const expected: Record<string, string> = {
+        'POST streams/:id/end': 'live-control',
+        'POST streams/:id/destinations/:destinationId/retry': 'live-control',
+        'POST streams/:id/schedule/guests': 'guest-email',
+        'POST streams/:id/schedule/guests/:inviteId/resend': 'guest-email',
+        'POST studio-sessions/:id/invites': 'guest-link',
+      };
+      for (const [key, category] of Object.entries(expected)) expect([key, routes.find((x) => x.key === key)?.marker]).toEqual([key, category]);
     });
   });
 

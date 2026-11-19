@@ -147,6 +147,27 @@ test.describe('superadmin support sessions', () => {
     await cust.close();
   });
 
+  test('a session that ended elsewhere: the next request from the still-open customer screen is refused and the app returns to admin', async ({ page, context, browser }) => {
+    const admin = await signIn(context, { superadmin: true });
+    const cust = await customer(browser, admin);
+    // The admin has their OWN kit: it must never show up on the customer screen.
+    await admin.api.post(`${APP}/api/brand-kits`, { data: { name: 'Admin private kit' }, headers: apiHeaders });
+    await page.goto(`/admin/accounts/${cust.accountId}`);
+    await page.getByTestId('admin-impersonate-act').click();
+    await page.getByTestId('impersonate-act-confirm').click();
+    await expect(page.getByTestId('impersonation-banner')).toBeVisible();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    // The session ends (expired / ended in another tab) while this tab still shows the customer.
+    expect((await context.request.post(`${CONTROL}/impersonation-expires?email=${admin.email}&seconds=-60`)).ok()).toBeTruthy();
+    // In-app navigation: the Brand page asks for the kits with X-Support-Session and gets a 409.
+    await page.getByRole('link', { name: 'Brand', exact: true }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/admin/accounts/${cust.accountId}$`));
+    await expect(page.getByTestId('impersonation-banner')).toHaveCount(0);
+    await expect(page.getByText('The support session has ended')).toBeVisible();
+    await expect(page.getByText('Admin private kit')).toHaveCount(0);
+    await cust.close();
+  });
+
   test('the privacy policy says that authorised support staff may access an account, and that it is logged', async ({ page }) => {
     await page.goto('/privacy');
     await expect(page.getByTestId('privacy-support-access')).toContainText('support staff may access an account to resolve an issue');

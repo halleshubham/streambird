@@ -12,6 +12,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   StreamableFile,
   UploadedFile,
@@ -30,7 +31,7 @@ import { ListStreamsDto } from './dto/list-streams.dto';
 import { StreamResponseDto } from './dto/stream-response.dto';
 import { StreamListItemDto } from './dto/stream-list-item.dto';
 import { DestinationResponseDto } from './dto/destination-response.dto';
-import { AccountGuard } from '../common/guards/account.guard';
+import { AccountGuard, AccountRequest } from '../common/guards/account.guard';
 import { StreamCreateThrottlerGuard } from '../common/guards/stream-create-throttler.guard';
 import { CurrentAccount } from '../common/decorators/current-account.decorator';
 import { Account } from '../accounts/entities/account.entity';
@@ -57,8 +58,8 @@ export class StreamsController {
   @Post('schedule')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  schedule(@CurrentAccount() account: Account, @Body() dto: ScheduleStreamDto) {
-    return this.scheduling.schedule(account, dto);
+  schedule(@CurrentAccount() account: Account, @Body() dto: ScheduleStreamDto, @Req() req: AccountRequest) {
+    return this.scheduling.schedule(account, dto, !!req.impersonation);
   }
 
   @Get(':id/schedule')
@@ -73,8 +74,9 @@ export class StreamsController {
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateScheduleDto,
+    @Req() req: AccountRequest,
   ) {
-    return this.scheduling.update(account, id, dto);
+    return this.scheduling.update(account, id, dto, !!req.impersonation);
   }
 
   /**
@@ -143,6 +145,7 @@ export class StreamsController {
   }
 
   @Post(':id/schedule/guests')
+  @BlockedWhenImpersonating('guest-email')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } }) // each call can send up to 20 emails
   addGuests(
@@ -163,6 +166,7 @@ export class StreamsController {
   }
 
   @Post(':id/schedule/guests/:inviteId/resend')
+  @BlockedWhenImpersonating('guest-email')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   resendInvite(
@@ -182,8 +186,8 @@ export class StreamsController {
 
   @Post(':id/schedule/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async cancelSchedule(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
-    await this.scheduling.cancel(account, id);
+  async cancelSchedule(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string, @Req() req: AccountRequest) {
+    await this.scheduling.cancel(account, id, !!req.impersonation);
   }
 
   /** Starts a scheduled stream: creates the platform broadcasts and goes LIVE. */
@@ -245,7 +249,7 @@ export class StreamsController {
   }
 
   @Post(':id/destinations/:destinationId/retry')
-  @BlockedWhenImpersonating('go-live')
+  @BlockedWhenImpersonating('live-control')
   async retry(
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,
@@ -258,6 +262,7 @@ export class StreamsController {
   }
 
   @Post(':id/end')
+  @BlockedWhenImpersonating('live-control')
   async end(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
     const stream = await this.streamsService.end(id, account.id);
     return plainToInstance(StreamResponseDto, stream, { excludeExtraneousValues: true });

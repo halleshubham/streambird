@@ -661,9 +661,13 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await insert('act'); // ended ones are history, a new one is fine
       expect((await db.query(`SELECT count(*)::int AS n FROM impersonation_sessions WHERE admin_user_id = $1`, [admin])).rows[0].n).toBe(2);
       await expect(db.query(`UPDATE impersonation_sessions SET reason = $1`, ['x'.repeat(201)])).rejects.toThrow();
-      // Deleting the target (account deletion) removes its support-session rows; the audit log is the lasting record.
+      // History survives deletion of the people in it: the references go to NULL, the copied facts stay.
+      await db.query(`UPDATE impersonation_sessions SET admin_email = 'imp-admin@test.dev', target_email = 'imp-target@test.dev', target_account_name = 'imp-target-acct'`);
+      await db.query(`DELETE FROM user_sessions WHERE id = $1`, [sess]);
       await db.query(`DELETE FROM users WHERE id = $1`, [target]);
-      expect((await db.query(`SELECT count(*)::int AS n FROM impersonation_sessions`)).rows[0].n).toBe(0);
+      const kept = (await db.query(`SELECT admin_user_id, admin_session_id, target_user_id, target_email FROM impersonation_sessions`)).rows;
+      expect(kept).toHaveLength(2);
+      for (const r of kept) expect(r).toMatchObject({ admin_user_id: admin, admin_session_id: null, target_user_id: null, target_email: 'imp-target@test.dev' });
       await db.end();
     } finally {
       const a2 = new PgClient({ connectionString: adminUrl });

@@ -91,6 +91,7 @@ export class StudioSessionsController {
   }
 
   @Post(':id/invites')
+  @BlockedWhenImpersonating('guest-link')
   @UseGuards(AccountGuard)
   async createInvite(
     @CurrentAccount() account: Account,

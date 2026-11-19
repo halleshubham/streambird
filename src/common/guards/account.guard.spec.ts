@@ -28,21 +28,24 @@ describe('AccountGuard', () => {
     cookieToken?: string;
     method?: string;
     origin?: string;
-  }): { context: ExecutionContext; request: any } {
+    supportSession?: string;
+  }): { context: ExecutionContext; request: any; response: any } {
     const request: any = {
       headers: {
         ...(opts.apiKey ? { 'x-api-key': opts.apiKey } : {}),
         ...(opts.origin ? { origin: opts.origin } : {}),
+        ...(opts.supportSession ? { 'x-support-session': opts.supportSession } : {}),
       },
       cookies: opts.cookieToken ? { sb_session: opts.cookieToken } : {},
       method: opts.method ?? 'GET',
     };
+    const response: any = { headers: {} as Record<string, unknown>, setHeader(n: string, v: unknown) { this.headers[n.toLowerCase()] = v; } };
     const context = {
-      switchToHttp: () => ({ getRequest: () => request }),
+      switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
       getHandler: () => undefined,
       getClass: () => undefined,
     } as unknown as ExecutionContext;
-    return { context, request };
+    return { context, request, response };
   }
 
   function buildGuard(opts: {
@@ -75,7 +78,8 @@ describe('AccountGuard', () => {
     const impersonation = opts.impersonation ?? {
       resolveForGuard: jest.fn(async () => null),
       toRequestImpersonation: jest.fn(),
-      recordAction: jest.fn(async () => undefined),
+      recordRefused: jest.fn(async () => undefined),
+      recordIntent: jest.fn(async () => undefined),
     };
     const reflector = { getAllAndOverride: jest.fn((key: string) => opts.metadata?.[key]) };
     const guard = new AccountGuard(accountsService as any, authService as any, config as any, impersonation as any, reflector as any);
@@ -233,7 +237,8 @@ describe('AccountGuard', () => {
     const impersonation = (mode: 'view' | 'act', over: { account?: any; user?: any } = {}) => ({
       resolveForGuard: jest.fn(async () => ({ session: session(mode), user: over.user ?? target, account: over.account ?? targetAccount })),
       toRequestImpersonation: jest.fn((row: any) => ({ sessionId: row.id, mode: row.mode, adminUserId: row.adminUserId, targetUserId: row.targetUserId, targetAccountId: row.targetAccountId })),
-      recordAction: jest.fn(async () => undefined),
+      recordRefused: jest.fn(async () => undefined),
+      recordIntent: jest.fn(async () => undefined),
     });
     const origin = 'https://app.example.com';
 
@@ -284,7 +289,7 @@ describe('AccountGuard', () => {
       for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
         await expect(guard.canActivate(buildContext({ cookieToken: 'tok', method, origin }).context)).rejects.toThrow('View-only support session');
       }
-      expect(imp.recordAction).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'imp_1' }), expect.objectContaining({ status: 403, blocked: 'view-only' }));
+      expect(imp.recordRefused).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'imp_1' }), expect.objectContaining({ blocked: 'view-only' }));
     });
 
     it('act mode: the blocked-list marker refuses with the plain-language message, for GET too', async () => {
@@ -294,7 +299,7 @@ describe('AccountGuard', () => {
         'Not allowed while acting as a customer: payments and plan changes',
       );
       await expect(guard.canActivate(buildContext({ cookieToken: 'tok', method: 'GET' }).context)).rejects.toThrow('Not allowed while acting as a customer');
-      expect(imp.recordAction).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ blocked: 'billing' }));
+      expect(imp.recordRefused).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ blocked: 'billing' }));
     });
 
     it('act mode on a customer suspended after the start is refused; view mode still reads', async () => {
@@ -303,6 +308,44 @@ describe('AccountGuard', () => {
       await expect(act.canActivate(buildContext({ cookieToken: 'tok', method: 'POST', origin }).context)).rejects.toThrow('suspended');
       const view = buildGuard({ resolvedUser: admin, impersonation: impersonation('view', { account: suspended }) }).guard;
       await expect(view.canActivate(buildContext({ cookieToken: 'tok', method: 'GET' }).context)).resolves.toBe(true);
+    });
+
+    it('act mode writes the strict intent entry BEFORE the handler, and a failing audit refuses the request', async () => {
+      const imp = impersonation('act');
+      const { guard } = buildGuard({ resolvedUser: admin, impersonation: imp });
+      await guard.canActivate(buildContext({ cookieToken: 'tok', method: 'PATCH', origin }).context);
+      expect(imp.recordIntent).toHaveBeenCalledTimes(1);
+      await guard.canActivate(buildContext({ cookieToken: 'tok', method: 'GET' }).context);
+      expect(imp.recordIntent).toHaveBeenCalledTimes(1); // reads are not intents
+      imp.recordIntent.mockRejectedValueOnce(new Error('Audit log unavailable; action refused'));
+      const { context, request } = buildContext({ cookieToken: 'tok', method: 'POST', origin });
+      await expect(guard.canActivate(context)).rejects.toThrow('Audit log unavailable');
+      expect(request.impersonation).toBeUndefined();
+    });
+
+    it('everything in a support session is no-store, even where a handler asks for a cache', async () => {
+      const { guard } = buildGuard({ resolvedUser: admin, impersonation: impersonation('view') });
+      const { context, response } = buildContext({ cookieToken: 'tok', method: 'GET' });
+      await guard.canActivate(context);
+      expect(response.headers['cache-control']).toBe('no-store');
+      response.setHeader('Cache-Control', 'private, max-age=3600');
+      expect(response.headers['cache-control']).toBe('no-store');
+    });
+
+    it('X-Support-Session: the matching active session passes; a missing/other/ended one is a 409 support_session_ended, never the admin own account', async () => {
+      const ok = buildGuard({ resolvedUser: admin, impersonation: impersonation('act') }).guard;
+      await expect(ok.canActivate(buildContext({ cookieToken: 'tok', method: 'GET', supportSession: 'imp_1' }).context)).resolves.toBe(true);
+      await expect(ok.canActivate(buildContext({ cookieToken: 'tok', method: 'GET', supportSession: 'other' }).context)).rejects.toMatchObject({ status: 409 });
+      const ended = buildGuard({ resolvedUser: admin }).guard; // no active session any more
+      const { context, request } = buildContext({ cookieToken: 'tok', method: 'POST', origin, supportSession: 'imp_1' });
+      await expect(ended.canActivate(context)).rejects.toMatchObject({ status: 409, response: { code: 'support_session_ended' } });
+      expect(request.user).toBeUndefined();
+      // a superadmin route ignores the header (Exit must keep working)
+      const sup = buildGuard({ resolvedUser: admin, metadata: { roles: [Role.SUPERADMIN] } }).guard;
+      await expect(sup.canActivate(buildContext({ cookieToken: 'tok', method: 'DELETE', origin, supportSession: 'imp_1' }).context)).resolves.toBe(true);
+      // and a normal customer carrying the header (e.g. logged in again in that browser) is refused too
+      const normal = { id: 'u9', role: Role.USER, approvedAt: new Date(), account: { id: 'acc_9' } };
+      await expect(buildGuard({ resolvedUser: normal }).guard.canActivate(buildContext({ cookieToken: 'tok', method: 'GET', supportSession: 'imp_1' }).context)).rejects.toMatchObject({ status: 409 });
     });
 
     it('the CSRF origin check still applies first, against the real admin request', async () => {

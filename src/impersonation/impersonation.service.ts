@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
@@ -46,6 +47,12 @@ export interface ResolvedImpersonation {
   session: ImpersonationSession;
   user: User;
   account: Account;
+}
+
+export interface ActionInfo {
+  method: string;
+  route: string;
+  params?: Record<string, unknown>;
 }
 
 /** Attached to the request by AccountGuard while a support session is in effect. */
@@ -123,6 +130,9 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
           adminSessionId,
           targetUserId: user.id,
           targetAccountId: account.id,
+          adminEmail: admin.email,
+          targetEmail: user.email,
+          targetAccountName: account.name,
           mode: dto.mode,
           reason: dto.reason ? dto.reason.slice(0, 200) : null,
           startedAt,
@@ -190,7 +200,7 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
       await this.endRow(row, 'expired');
       return null;
     }
-    const user = await this.users.findOne({ where: { id: row.targetUserId }, relations: ['account'] });
+    const user = row.targetUserId ? await this.users.findOne({ where: { id: row.targetUserId }, relations: ['account'] }) : null;
     if (!user || !user.account || user.account.deletedAt || user.role === Role.SUPERADMIN) {
       await this.endRow(row, 'target_gone');
       return null;
@@ -205,32 +215,74 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     return due.length;
   }
 
-  /**
-   * One audit entry per mutating request made while impersonating (also the refused ones). Records WHO (admin),
-   * AS WHOM (target ids), WHAT (method + route template such as `/api/brand-kits/:id`) and the outcome. Never
-   * a body, a query string, a URL with ids, a token or a header.
-   */
-  async recordAction(
-    imp: RequestImpersonation,
-    info: { method: string; route: string; status: number; blocked?: string; params?: Record<string, unknown> },
-  ): Promise<void> {
+  private resourceIds(params?: Record<string, unknown>): string[] {
     // Which things were touched: only values that are UUIDs (kit, preset, stream ids). Anything else in a URL could be a token.
-    const resourceIds = Object.values(info.params ?? {}).filter((v): v is string => typeof v === 'string' && UUID_RE.test(v));
-    await this.audit.log({ id: imp.adminUserId } as User, 'impersonated_action', 'account', imp.targetAccountId, {
+    return Object.values(params ?? {}).filter((v): v is string => typeof v === 'string' && UUID_RE.test(v));
+  }
+
+  private entry(imp: RequestImpersonation, info: ActionInfo, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    const resourceIds = this.resourceIds(info.params);
+    return {
       sessionId: imp.sessionId,
       mode: imp.mode,
       targetUserId: imp.targetUserId,
       targetAccountId: imp.targetAccountId,
       method: info.method,
       route: info.route,
-      status: info.status,
       ...(resourceIds.length ? { resourceIds } : {}),
-      ...(info.blocked ? { blocked: info.blocked } : {}),
-    });
+      ...extra,
+    };
+  }
+
+  /**
+   * FAIL CLOSED: written (and awaited) BEFORE a mutating request of an act session reaches its handler. If the
+   * audit log cannot take it the request is refused with 503, so no change can happen unrecorded. Never a body,
+   * a query string, a token or a header: method, route template, UUID route params only.
+   */
+  async recordIntent(imp: RequestImpersonation, info: ActionInfo): Promise<void> {
+    try {
+      await this.audit.logStrict(imp.adminUserId, 'impersonated_action', 'account', imp.targetAccountId, this.entry(imp, info, { phase: 'intent' }));
+    } catch (e) {
+      this.logger.error(`audit log unavailable, support action refused: ${(e as Error).message}`);
+      throw new ServiceUnavailableException('Audit log unavailable; action refused');
+    }
+  }
+
+  /**
+   * The outcome (status) of a mutating request, written after the handler. Best-effort ON PURPOSE: the change has
+   * already happened and the strict intent entry above is what proves it was recorded; failing the response now
+   * would not undo anything. A failure here is only logged.
+   */
+  async recordResult(imp: RequestImpersonation, info: ActionInfo & { status: number }): Promise<void> {
+    await this.audit.log({ id: imp.adminUserId } as User, 'impersonated_action_result', 'account', imp.targetAccountId, this.entry(imp, info, { status: info.status }));
+  }
+
+  /** A request the guard refused (view-only / blocked list / suspended): one best-effort entry with the reason. */
+  async recordRefused(imp: RequestImpersonation, info: ActionInfo & { blocked: string }): Promise<void> {
+    await this.audit.log({ id: imp.adminUserId } as User, 'impersonated_action', 'account', imp.targetAccountId, this.entry(imp, info, { status: 403, blocked: info.blocked }));
+  }
+
+  private readSeen = new Set<string>();
+
+  /** Reads are logged ONCE per (session, route template) as `impersonated_read`, so browsing is visible without flooding. */
+  async recordRead(imp: RequestImpersonation, info: ActionInfo & { status: number }): Promise<void> {
+    const key = `${imp.sessionId}|${info.method}|${info.route}`;
+    if (this.readSeen.has(key)) return;
+    if (this.readSeen.size > 20_000) this.readSeen.clear();
+    this.readSeen.add(key);
+    await this.audit.log({ id: imp.adminUserId } as User, 'impersonated_read', 'account', imp.targetAccountId, this.entry(imp, info, { status: info.status }));
+  }
+
+  /** The customer (or their account) is being deleted: end every support session on it first, with an audit entry. */
+  async endForTarget(target: { accountId?: string; userId?: string }): Promise<void> {
+    const where = target.userId ? { targetUserId: target.userId, endedAt: IsNull() } : { targetAccountId: target.accountId, endedAt: IsNull() };
+    const open = await this.sessions.find({ where });
+    for (const row of open) await this.endRow(row, 'target_gone');
   }
 
   toRequestImpersonation(row: ImpersonationSession): RequestImpersonation {
-    return { sessionId: row.id, mode: row.mode, adminUserId: row.adminUserId, targetUserId: row.targetUserId, targetAccountId: row.targetAccountId };
+    // An active row that reached the guard always has its references (they only go NULL after deletions).
+    return { sessionId: row.id, mode: row.mode, adminUserId: row.adminUserId!, targetUserId: row.targetUserId!, targetAccountId: row.targetAccountId! };
   }
 
   async toInfoFor(resolved: ResolvedImpersonation): Promise<ImpersonationInfo> {
@@ -257,14 +309,16 @@ export class ImpersonationService implements OnModuleInit, OnModuleDestroy {
     if (!res.affected) return; // someone else ended it first: one audit entry only
     row.endedAt = endedAt;
     row.endReason = reason;
-    await this.audit.log({ id: row.adminUserId } as User, 'impersonation_ended', 'account', row.targetAccountId, {
+    const meta = {
       sessionId: row.id,
       mode: row.mode,
       endReason: reason,
       targetUserId: row.targetUserId,
       targetAccountId: row.targetAccountId,
       durationSeconds: Math.max(0, Math.round((endedAt.getTime() - row.startedAt.getTime()) / 1000)),
-    });
+    };
+    if (row.adminUserId) await this.audit.log({ id: row.adminUserId } as User, 'impersonation_ended', 'account', row.targetAccountId, meta);
+    else await this.audit.logAnonymous('impersonation_ended', 'account', row.targetAccountId, { ...meta, adminEmail: row.adminEmail });
   }
 
   private async toInfo(row: ImpersonationSession, user: User, account: Account): Promise<ImpersonationInfo> {

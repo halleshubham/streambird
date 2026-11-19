@@ -1,4 +1,6 @@
+import { GUEST_EMAIL_MESSAGE } from '../impersonation/blocked-when-impersonating';
 import {
+  ForbiddenException,
   BadRequestException,
   Inject,
   Injectable,
@@ -131,7 +133,17 @@ export class StreamSchedulingService {
     @Inject(EMAIL_SERVICE) private readonly email: EmailService,
   ) {}
 
-  async schedule(account: Account, dto: ScheduleStreamDto): Promise<ScheduleDetail> {
+  /**
+   * Support sessions (superadmin acting as a customer) must not send StreamBird invitation emails in the
+   * customer's name. Scheduling without guests, editing without notifying, and deleting stay allowed.
+   */
+  private async hasEmailInvites(account: Account, streamId: string): Promise<boolean> {
+    const session = await this.studioSessions.findByLiveStreamId(streamId);
+    return !!session && (await this.studioSessions.listActiveInvites(session.id, account.id)).some((i) => i.email);
+  }
+
+  async schedule(account: Account, dto: ScheduleStreamDto, impersonating = false): Promise<ScheduleDetail> {
+    if (impersonating && dto.guestEmails && dto.guestEmails.length > 0) throw new ForbiddenException(GUEST_EMAIL_MESSAGE);
     const scheduledAt = this.parseFutureDate(dto.scheduledAt);
     this.assertValidTimezone(dto.timezone);
     await this.streamsService.assertDestinationCount(account.id, new Set(dto.destinationConnectionIds).size);
@@ -205,8 +217,10 @@ export class StreamSchedulingService {
     return this.buildDetail(account, streamId);
   }
 
-  async update(account: Account, streamId: string, dto: UpdateScheduleDto): Promise<ScheduleDetail> {
+  async update(account: Account, streamId: string, dto: UpdateScheduleDto, impersonating = false): Promise<ScheduleDetail> {
     const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    // An edit would tell the existing guests: refuse unless the caller opts out of notifying (notifyGuests: false).
+    if (impersonating && dto.notifyGuests !== false && (await this.hasEmailInvites(account, stream.id))) throw new ForbiddenException(GUEST_EMAIL_MESSAGE);
     const before = { title: stream.title, scheduledAt: stream.scheduledAt?.getTime(), description: stream.description, notes: stream.guestNotes, duration: stream.expectedDurationMinutes, visibility: stream.visibility };
     const platformWarnings: string[] = [];
 
@@ -326,8 +340,10 @@ export class StreamSchedulingService {
   }
 
   /** Cancels a stream that hasn't started: tells every invited guest, then ends it (which also revokes every link). */
-  async cancel(account: Account, streamId: string): Promise<void> {
+  async cancel(account: Account, streamId: string, impersonating = false): Promise<void> {
     const stream = await this.loadScheduledOrThrow(account.id, streamId);
+    // Cancelling emails every invited guest and has no opt-out.
+    if (impersonating && (await this.hasEmailInvites(account, stream.id))) throw new ForbiddenException(GUEST_EMAIL_MESSAGE);
     const session = await this.studioSessions.findByLiveStreamId(stream.id);
     const invites = (await this.studioSessions.listActiveInvites(session!.id, account.id)).filter((i) => i.email);
 
