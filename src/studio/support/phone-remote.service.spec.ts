@@ -150,7 +150,7 @@ describe('PhoneRemoteService queue', () => {
   });
 
   it('ack: matches only a command pending for THAT stream and account, once; no replay', async () => {
-    const { svc, events } = build();
+    const { svc, events, clock } = build();
     await poll(svc);
     await svc.poll({ streamId: S2, ...base }).result;
     svc.enqueue(S1, cmd('a'));
@@ -160,9 +160,9 @@ describe('PhoneRemoteService queue', () => {
     expect(svc.ack({ streamId: S1, accountId: 'acc', id: 5, ok: true })).toBe('ignored');
     expect(svc.ack({ streamId: S1, accountId: 'acc', id: 'a', ok: 'yes' })).toBe('ignored');
     expect(events.ack).toHaveLength(0);
-    expect(svc.ack({ streamId: S1, accountId: 'acc', id: 'a', ok: false, error: 'x'.repeat(300), appliedAt: '2026-01-01T00:00:00Z' })).toBe('accepted');
+    expect(svc.ack({ streamId: S1, accountId: 'acc', id: 'a', ok: false, error: 'x'.repeat(300), appliedAt: new Date(clock() - 1000).toISOString() })).toBe('accepted');
     expect(events.ack).toHaveLength(1);
-    expect(events.ack[0]).toMatchObject({ streamId: S1, id: 'a', ok: false, appliedAt: Date.parse('2026-01-01T00:00:00Z') });
+    expect(events.ack[0]).toMatchObject({ streamId: S1, id: 'a', ok: false, appliedAt: clock() - 1000 });
     expect(events.ack[0].error).toHaveLength(120);
     expect(svc.ack({ streamId: S1, accountId: 'acc', id: 'a', ok: true })).toBe('ignored'); // replay
     expect(svc.pendingCount(S1)).toBe(0);
@@ -247,5 +247,29 @@ describe('PhoneRemoteService state', () => {
     expect(svc.appVersion(S1)).toBe('1.0.14');
     advance(PHONE_ACTIVE_MS + 1);
     expect(svc.getState(S1)).toBeNull();
+  });
+});
+
+describe('PhoneRemoteService hygiene', () => {
+  it('clamps appliedAt to [now-5 min, now] and strips bidi / format / control characters from the error', async () => {
+    const { svc, events, clock } = build();
+    await poll(svc);
+    for (const id of ['a', 'b', 'c']) svc.enqueue(S1, cmd(id));
+    const iso = (ms: number) => new Date(ms).toISOString();
+    svc.ack({ streamId: S1, accountId: 'acc', id: 'a', ok: true, appliedAt: iso(clock() + 3_600_000) }); // future
+    svc.ack({ streamId: S1, accountId: 'acc', id: 'b', ok: true, appliedAt: iso(clock() - 3_600_000) }); // too old
+    svc.ack({ streamId: S1, accountId: 'acc', id: 'c', ok: false, error: 'x\u202Ey\u200Bz\u0007\u2028 w', appliedAt: iso(clock() - 60_000) });
+    expect(events.ack[0].appliedAt).toBe(clock());
+    expect(events.ack[1].appliedAt).toBe(clock());
+    expect(events.ack[2].appliedAt).toBe(clock() - 60_000);
+    expect(events.ack[2].error).toBe('xyz w');
+  });
+  it('has a per-account request budget checked before any database read', () => {
+    const { svc } = build();
+    let ok = 0;
+    for (let i = 0; i < 300; i++) if (svc.allowAccount('poll', 'acc')) ok++;
+    expect(ok).toBe(240);
+    expect(svc.allowAccount('poll', 'other')).toBe(true);
+    expect(svc.allowAccount('ack', 'acc')).toBe(true);
   });
 });

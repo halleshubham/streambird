@@ -6,7 +6,7 @@ import { StreamStatus } from '../../common/enums/stream-status.enum';
 import { AccountGuard, AccountRequest } from '../../common/guards/account.guard';
 import { BlockedWhenImpersonating } from '../../impersonation/blocked-when-impersonating';
 import { StudioSessionsService } from '../studio-sessions.service';
-import { PhoneRemoteService, PHONE_MAX_WAIT_SEC } from './phone-remote.service';
+import { PhoneRemoteService, PHONE_MAX_AFTER_AHEAD, PHONE_MAX_WAIT_SEC } from './phone-remote.service';
 
 /**
  * The Android app's remote-control channel (see `.claude/docs/backend.md` "Phone remote control"): the phone long-polls
@@ -14,6 +14,7 @@ import { PhoneRemoteService, PHONE_MAX_WAIT_SEC } from './phone-remote.service';
  * the stream owner's own cookie session. `@BlockedWhenImpersonating('phone-channel')` makes AccountGuard answer 403 to
  * ANY support session (view or act, any method) before the handler runs, so a support person can neither read the
  * queue nor answer a command; a second check below refuses an `impersonation` principal and API-key callers anyway.
+ * The routes are ACCOUNT-scoped, not user-scoped: any signed-in member of the owning account (team) may poll (accepted).
  */
 @Controller('streams')
 @UseGuards(AccountGuard)
@@ -51,13 +52,24 @@ export class PhoneRemoteController {
     const after = afterRaw === undefined || afterRaw === '' ? 0 : Number(afterRaw);
     const wait = waitRaw === undefined || waitRaw === '' ? PHONE_MAX_WAIT_SEC : Number(waitRaw);
     if (!Number.isSafeInteger(after) || after < 0 || !Number.isFinite(wait) || wait < 0) throw new BadRequestException('after and wait must be non-negative whole numbers');
-    const { studioSessionId } = await this.resolve(account, id, req);
-    const handle = this.phone.poll({ streamId: id, studioSessionId, accountId: account.id, after, waitSec: Math.min(wait, PHONE_MAX_WAIT_SEC) });
-    // The phone hung up (or the network dropped): free the hold now.
+    // A `after` far beyond any real sequence number (they start at the epoch-ms clock) would poison the stream's counter.
+    if (after > Date.now() + PHONE_MAX_AFTER_AHEAD) throw new BadRequestException('after is not a sequence number of this stream');
+    if (!this.phone.allowAccount('poll', account.id)) throw new HttpException('Too many polls', 429);
+    // Registered BEFORE the database lookups: a client that hangs up during them must never get a hold.
+    let gone = false;
+    let handle: { cancel(): void } | null = null;
     res.on('close', () => {
-      if (!res.writableEnded) handle.cancel();
+      if (!res.writableEnded) {
+        gone = true;
+        handle?.cancel();
+      }
     });
-    const result = await handle.result;
+    const { studioSessionId } = await this.resolve(account, id, req);
+    if (gone || req.destroyed || res.destroyed) return;
+    const polled = this.phone.poll({ streamId: id, studioSessionId, accountId: account.id, after, waitSec: Math.min(wait, PHONE_MAX_WAIT_SEC) });
+    handle = polled;
+    if (gone) polled.cancel();
+    const result = await polled.result;
     if (res.writableEnded || res.destroyed) return;
     if (result.status === 'limited') {
       res.status(429).json({ statusCode: 429, message: 'Too many polls' });
@@ -72,6 +84,7 @@ export class PhoneRemoteController {
   @HttpCode(204)
   async ack(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: Response): Promise<void> {
     res.setHeader('Cache-Control', 'no-store');
+    if (!this.phone.allowAccount('ack', account.id)) throw new HttpException('Too many acknowledgements', 429);
     await this.resolve(account, id, req);
     const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
     const outcome = this.phone.ack({ streamId: id, accountId: account.id, id: b.id, ok: b.ok, error: b.error, appliedAt: b.appliedAt });
@@ -82,6 +95,7 @@ export class PhoneRemoteController {
   @HttpCode(204)
   async putState(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown, @Req() req: AccountRequest, @Res({ passthrough: true }) res: Response): Promise<void> {
     res.setHeader('Cache-Control', 'no-store');
+    if (!this.phone.allowAccount('state', account.id)) throw new HttpException('Too many state updates', 429);
     const { studioSessionId } = await this.resolve(account, id, req);
     const outcome = this.phone.putState({ streamId: id, studioSessionId, accountId: account.id, body });
     if (outcome === 'limited') throw new HttpException('Too many state updates', 429);

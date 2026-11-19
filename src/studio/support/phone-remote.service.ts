@@ -13,6 +13,10 @@ export const PHONE_COMMAND_TTL_MS = 120_000;
 export const PHONE_MAX_HELD_GLOBAL = 200;
 export const PHONE_MAX_HELD_PER_ACCOUNT = 10;
 export const PHONE_STATE_BODY_MAX_BYTES = 32 * 1024;
+/** `after` may exceed the clock by at most this much (sequence numbers start at the epoch-ms clock). */
+export const PHONE_MAX_AFTER_AHEAD = 1e9;
+/** Per ACCOUNT, checked before any database read: a normal phone polls ~2.4 times a minute (up to ~2/s while commands flow). */
+const ACCOUNT_LIMITS = { poll: 240, ack: 120, state: 120 } as const;
 const POLL_LIMIT = { limit: 40, windowMs: 10_000 };
 const ACK_LIMIT = { limit: 40, windowMs: 10_000 };
 /** 5 per second per stream. */
@@ -99,6 +103,8 @@ export class PhoneRemoteService implements OnModuleInit, OnModuleDestroy {
   /** Overridable in unit tests. */
   now: () => number = () => Date.now();
   private readonly channels = new Map<string, Channel>();
+  private accountLimiters = { poll: new SlidingWindowLimiter(ACCOUNT_LIMITS.poll, 60_000), ack: new SlidingWindowLimiter(ACCOUNT_LIMITS.ack, 60_000), state: new SlidingWindowLimiter(ACCOUNT_LIMITS.state, 60_000) };
+  private sweeps = 0;
   private heldGlobal = 0;
   private readonly heldByAccount = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -157,6 +163,11 @@ export class PhoneRemoteService implements OnModuleInit, OnModuleDestroy {
     return !!ch.holder || (ch.lastPollAt > 0 && this.now() - ch.lastPollAt < PHONE_ACTIVE_MS);
   }
 
+  /** Cheap per-account request budget, checked BEFORE the controller touches the database (wait=0 floods). */
+  allowAccount(kind: 'poll' | 'ack' | 'state', accountId: string): boolean {
+    return this.accountLimiters[kind].allow(accountId, this.now());
+  }
+
   // ---- the phone's three calls ---------------------------------------------------------------------------------
 
   /**
@@ -212,9 +223,11 @@ export class PhoneRemoteService implements OnModuleInit, OnModuleDestroy {
     const index = ch.queue.findIndex((c) => c.id === args.id);
     if (index < 0) return 'ignored'; // unknown, already answered, timed out or expired: no replay
     ch.queue.splice(index, 1);
-    const error = typeof args.error === 'string' ? args.error.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 120) : undefined;
+    // Control, bidi and other format characters (RLO, zero-width, line separators) never reach the support page or the audit log.
+    const error = typeof args.error === 'string' ? args.error.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim().slice(0, 120) : undefined;
     const parsed = typeof args.appliedAt === 'string' ? Date.parse(args.appliedAt) : NaN;
-    const event: PhoneAckEvent = { streamId: ch.streamId, id: args.id, ok: args.ok, ...(!args.ok ? { error: error || 'The phone app could not apply it' } : {}), appliedAt: Number.isFinite(parsed) ? parsed : this.now() };
+    const nowMs = this.now();
+    const event: PhoneAckEvent = { streamId: ch.streamId, id: args.id, ok: args.ok, ...(!args.ok ? { error: error || 'The phone app could not apply it' } : {}), appliedAt: Number.isFinite(parsed) && parsed >= nowMs - 5 * 60_000 && parsed <= nowMs ? parsed : nowMs };
     for (const cb of this.ackListeners) cb(event);
     return 'accepted';
   }
@@ -368,6 +381,10 @@ export class PhoneRemoteService implements OnModuleInit, OnModuleDestroy {
 
   private sweep(): void {
     const now = this.now();
+    if (++this.sweeps % 120 === 0) {
+      // Every ~10 minutes: forget idle accounts' windows (the windows are 1 minute long).
+      this.accountLimiters = { poll: new SlidingWindowLimiter(ACCOUNT_LIMITS.poll, 60_000), ack: new SlidingWindowLimiter(ACCOUNT_LIMITS.ack, 60_000), state: new SlidingWindowLimiter(ACCOUNT_LIMITS.state, 60_000) };
+    }
     for (const ch of [...this.channels.values()]) {
       this.expire(ch);
       if (ch.active && !this.activeNow(ch)) this.markInactive(ch);
