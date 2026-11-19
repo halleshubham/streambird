@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import { Body, Controller, Get, Headers, HttpCode, Post, RawBodyRequest, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { BillingService } from './billing.service';
@@ -19,12 +20,14 @@ export class BillingController {
   }
 
   @Post('orders')
+  @BlockedWhenImpersonating('billing')
   @UseGuards(AccountGuard)
   createOrder(@CurrentAccount() account: Account, @CurrentUser() user: User | undefined, @Body() dto: CreateOrderDto) {
     return this.billing.createOrder(account, user, dto.planKey);
   }
 
   @Post('verify')
+  @BlockedWhenImpersonating('billing')
   @HttpCode(200)
   @UseGuards(AccountGuard)
   verify(@CurrentAccount() account: Account, @Body() dto: VerifyPaymentDto) {
@@ -37,12 +40,14 @@ export class BillingController {
 
   // ---- autopay ----
   @Post('subscriptions')
+  @BlockedWhenImpersonating('billing')
   @UseGuards(AccountGuard)
   createSubscription(@CurrentAccount() account: Account, @CurrentUser() user: User | undefined, @Body() dto: CreateOrderDto) {
     return this.billing.createSubscription(account, user, dto.planKey);
   }
 
   @Post('subscriptions/verify')
+  @BlockedWhenImpersonating('billing')
   @HttpCode(200)
   @UseGuards(AccountGuard)
   verifySubscription(@CurrentAccount() account: Account, @Body() dto: VerifySubscriptionDto) {
@@ -60,6 +65,7 @@ export class BillingController {
   }
 
   @Post('subscription/cancel')
+  @BlockedWhenImpersonating('billing')
   @HttpCode(200)
   @UseGuards(AccountGuard)
   cancelSubscription(@CurrentAccount() account: Account) {

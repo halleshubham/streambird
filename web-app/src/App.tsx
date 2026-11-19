@@ -15,6 +15,7 @@ import { AndroidAppPage } from './routes/AndroidAppPage';
 import { AccountDeletedPage } from './routes/AccountDeletedPage';
 import { CookieBanner } from './components/CookieBanner';
 import { RouteHead } from './components/RouteHead';
+import { ImpersonationBanner } from './components/ImpersonationBanner';
 import { BirdLoader } from './components/BirdLoader';
 
 /** Signed-in, guest and admin screens load on demand so the public pages (landing, login, legal) ship a much smaller script. */
@@ -46,6 +47,7 @@ export function App() {
   return (
     <>
     <RouteHead />
+    <ImpersonationBanner />
     <Suspense fallback={<div className="page-loading"><BirdLoader loading compact /></div>}>
     <Routes>
       {/* Anonymous -> public marketing page; logged in -> straight to

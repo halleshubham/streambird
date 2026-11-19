@@ -29,6 +29,8 @@ import { SuperadminBrandKitsController } from './superadmin-brand-kits.controlle
 import { SuperadminBrandKitsService } from './superadmin-brand-kits.service';
 import { PlansModule } from '../plans/plans.module';
 import { SuperadminPlansController } from './superadmin-plans.controller';
+import { SuperadminImpersonationController } from './superadmin-impersonation.controller';
+import { ImpersonationModule } from '../impersonation/impersonation.module';
 
 @Module({
   imports: [
@@ -41,6 +43,7 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
     StreamsModule,
     PlansModule,
     AssetsModule,
+    ImpersonationModule,
   ],
   controllers: [
     SuperadminController,
@@ -49,6 +52,7 @@ import { SuperadminPlansController } from './superadmin-plans.controller';
     SuperadminAccountsController,
     SuperadminPlansController,
     SuperadminBrandKitsController,
+    SuperadminImpersonationController,
   ],
   providers: [SuperadminSeedService, SuperadminAnalyticsService, SuperadminAccountsService, SuperadminBrandKitsService, ApprovalDigestService],
 })

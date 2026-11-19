@@ -2035,7 +2035,7 @@ select:focus-visible {
 
 .studio-topbar {
   position: sticky;
-  top: 8px;
+  top: calc(8px + var(--imp-h, 0px));
   z-index: 30;
   display: flex;
   align-items: center;

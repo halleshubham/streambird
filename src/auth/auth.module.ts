@@ -12,12 +12,14 @@ import { FacebookLoginService } from './facebook-login.service';
 import { SessionGuard } from '../common/guards/session.guard';
 import { UsersModule } from '../users/users.module';
 import { EmailModule } from '../email/email.module';
+import { ImpersonationModule } from '../impersonation/impersonation.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([LoginCode, UserSession]),
     UsersModule,
     EmailModule,
+    ImpersonationModule,
     // AuthModule cannot import CommonModule (it imports us); its own limiter for the public mobile sign-in.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],

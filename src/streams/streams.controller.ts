@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import {
   Body,
   Controller,
@@ -43,6 +44,7 @@ export class StreamsController {
   ) {}
 
   @Post()
+  @BlockedWhenImpersonating('go-live')
   @UseGuards(StreamCreateThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } }) // 5 stream-creates/min/account
   async create(@CurrentAccount() account: Account, @Body() dto: CreateStreamDto) {
@@ -186,6 +188,7 @@ export class StreamsController {
 
   /** Starts a scheduled stream: creates the platform broadcasts and goes LIVE. */
   @Post(':id/start')
+  @BlockedWhenImpersonating('go-live')
   async start(@CurrentAccount() account: Account, @Param('id', ParseUUIDPipe) id: string) {
     const stream = await this.streamsService.start(id, account.id);
     return plainToInstance(StreamResponseDto, stream, { excludeExtraneousValues: true });
@@ -242,6 +245,7 @@ export class StreamsController {
   }
 
   @Post(':id/destinations/:destinationId/retry')
+  @BlockedWhenImpersonating('go-live')
   async retry(
     @CurrentAccount() account: Account,
     @Param('id', ParseUUIDPipe) id: string,

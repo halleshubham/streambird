@@ -41,6 +41,20 @@ export class AuditLogService {
   }
 
   /**
+   * Like log(), but a failed write THROWS. For actions that must not happen unrecorded (starting a support
+   * session as a customer): the caller undoes the action and fails instead.
+   */
+  async logStrict(
+    actorUserId: string,
+    action: string,
+    targetType: string,
+    targetId: string | null,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.entries.save(this.entries.create({ actorUserId, action, targetType, targetId, metadata: metadata ?? null }));
+  }
+
+  /**
    * An entry with no actor row: for a person who has just deleted their own account (the user row, which the
    * actor id would point to, is gone). Ids only in `metadata` -- never an email or a name.
    */

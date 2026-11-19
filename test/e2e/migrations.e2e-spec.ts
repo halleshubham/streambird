@@ -619,4 +619,57 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+
+  it('0036 adds impersonation_sessions next to existing users and sessions without touching them, allows one active session per admin, and is re-runnable', async () => {
+    const live = `sb_mig_${Date.now()}_imp`;
+    const a = new PgClient({ connectionString: adminUrl });
+    await a.connect();
+    await a.query(`CREATE DATABASE ${live}`);
+    await a.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0035', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      const accA = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('imp-admin-acct', 'himp1', 'free', 2) RETURNING id`)).rows[0].id;
+      const accT = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('imp-target-acct', 'himp2', 'pro', 30) RETURNING id`)).rows[0].id;
+      const admin = (await db.query(`INSERT INTO users (email, account_id, role) VALUES ('imp-admin@test.dev', $1, 'superadmin') RETURNING id`, [accA])).rows[0].id;
+      const target = (await db.query(`INSERT INTO users (email, account_id, role) VALUES ('imp-target@test.dev', $1, 'user') RETURNING id`, [accT])).rows[0].id;
+      const sess = (await db.query(`INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, 'hash-imp', now() + interval '1 day') RETURNING id`, [admin])).rows[0].id;
+      await expect(db.query(`SELECT 1 FROM impersonation_sessions`)).rejects.toThrow();
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0036%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply stays fine
+
+      // Nothing that existed changed.
+      expect((await db.query(`SELECT count(*)::int AS n FROM users`)).rows[0].n).toBe(2);
+      expect((await db.query(`SELECT count(*)::int AS n FROM user_sessions`)).rows[0].n).toBe(1);
+      expect((await db.query(`SELECT count(*)::int AS n FROM impersonation_sessions`)).rows[0].n).toBe(0);
+
+      const insert = (mode: string, extra = 'NULL') =>
+        db.query(
+          `INSERT INTO impersonation_sessions (admin_user_id, admin_session_id, target_user_id, target_account_id, mode, expires_at, ended_at)
+           VALUES ($1, $2, $3, $4, $5, now() + interval '30 minutes', ${extra}) RETURNING id`,
+          [admin, sess, target, accT, mode],
+        );
+      await expect(insert('root')).rejects.toThrow(); // mode is view | act
+      const first = (await insert('view')).rows[0].id;
+      await expect(insert('act')).rejects.toThrow(); // one ACTIVE session per admin
+      await db.query(`UPDATE impersonation_sessions SET ended_at = now(), end_reason = 'exit' WHERE id = $1`, [first]);
+      await insert('act'); // ended ones are history, a new one is fine
+      expect((await db.query(`SELECT count(*)::int AS n FROM impersonation_sessions WHERE admin_user_id = $1`, [admin])).rows[0].n).toBe(2);
+      await expect(db.query(`UPDATE impersonation_sessions SET reason = $1`, ['x'.repeat(201)])).rejects.toThrow();
+      // Deleting the target (account deletion) removes its support-session rows; the audit log is the lasting record.
+      await db.query(`DELETE FROM users WHERE id = $1`, [target]);
+      expect((await db.query(`SELECT count(*)::int AS n FROM impersonation_sessions`)).rows[0].n).toBe(0);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

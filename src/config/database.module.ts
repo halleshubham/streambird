@@ -23,6 +23,7 @@ import { BrandKit } from '../assets/entities/brand-kit.entity';
 import { BrandKitAd } from '../assets/entities/brand-kit-ad.entity';
 import { StreamPreset } from '../presets/entities/stream-preset.entity';
 import { Company } from '../companies/entities/company.entity';
+import { ImpersonationSession } from '../impersonation/entities/impersonation-session.entity';
 import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-log-entry.entity';
 
 @Module({
@@ -52,6 +53,7 @@ import { SuperadminAuditLogEntry } from '../audit-log/entities/superadmin-audit-
           UserSession,
           Company,
           SuperadminAuditLogEntry,
+          ImpersonationSession,
           Asset,
           BrandKit,
           BrandKitAd,

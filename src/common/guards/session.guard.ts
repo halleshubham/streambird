@@ -12,6 +12,8 @@ import { Account } from '../../accounts/entities/account.entity';
 export interface SessionRequest extends Request {
   user?: User;
   account?: Account;
+  /** The caller's own `user_sessions` id. SessionGuard never swaps in an impersonated customer. */
+  sessionId?: string;
 }
 
 const SESSION_COOKIE_NAME = 'sb_session';
@@ -35,6 +37,7 @@ export class SessionGuard implements CanActivate {
 
     request.user = resolved.user;
     request.account = resolved.account;
+    request.sessionId = resolved.sessionId;
     return true;
   }
 }

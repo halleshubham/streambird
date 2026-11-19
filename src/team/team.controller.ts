@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import {
   Body,
   Controller,
@@ -44,12 +45,14 @@ export class TeamController {
   }
 
   @Post('invite')
+  @BlockedWhenImpersonating('team-access')
   async invite(@CurrentAccount() account: Account, @Body() dto: InviteUserDto) {
     const user = await this.teamService.invite(account, dto.email);
     return { id: user.id, email: user.email, role: user.role };
   }
 
   @Delete(':userId')
+  @BlockedWhenImpersonating('team-access')
   @HttpCode(204)
   async remove(
     @CurrentAccount() account: Account,

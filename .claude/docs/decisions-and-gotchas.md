@@ -20,6 +20,7 @@ Short "why" records. When code looks odd, check here before "fixing" it. Add a l
 - One global `index.css`, no CSS framework; dark mode via `prefers-color-scheme` only.
 - Studio timing uses a **Web Worker tick** so broadcasts do not freeze in background tabs.
 - Guest password is verified **before** the guest enters the room (new public throttled endpoint) *and* again at socket handshake; the host's password only applies to invites created after pressing **Save**.
+- **Support sessions (impersonation) are a server-side row, not a cookie or token**: the row (keyed by the admin's own login session) is the single authority, so there is nothing extra to steal, it cannot reach the admin's other browsers/app/API key, it expires and can be ended server-side, and every request is re-checked. `/superadmin/*` always authenticates as the real admin (so a customer principal can never reach it and Exit always works). The blocked list is one registry + decorator (`blocked-when-impersonating.ts`) with a safety-net test; a new sensitive endpoint must be marked or exempted with a reason. See `backend.md` "Support sessions".
 - Squash merges; one change per PR; the user decides when to merge and deploy.
 
 ## Traps (each one has bitten)

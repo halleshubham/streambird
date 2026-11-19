@@ -1,0 +1,78 @@
+/* Support-session banner (superadmin "view as / act as"). Fixed to the top on every authenticated page,
+   including the studio. Its own tokens so it can never be mistaken for app chrome, in both colour schemes. */
+:root {
+  --support-bg: #b45309;
+  --support-fg: #fff;
+  --support-line: #fde68a;
+  --imp-h: 0px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --support-bg: #fbbf24;
+    --support-fg: #1f1300;
+    --support-line: #78350f;
+  }
+}
+
+/* The page gets the banner's height as top padding (the banner itself is fixed) and sticky bars sit below it. */
+body[data-impersonating] {
+  padding-top: var(--imp-h);
+}
+
+.support-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 8px 16px;
+  background: var(--support-bg);
+  color: var(--support-fg);
+  border-bottom: 3px solid var(--support-line);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.support-banner-icon {
+  flex: none;
+}
+.support-banner-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.support-banner-text strong {
+  font-weight: 800;
+}
+.support-banner-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.support-banner-exit {
+  flex: none;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 2px solid var(--support-fg);
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--support-fg);
+  font-weight: 800;
+  cursor: pointer;
+}
+.support-banner-exit:hover:not(:disabled) {
+  background: var(--support-fg);
+  color: var(--support-bg);
+}
+@media (max-width: 640px) {
+  .support-banner {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .support-banner-text {
+    flex-basis: calc(100% - 40px);
+  }
+}

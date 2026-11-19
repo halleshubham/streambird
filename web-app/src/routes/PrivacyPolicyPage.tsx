@@ -16,7 +16,7 @@ export function PrivacyPolicyPage() {
   const consentMode = useConsentBannerEnabled();
 
   return (
-    <LegalLayout title="StreamBird Privacy Policy" updated="Last updated: November 3, 2026">
+    <LegalLayout title="StreamBird Privacy Policy" updated="Last updated: November 19, 2026">
 
         <p>
           StreamBird ("StreamBird", "we", "us") is a multi-platform live-streaming
@@ -73,6 +73,12 @@ export function PrivacyPolicyPage() {
           your own stream history and status, and keep the service secure and
           reliable. We do not sell your information, and we do not use it for
           advertising.
+        </p>
+        <p data-testid="privacy-support-access">
+          <strong>Support access:</strong> authorised StreamBird support staff may
+          access an account to resolve an issue, and may change its settings when
+          that helps. They cannot make payments, change your sign-in details, connect
+          or disconnect your channels, or go live as you. Every such access is logged.
         </p>
 
         <h2>3. Google user data ("Limited Use")</h2>

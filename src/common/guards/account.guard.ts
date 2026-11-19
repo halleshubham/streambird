@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AccountsService } from '../../accounts/accounts.service';
 import { AuthService } from '../../auth/auth.service';
@@ -13,10 +14,22 @@ import { Account } from '../../accounts/entities/account.entity';
 import { User } from '../../users/entities/user.entity';
 import { Role } from '../enums/role.enum';
 import { legacyOrigins } from '../legacy-hosts';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+import {
+  BLOCKED_WHEN_IMPERSONATING_KEY,
+  impersonationBlockMessage,
+  VIEW_ONLY_MESSAGE,
+} from '../../impersonation/blocked-when-impersonating';
+import { ImpersonationService, RequestImpersonation } from '../../impersonation/impersonation.service';
 
 export interface AccountRequest extends Request {
   account?: Account;
   user?: User;
+  /** Only while a superadmin support session is in effect: the real person (the admin). `user` is then the customer. */
+  actor?: User;
+  impersonation?: RequestImpersonation;
+  /** The caller's own `user_sessions` id (cookie path only). */
+  sessionId?: string;
 }
 
 const SESSION_COOKIE_NAME = 'sb_session';
@@ -34,6 +47,8 @@ export class AccountGuard implements CanActivate {
     private readonly accountsService: AccountsService,
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly impersonation: ImpersonationService,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -119,8 +134,55 @@ export class AccountGuard implements CanActivate {
       }
     }
 
+    // Support session (superadmin "view as / act as"). Only a superadmin's own login can have one, only on
+    // routes that are not superadmin routes (those always authenticate as the real admin, so an impersonated
+    // customer can never reach them), and only while the server-side session row is unended and unexpired.
+    // Everything above (approval, suspension, CSRF origin) was checked against the REAL admin.
+    if (resolved.user.role === Role.SUPERADMIN && !this.isSuperadminRoute(context)) {
+      const imp = await this.impersonation.resolveForGuard(resolved.sessionId, resolved.user);
+      if (imp) {
+        const req = this.impersonation.toRequestImpersonation(imp.session);
+        const refuse = async (message: string, blocked: string): Promise<never> => {
+          await this.impersonation.recordAction(req, {
+            method: request.method,
+            route: `${request.baseUrl ?? ''}${request.route?.path ?? ''}`,
+            status: 403,
+            blocked,
+            params: request.params,
+          });
+          throw new ForbiddenException(message);
+        };
+        // View mode is read-only for every request that is not a plain read.
+        if (imp.session.mode === 'view' && !SAFE_METHODS.has(request.method)) {
+          return refuse(VIEW_ONLY_MESSAGE, 'view-only');
+        }
+        // The blocked list (see impersonation/blocked-when-impersonating.ts): both modes, any method.
+        const category = this.reflector.getAllAndOverride<string | undefined>(BLOCKED_WHEN_IMPERSONATING_KEY, [
+          context.getHandler(),
+          context.getClass(),
+        ]);
+        if (category) return refuse(impersonationBlockMessage(category), category);
+        // A customer suspended after the session started can still be looked at, no longer changed.
+        if (imp.session.mode === 'act' && (imp.account.suspendedAt || imp.user.suspendedAt)) {
+          return refuse('This account has been suspended. Support sessions on suspended accounts are view-only.', 'suspended');
+        }
+        request.actor = resolved.user;
+        request.sessionId = resolved.sessionId;
+        request.impersonation = req;
+        request.user = imp.user;
+        request.account = imp.account;
+        return true;
+      }
+    }
+
     request.account = resolved.account;
     request.user = resolved.user;
+    request.sessionId = resolved.sessionId;
     return true;
+  }
+
+  private isSuperadminRoute(context: ExecutionContext): boolean {
+    const roles = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [context.getHandler(), context.getClass()]);
+    return !!roles && roles.includes(Role.SUPERADMIN);
   }
 }

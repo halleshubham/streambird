@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AccountsModule } from '../accounts/accounts.module';
 import { AuthModule } from '../auth/auth.module';
+import { ImpersonationModule } from '../impersonation/impersonation.module';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { AccountGuard } from './guards/account.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -13,6 +14,7 @@ import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.gua
     // AccountGuard on AccountsController's /accounts/me route.
     forwardRef(() => AccountsModule),
     AuthModule,
+    ImpersonationModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
   ],
   providers: [ApiKeyGuard, AccountGuard, RolesGuard, StreamCreateThrottlerGuard],
@@ -28,6 +30,7 @@ import { StreamCreateThrottlerGuard } from './guards/stream-create-throttler.gua
     ThrottlerModule,
     AccountsModule,
     AuthModule,
+    ImpersonationModule,
   ],
 })
 export class CommonModule {}

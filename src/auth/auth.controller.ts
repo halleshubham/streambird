@@ -35,6 +35,7 @@ import { UsersService } from '../users/users.service';
 import { Role } from '../common/enums/role.enum';
 import { normalizePhone } from '../common/phone.util';
 import { SetPhoneDto } from './dto/set-phone.dto';
+import { ImpersonationInfo, ImpersonationService } from '../impersonation/impersonation.service';
 
 const SESSION_COOKIE_NAME = 'sb_session';
 const OAUTH_STATE_COOKIE_NAME = 'sb_oauth_state';
@@ -54,6 +55,8 @@ interface AuthResponse {
     needsPhone: boolean;
   };
   accountId: string;
+  /** Only on GET /auth/me while a superadmin support session is active: `user` is then the customer. */
+  impersonation?: ImpersonationInfo;
 }
 
 @Controller('auth')
@@ -66,6 +69,7 @@ export class AuthController {
     private readonly config: ConfigService,
     private readonly usersService: UsersService,
     private readonly appHandoff: AppHandoffService,
+    private readonly impersonation: ImpersonationService,
   ) {}
 
   private cookieOptions(expiresAt?: Date) {
@@ -428,6 +432,8 @@ export class AuthController {
     if (token) {
       await this.authService.logout(token);
     }
+    // A support session belongs to this login: it ends with it.
+    await this.impersonation.endForAdminSession(req.sessionId);
     res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
   }
 
@@ -441,6 +447,17 @@ export class AuthController {
   @Get('me')
   @UseGuards(SessionGuard)
   async me(@CurrentUser() user: User, @Req() req: SessionRequest): Promise<AuthResponse> {
+    // While a superadmin support session is active the app renders AS the customer (user + account) and
+    // learns about the session from `impersonation`. Everything else on this controller stays the real person.
+    if (user.role === Role.SUPERADMIN && req.sessionId) {
+      const imp = await this.impersonation.resolveForGuard(req.sessionId, user);
+      if (imp) {
+        const body = this.toAuthResponse(imp.user, imp.account.id);
+        body.user.needsPhone = false;
+        body.impersonation = await this.impersonation.toInfoFor(imp);
+        return body;
+      }
+    }
     return this.toAuthResponse(user, req.account!.id);
   }
 

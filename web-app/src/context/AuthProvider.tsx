@@ -1,23 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import * as authApi from '../api/auth';
-import type { AuthUser } from '../types/api';
+import type { AuthUser, ImpersonationInfo } from '../types/api';
 import { AuthContext, type AuthStatus } from './AuthContext';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [impersonation, setImpersonation] = useState<ImpersonationInfo | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await authApi.me();
       setUser(res.user);
       setAccountId(res.accountId);
+      setImpersonation(res.impersonation ?? null);
       setStatus('authenticated');
     } catch {
       setUser(null);
       setAccountId(null);
+      setImpersonation(null);
       setStatus('anonymous');
     }
   }, []);
@@ -35,12 +38,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await authApi.verifyCode(email, code);
     setUser(res.user);
     setAccountId(res.accountId);
+    setImpersonation(null);
     setStatus('authenticated');
   }, []);
 
   const setSession = useCallback((user: AuthUser, accountId: string) => {
     setUser(user);
     setAccountId(accountId);
+    setImpersonation(null);
     setStatus('authenticated');
   }, []);
 
@@ -48,12 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authApi.logout();
     setUser(null);
     setAccountId(null);
+    setImpersonation(null);
     setStatus('anonymous');
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ status, user, accountId, login, setSession, logout, refresh }}
+      value={{ status, user, accountId, impersonation, login, setSession, logout, refresh }}
     >
       {children}
     </AuthContext.Provider>

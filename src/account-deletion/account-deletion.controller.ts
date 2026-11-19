@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
@@ -31,6 +32,7 @@ export class AccountDeletionController {
 
   /** Emails a 6-digit confirmation code (a deletion code, not a login code). */
   @Post('delete/request')
+  @BlockedWhenImpersonating('customer-email')
   @HttpCode(204)
   @Throttle({ default: { limit: 3, ttl: 60_000 } })
   async request(@Req() req: AccountRequest): Promise<void> {

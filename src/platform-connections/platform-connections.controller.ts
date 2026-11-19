@@ -1,3 +1,4 @@
+import { BlockedWhenImpersonating } from '../impersonation/blocked-when-impersonating';
 import { buildFacebookDialogUrl } from '../auth/facebook-dialog';
 import {
   Body,
@@ -119,6 +120,7 @@ export class PlatformConnectionsController {
    * this flow and get no refresh_token at all on the second grant.
    */
   @Get('youtube/connect')
+  @BlockedWhenImpersonating('connections')
   connectYouTube(@Res() res: Response): void {
     const state = crypto.randomBytes(24).toString('base64url');
     res.cookie(YOUTUBE_OAUTH_STATE_COOKIE_NAME, state, {
@@ -150,6 +152,7 @@ export class PlatformConnectionsController {
    * back to the connections page with an error flag instead of throwing.
    */
   @Get('youtube/callback')
+  @BlockedWhenImpersonating('connections')
   async youtubeCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
@@ -218,6 +221,7 @@ export class PlatformConnectionsController {
    * client/provider (Meta, not Google).
    */
   @Get('facebook/connect')
+  @BlockedWhenImpersonating('connections')
   connectFacebook(@Res() res: Response): void {
     const state = crypto.randomBytes(24).toString('base64url');
     res.cookie(FACEBOOK_OAUTH_STATE_COOKIE_NAME, state, {
@@ -249,6 +253,7 @@ export class PlatformConnectionsController {
    * cookie + /facebook/select below.
    */
   @Get('facebook/callback')
+  @BlockedWhenImpersonating('connections')
   async facebookCallback(
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
@@ -393,6 +398,7 @@ export class PlatformConnectionsController {
   }
 
   @Post('facebook/select')
+  @BlockedWhenImpersonating('connections')
   async selectFacebookPage(
     @CurrentAccount() account: Account,
     @Req() req: AccountRequest,
@@ -422,6 +428,7 @@ export class PlatformConnectionsController {
   }
 
   @Post('twitch/manual')
+  @BlockedWhenImpersonating('connections')
   async createManualTwitchConnection(
     @CurrentAccount() account: Account,
     @Body() dto: CreateManualTwitchConnectionDto,
@@ -434,6 +441,7 @@ export class PlatformConnectionsController {
   }
 
   @Delete(':id')
+  @BlockedWhenImpersonating('connections')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @CurrentAccount() account: Account,
