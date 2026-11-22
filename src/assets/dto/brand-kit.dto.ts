@@ -103,13 +103,28 @@ export class CreateBrandKitDto {
   @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default description must be text.' }) @MaxLength(MAX_KIT_DESCRIPTION, { message: `The default description can be at most ${MAX_KIT_DESCRIPTION} characters.` })
   description?: string | null;
 
-  /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
+  /**
+   * The FIRST ad (position 0) of each placement of the landscape set, max 4, one per placement. Omitted = unchanged; [] = no
+   * first ads. This is the only ad field older clients know: a request with `ads` and no `adsMore` replaces the first ads
+   * and leaves the other positions of the sequences alone (see BrandKitsService.resolveAds).
+   */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   ads?: BrandKitAdDto[] | null;
 
   /** Same, for the portrait (9:16) set. `ads` is the landscape set. */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   adsPortrait?: BrandKitAdDto[] | null;
+
+  /**
+   * Replace-all for positions 1..4 of the landscape set: the 2nd..5th ad of each placement, in play order (max 4 per
+   * placement, 16 in all). Omitted = unchanged; [] = no sequences (first ads only). Each placement needs its first ad in `ads`.
+   */
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  adsMore?: BrandKitAdDto[] | null;
+
+  /** Same, for the portrait (9:16) set. */
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  adsMorePortrait?: BrandKitAdDto[] | null;
 
   /** Shrink the live picture into the space an ad leaves free while it shows. */
   @IsOptional() @IsBoolean()
@@ -188,13 +203,28 @@ export class UpdateBrandKitDto {
   @IsOptional() @Transform(trimOrNull) @IsString({ message: 'The default description must be text.' }) @MaxLength(MAX_KIT_DESCRIPTION, { message: `The default description can be at most ${MAX_KIT_DESCRIPTION} characters.` })
   description?: string | null;
 
-  /** Replace-all: the kit's ads become exactly this list (max 4, one per placement). Omitted = unchanged; [] = none. */
+  /**
+   * The FIRST ad (position 0) of each placement of the landscape set, max 4, one per placement. Omitted = unchanged; [] = no
+   * first ads. This is the only ad field older clients know: a request with `ads` and no `adsMore` replaces the first ads
+   * and leaves the other positions of the sequences alone (see BrandKitsService.resolveAds).
+   */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   ads?: BrandKitAdDto[] | null;
 
   /** Same, for the portrait (9:16) set. `ads` is the landscape set. */
   @IsOptional() @IsArray() @ArrayMaxSize(4) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
   adsPortrait?: BrandKitAdDto[] | null;
+
+  /**
+   * Replace-all for positions 1..4 of the landscape set: the 2nd..5th ad of each placement, in play order (max 4 per
+   * placement, 16 in all). Omitted = unchanged; [] = no sequences (first ads only). Each placement needs its first ad in `ads`.
+   */
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  adsMore?: BrandKitAdDto[] | null;
+
+  /** Same, for the portrait (9:16) set. */
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @ValidateNested({ each: true }) @Type(() => BrandKitAdDto)
+  adsMorePortrait?: BrandKitAdDto[] | null;
 
   /** Shrink the live picture into the space an ad leaves free while it shows. */
   @IsOptional() @IsBoolean()

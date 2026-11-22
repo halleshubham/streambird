@@ -1,4 +1,4 @@
-// The advertisement layer of the broadcast canvas: holds the (up to three) ad pictures, decodes animated GIF ads
+// The advertisement layer of the broadcast canvas: holds the ad pictures (up to five per placement, played in turn), decodes animated GIF ads
 // once, and draws them every frame with the opacity the schedule asks for (see ads.ts for the exact rules).
 // No React in here. The draw path allocates nothing per frame: pictures and GIF frames are cached, the slot
 // objects (including the Free plan's) are reused and rectangles are only recomputed when the canvas, ticker or
@@ -6,13 +6,18 @@
 
 import {
   AD_DRAW_ORDER,
+  AD_DWELL_DEFAULT,
   FREE_PLAN_AD_SCHEDULE,
+  MAX_ADS_PER_PLACEMENT,
   adRect,
-  adScheduleTiming,
+  adSequenceState,
+  adSequenceTargets,
   adTargetAlpha,
+  adPriorityFactors,
   fitAd,
-  resolveAdAlphas,
+  newSeqState,
   sceneRectFor,
+  shrinkEase,
   stepAlpha,
   windowOnCanvas,
   type AdManual,
@@ -21,6 +26,8 @@ import {
   type AdShrinkInput,
   type AdSchedule,
   type AdSlot,
+  type SeqAd,
+  type SeqSchedule,
 } from './ads';
 import type { NormRect } from './adWindow';
 import { windowOfImage } from './adWindowDom';
@@ -56,9 +63,11 @@ interface Runtime {
   animStarted: boolean;
   token: number;
   enabled: boolean;
-  schedule: AdSchedule;
-  manual: AdManual;
+  /** Interval mode: seconds this ad is shown per cycle. Continuous mode: seconds it is shown before the next ad of the placement. */
+  showSec: number;
   alpha: number;
+  /** This frame's target before priority (set by step). */
+  want: number;
   /** First frame after the picture arrived: jump to the target instead of fading in from nothing. */
   snap: boolean;
   source: AdSource | null;
@@ -87,9 +96,9 @@ const newRuntime = (): Runtime => ({
   animStarted: false,
   token: 0,
   enabled: true,
-  schedule: { mode: 'continuous' },
-  manual: null,
+  showSec: AD_DWELL_DEFAULT,
   alpha: 0,
+  want: 0,
   snap: true,
   source: null,
   assetId: null,
@@ -112,8 +121,12 @@ export interface AdInfo {
   name: string | null;
   previewUrl: string | null;
   enabled: boolean;
+  /** The placement's schedule as it applies to this ad: interval = this ad's show time + the placement's pause. */
   schedule: AdSchedule;
+  /** The placement's manual Show/Hide (the same for every ad of the placement). */
   manual: AdManual;
+  /** Seconds: interval mode = shown for; continuous mode = shown before the next ad of the placement. */
+  showSec: number;
   /** An animated GIF that is being shown as a still picture (no animation support here, or too heavy). */
   still: boolean;
   /** Why it is still (only meaningful while `still`). */
@@ -124,12 +137,39 @@ export interface AdInfo {
   aspect: number | null;
 }
 
+/** What the studio sees of a placement: its FIRST ad (so everything written for one ad keeps working) plus the rest of the sequence. */
+export interface AdPlacementInfo extends AdInfo {
+  /** The 2nd..5th ad of the placement, in play order. */
+  more: AdInfo[];
+  /** Index (0 = the first ad above) of the ad showing now or, in "now and then" mode while hidden, showing next; null = no ad is on. */
+  current: number | null;
+}
+
 export type SetMediaResult = true | false | 'too-big';
 
+/** A placement's schedule, kept once for all its ads (the mode and pause between showings; show times are per ad). */
+interface PlaceState {
+  mode: 'continuous' | 'interval';
+  everySec: number;
+  manual: AdManual;
+}
+
+const PLACEMENT_LIST: readonly AdPlacement[] = ['lower_third', 'side_third', 'full_screen', 'l_shape'];
+const newPlace = (): PlaceState => ({ mode: 'continuous', everySec: 180, manual: null });
+const seqSchedule = (pl: PlaceState): SeqSchedule => (pl.mode === 'interval' ? { mode: 'interval', everySec: pl.everySec } : { mode: 'continuous' });
+const rectOf = (): AdRect => ({ x: 0, y: 0, w: 0, h: 0 });
+
 export class AdLayer {
-  private readonly rt: Record<AdPlacement, Runtime> = { lower_third: newRuntime(), side_third: newRuntime(), full_screen: newRuntime(), l_shape: newRuntime() };
-  private readonly slotList: AdSlot[] = AD_DRAW_ORDER.map((placement) => ({ placement, enabled: false, schedule: { mode: 'continuous' } as AdSchedule, manual: null as AdManual }));
-  private readonly targets: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0, l_shape: 0 };
+  /** The ads of each placement in play order. Always at least one entry (an empty first slot when nothing is loaded). */
+  private readonly rt: Record<AdPlacement, Runtime[]> = { lower_third: [newRuntime()], side_third: [newRuntime()], full_screen: [newRuntime()], l_shape: [newRuntime()] };
+  private readonly place: Record<AdPlacement, PlaceState> = { lower_third: newPlace(), side_third: newPlace(), full_screen: newPlace(), l_shape: newPlace() };
+  /** Scratch for the draw loop (no allocation per frame). */
+  private readonly seqAds: SeqAd[] = Array.from({ length: MAX_ADS_PER_PLACEMENT }, () => ({ enabled: false, showSec: AD_DWELL_DEFAULT }));
+  private readonly seqOut: number[] = new Array<number>(MAX_ADS_PER_PLACEMENT).fill(0);
+  private readonly seqState = newSeqState();
+  private readonly seqSchedules: Record<AdPlacement, SeqSchedule> = { lower_third: { mode: 'continuous' }, side_third: { mode: 'continuous' }, full_screen: { mode: 'continuous' }, l_shape: { mode: 'continuous' } };
+  private readonly placementAlpha: Record<AdPlacement, number> = { lower_third: 0, side_third: 0, full_screen: 0, l_shape: 0 };
+  private readonly factors: Record<AdPlacement, number> = { lower_third: 1, side_third: 1, full_screen: 1, l_shape: 1 };
   private readonly freeSlot: AdSlot = { placement: 'lower_third', enabled: true, schedule: FREE_PLAN_AD_SCHEDULE, manual: null };
   private free: Runtime = newRuntime();
   private freeLoading = false;
@@ -137,19 +177,57 @@ export class AdLayer {
   private freePlan = false;
   private shrinkOn = true;
   private readonly shrinkInput: Partial<Record<AdPlacement, AdShrinkInput>> = {};
+  private readonly blendRect: Record<AdPlacement, AdRect> = { lower_third: rectOf(), side_third: rectOf(), full_screen: rectOf(), l_shape: rectOf() };
+  private readonly blendWin: AdRect = rectOf();
   private clockStart = performance.now();
   private lastNow: number | null = null;
   /** Called when an ad's still/animated state changes, so the studio can refresh its cards. */
   onChange: (() => void) | null = null;
 
-  info(p: AdPlacement): AdInfo {
-    const r = this.rt[p];
-    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule: r.schedule, manual: r.manual, still: r.still, stillReason: r.stillReason, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
+  /** One ad as the studio shows it. */
+  private infoOf(p: AdPlacement, r: Runtime): AdInfo {
+    const pl = this.place[p];
+    const schedule: AdSchedule = pl.mode === 'interval' ? { mode: 'interval', showSec: r.showSec, everySec: pl.everySec } : { mode: 'continuous' };
+    return { hasMedia: !!r.img, source: r.source, assetId: r.assetId, name: r.name, previewUrl: r.previewUrl, enabled: r.enabled, schedule, manual: pl.manual, showSec: r.showSec, still: r.still, stillReason: r.stillReason, window: r.win, aspect: r.img && r.img.naturalHeight > 0 ? r.img.naturalWidth / r.img.naturalHeight : null };
   }
 
-  /** Where this ad's schedule is right now (null = always on). The clock is the preview clock: it restarts when the host goes live. */
+  /** The placement: its first ad's info plus `more` (the rest of the sequence) and `current` (see AdPlacementInfo). */
+  info(p: AdPlacement): AdPlacementInfo {
+    const list = this.rt[p];
+    return { ...this.infoOf(p, list[0]), more: list.slice(1).map((r) => this.infoOf(p, r)), current: this.currentIndex(p, this.lastNow ?? performance.now()) };
+  }
+
+  /** One ad of a placement's sequence (0 = the first); an empty ad when there is none at that place. */
+  adInfo(p: AdPlacement, index: number): AdInfo {
+    return this.infoOf(p, this.rt[p][index] ?? newRuntime());
+  }
+
+  /** How many ad slots the placement has (at least 1: an empty first slot counts). */
+  count(p: AdPlacement): number {
+    return this.rt[p].length;
+  }
+
+  private fillSeq(p: AdPlacement): number {
+    const list = this.rt[p];
+    for (let i = 0; i < list.length; i++) {
+      this.seqAds[i].enabled = !!list[i].img && list[i].enabled;
+      this.seqAds[i].showSec = list[i].showSec;
+    }
+    return list.length;
+  }
+
+  private currentIndex(p: AdPlacement, now: number): number | null {
+    const n = this.fillSeq(p);
+    const st = adSequenceState(this.elapsedSec(now), this.seqAds, seqSchedule(this.place[p]), n, newSeqState());
+    return st.index >= 0 ? st.index : null;
+  }
+
+  /** Where the placement's "now and then" schedule is right now (null = always on, or no ad is on). The clock is the preview clock: it restarts when the host goes live. */
   timing(p: AdPlacement, now = performance.now()): { visible: boolean; secondsLeft: number } | null {
-    return adScheduleTiming(this.elapsedSec(now), this.rt[p].schedule);
+    if (this.place[p].mode !== 'interval') return null;
+    const n = this.fillSeq(p);
+    const st = adSequenceState(this.elapsedSec(now), this.seqAds, seqSchedule(this.place[p]), n, newSeqState());
+    return st.index < 0 ? null : { visible: st.visible, secondsLeft: st.secondsLeft };
   }
 
   /** The Free plan draws only StreamBird's own ad, so custom GIFs are not even decoded there. */
@@ -175,25 +253,88 @@ export class AdLayer {
     return (now - this.clockStart) / 1000;
   }
 
-  setEnabled(p: AdPlacement, enabled: boolean): void {
-    this.rt[p].enabled = enabled;
+  /** Switches one ad on or off; without `index` every ad of the placement (the same single call as before sequences). */
+  setEnabled(p: AdPlacement, enabled: boolean, index?: number): void {
+    if (index === undefined) for (const r of this.rt[p]) r.enabled = enabled;
+    else if (this.rt[p][index]) this.rt[p][index].enabled = enabled;
   }
 
+  /** The placement's schedule: its mode and pause between showings, and (interval) the FIRST ad's show time. Other ads keep their own times (`setShowSec`). */
   setSchedule(p: AdPlacement, schedule: AdSchedule): void {
-    this.rt[p].schedule = schedule;
+    const pl = this.place[p];
+    pl.mode = schedule.mode;
+    if (schedule.mode === 'interval') {
+      pl.everySec = schedule.everySec;
+      this.rt[p][0].showSec = schedule.showSec;
+    }
+  }
+
+  /** One ad's own time: shown for (interval) or before the next ad (continuous). */
+  setShowSec(p: AdPlacement, index: number, sec: number): void {
+    const r = this.rt[p][index];
+    if (r && Number.isFinite(sec) && sec > 0) r.showSec = sec;
   }
 
   setManual(p: AdPlacement, manual: AdManual): void {
-    this.rt[p].manual = manual;
+    this.place[p].manual = manual;
+  }
+
+  /** Moves one ad of a placement to another place in its sequence. */
+  moveAd(p: AdPlacement, from: number, to: number): void {
+    const list = this.rt[p];
+    if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return;
+    const [r] = list.splice(from, 1);
+    list.splice(to, 0, r);
+  }
+
+  /** Takes one ad out of the sequence (the next ones move up). Removing the only ad empties the placement (it keeps its On flag). */
+  removeAd(p: AdPlacement, index: number): void {
+    const list = this.rt[p];
+    if (index < 0 || index >= list.length) return;
+    this.resetRuntime(list[index]);
+    if (list.length === 1) this.place[p].manual = null;
+    else list.splice(index, 1);
+  }
+
+  /** Takes out the ads that came from `source` ("From brand kit" ads leave when the kit changes); the rest of the sequence stays. */
+  removeBySource(p: AdPlacement, source: AdSource): void {
+    const list = this.rt[p];
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].source === source) this.removeAd(p, i);
+  }
+
+  /** Makes sure the placement has at least `n` slots (up to 5), so ads loading in parallel keep their order. */
+  ensureSlots(p: AdPlacement, n: number): void {
+    const list = this.rt[p];
+    while (list.length < Math.min(n, MAX_ADS_PER_PLACEMENT)) list.push(newRuntime());
+  }
+
+  /** The picture file of one ad (to keep a computer-picked picture in this browser); null when it has none. */
+  mediaBlob(p: AdPlacement, index: number): Blob | null {
+    return this.rt[p][index]?.blob ?? null;
+  }
+
+  /** Drops the ad slots that have no picture (a picture that could not be loaded), keeping at least one. */
+  compact(p: AdPlacement): void {
+    const list = this.rt[p];
+    for (let i = list.length - 1; i >= 0 && list.length > 1; i--) if (!list[i].img) list.splice(i, 1);
+  }
+
+  /** Keeps only the first `n` slots of a placement (a kit with a shorter sequence than what was loaded). */
+  trimTo(p: AdPlacement, n: number): void {
+    const keep = Math.max(1, n);
+    while (this.rt[p].length > keep) this.removeAd(p, this.rt[p].length - 1);
   }
 
   /**
-   * Loads a picture (PNG/JPG/WebP/GIF) into a placement. Resolves true when it is ready to draw, false when it
-   * could not be opened or was superseded by a newer call, 'too-big' when a side is over `maxSide` (when given).
+   * Loads a picture (PNG/JPG/WebP/GIF) into a placement slot (`index` 0 = the first ad; one past the end appends, up to 5).
+   * Resolves true when it is ready to draw, false when it could not be opened or was superseded by a newer call, 'too-big'
+   * when a side is over `maxSide` (when given). The slot exists straight away, so ads loaded in parallel keep their order.
    * An animated GIF is decoded later, only when the ad is actually going to be drawn.
    */
-  async setMedia(p: AdPlacement, blob: Blob, meta: { source: AdSource; assetId?: string | null; name: string }, maxSide?: number): Promise<SetMediaResult> {
-    const r = this.rt[p];
+  async setMedia(p: AdPlacement, blob: Blob, meta: { source: AdSource; assetId?: string | null; name: string }, maxSide?: number, index = 0): Promise<SetMediaResult> {
+    const list = this.rt[p];
+    while (list.length <= index && list.length < MAX_ADS_PER_PLACEMENT) list.push(newRuntime());
+    const r = list[Math.min(index, list.length - 1)];
     const token = ++r.token;
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -226,12 +367,13 @@ export class AdLayer {
     return true;
   }
 
-  clearMedia(p: AdPlacement): void {
-    const r = this.rt[p];
+  /** Empties one ad slot's picture and state (its On flag and times stay, as they always did). */
+  private resetRuntime(r: Runtime): void {
     r.token += 1;
     if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     r.img = null;
     r.win = null;
+    r.winPx = null;
     r.blob = null;
     r.anim = null;
     r.still = false;
@@ -241,7 +383,14 @@ export class AdLayer {
     r.assetId = null;
     r.name = null;
     r.alpha = 0;
-    r.manual = null;
+  }
+
+  /** Empties the placement: every ad of it goes (one empty slot is left). */
+  clearMedia(p: AdPlacement): void {
+    const list = this.rt[p];
+    for (const r of list) this.resetRuntime(r);
+    list.length = 1;
+    this.place[p].manual = null;
   }
 
   dispose(): void {
@@ -327,42 +476,53 @@ export class AdLayer {
       return;
     }
 
+    // Per placement: which of its ads shows (the sequence, ads.ts adSequenceTargets); then the priority between placements.
     let any = false;
-    for (let i = 0; i < this.slotList.length; i++) {
-      const slot = this.slotList[i];
-      const r = this.rt[slot.placement];
-      // The L-shaped frame runs whether or not "Shrink picture while ads show" is on (that switch only governs the thirds).
-      slot.enabled = !!r.img && r.enabled;
-      slot.schedule = r.schedule;
-      slot.manual = r.manual;
-      if (slot.enabled || r.alpha > 0) any = true;
-      if (slot.enabled && !r.animStarted && r.blob) this.startAnim(slot.placement, r, w, h);
+    for (const p of PLACEMENT_LIST) {
+      const list = this.rt[p];
+      const n = this.fillSeq(p);
+      for (let i = 0; i < n; i++) {
+        if (this.seqAds[i].enabled || list[i].alpha > 0) any = true;
+        if (this.seqAds[i].enabled && !list[i].animStarted && list[i].blob) this.startAnim(p, list[i], w, h);
+      }
+      const pl = this.place[p];
+      const sched = this.seqSchedules[p];
+      if (pl.mode === 'interval') {
+        if (sched.mode !== 'interval') this.seqSchedules[p] = { mode: 'interval', everySec: pl.everySec };
+        else if (sched.everySec !== pl.everySec) sched.everySec = pl.everySec;
+      } else if (sched.mode !== 'continuous') this.seqSchedules[p] = { mode: 'continuous' };
+      this.placementAlpha[p] = adSequenceTargets(elapsed, this.seqAds, n, this.seqSchedules[p], pl.manual, this.seqOut, this.seqState);
+      for (let i = 0; i < n; i++) list[i].want = this.seqOut[i];
     }
     if (!any) return;
-    resolveAdAlphas(elapsed, this.slotList, this.targets);
+    adPriorityFactors(this.placementAlpha, this.factors);
     for (const p of AD_DRAW_ORDER) {
-      const r = this.rt[p];
-      r.alpha = r.snap ? this.targets[p] : stepAlpha(r.alpha, this.targets[p], dt);
-      if (r.img) r.snap = false;
-      this.fit(r, p, w, h, tickerBar);
+      const factor = this.factors[p];
+      const list = this.rt[p];
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        const target = r.want * factor;
+        r.alpha = r.snap ? target : stepAlpha(r.alpha, target, dt);
+        if (r.img) r.snap = false;
+        this.fit(r, p, w, h, tickerBar);
+      }
     }
   }
 
   /**
-   * Draws the L-shaped frame (as stepped) as the BASE layer, under the scene. Call it after the background and
+   * Draws the L-shaped frame(s) (as stepped) as the BASE layer, under the scene. Call it after the background and
    * wallpaper, before the scene. Does nothing when no frame with a window is showing.
    */
   paintBase(ctx: CanvasRenderingContext2D, now: number): void {
     if (this.freePlan) return;
-    const r = this.rt.l_shape;
-    if (r.win) this.drawOne(ctx, r, now);
+    for (const r of this.rt.l_shape) if (r.win) this.drawOne(ctx, r, now);
   }
 
   /** True while a frame with a window is visible: the scene is then drawn with its own background, inside the window. */
   frameActive(): boolean {
     if (this.freePlan) return false;
-    const r = this.rt.l_shape;
-    return !!r.img && !!r.win && r.alpha > 0.002;
+    for (const r of this.rt.l_shape) if (!!r.img && !!r.win && r.alpha > 0.002) return true;
+    return false;
   }
 
   /** Draws the ads (as stepped) over the finished picture. A frame with no window is drawn here, as a full-screen overlay. */
@@ -372,8 +532,10 @@ export class AdLayer {
       return;
     }
     for (const p of AD_DRAW_ORDER) {
-      if (p === 'l_shape' && this.rt.l_shape.win) continue; // drawn by paintBase
-      this.drawOne(ctx, this.rt[p], now);
+      for (const r of this.rt[p]) {
+        if (p === 'l_shape' && r.win) continue; // drawn by paintBase
+        this.drawOne(ctx, r, now);
+      }
     }
   }
 
@@ -393,6 +555,56 @@ export class AdLayer {
   }
 
   /**
+   * A placement's ads as one for the shrink rule: opacity = min(1, sum of the alphas of its ads that count), and `rect` / `win`
+   * (the picture's area / the frame's window) = the blend of the showing ads' rectangles weighted by their smoothstepped alpha
+   * shares, so the scene eases from one ad's area to the next during a cross-fade instead of jumping. A single ad returns its
+   * own alpha and rectangle untouched (identical to before sequences). `windowed` = only count frames that have a window.
+   */
+  private combined(p: AdPlacement, windowed: boolean): { alpha: number; rect: AdRect; win: AdRect | null } {
+    let sum = 0;
+    let used = 0;
+    let one: Runtime | null = null;
+    for (const r of this.rt[p]) {
+      if (!r.img || !(r.alpha > 0) || (windowed && !r.win)) continue;
+      sum += r.alpha;
+      used++;
+      one = r;
+    }
+    if (used === 0 || !one) return { alpha: 0, rect: this.rt[p][0].rect, win: this.rt[p][0].winPx };
+    if (used === 1) return { alpha: one.alpha, rect: one.rect, win: one.winPx };
+    const rect = this.blendRect[p];
+    const win = this.blendWin;
+    let wt = 0;
+    rect.x = rect.y = rect.w = rect.h = 0;
+    win.x = win.y = win.w = win.h = 0;
+    for (const r of this.rt[p]) {
+      if (!r.img || !(r.alpha > 0) || (windowed && !r.win)) continue;
+      const k = shrinkEase(r.alpha / sum);
+      const wp = r.winPx ?? r.rect;
+      wt += k;
+      rect.x += r.rect.x * k;
+      rect.y += r.rect.y * k;
+      rect.w += r.rect.w * k;
+      rect.h += r.rect.h * k;
+      win.x += wp.x * k;
+      win.y += wp.y * k;
+      win.w += wp.w * k;
+      win.h += wp.h * k;
+    }
+    if (wt > 0) {
+      rect.x /= wt;
+      rect.y /= wt;
+      rect.w /= wt;
+      rect.h /= wt;
+      win.x /= wt;
+      win.y /= wt;
+      win.w /= wt;
+      win.h /= wt;
+    }
+    return { alpha: sum > 1 ? 1 : sum, rect, win };
+  }
+
+  /**
    * Where the scene is drawn right now (as of the last `step`), or null when it fills the canvas (no shrinking ad
    * visible). The switch only affects lower_third / side_third; the L-shaped frame always fits the scene into its
    * window. See the SHRINK RULE in ads.ts.
@@ -402,15 +614,17 @@ export class AdLayer {
     if (this.freePlan) {
       input.lower_third = { alpha: this.shrinkOn && this.free.img ? this.free.alpha : 0, fitted: this.free.rect };
       input.side_third = { alpha: 0, fitted: null };
+      input.l_shape = { alpha: 0, fitted: null, window: null };
     } else {
       for (const p of SHRINKING) {
-        const r = this.rt[p];
-        input[p] = { alpha: this.shrinkOn && r.img ? r.alpha : 0, fitted: r.rect };
+        const c = this.combined(p, false);
+        input[p] = { alpha: this.shrinkOn ? c.alpha : 0, fitted: c.rect };
       }
+      const f = this.combined('l_shape', true);
+      input.l_shape = { alpha: f.alpha, fitted: f.rect, window: f.win };
     }
-    const frame = this.rt.l_shape;
-    input.l_shape = { alpha: !this.freePlan && frame.img && frame.win ? frame.alpha : 0, fitted: frame.rect, window: frame.winPx };
-    if (!((input.lower_third?.alpha ?? 0) > 0.002 || (input.side_third?.alpha ?? 0) > 0.002 || (input.l_shape.alpha > 0.002 && !!input.l_shape.window))) return null;
+    const frame = input.l_shape!;
+    if (!((input.lower_third?.alpha ?? 0) > 0.002 || (input.side_third?.alpha ?? 0) > 0.002 || ((frame.alpha ?? 0) > 0.002 && !!frame.window))) return null;
     return sceneRectFor(w, h, input);
   }
 }

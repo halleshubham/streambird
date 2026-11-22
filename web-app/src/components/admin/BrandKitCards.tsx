@@ -30,7 +30,11 @@ function SetTable({ name, set, testId }: { name: string; set: AdminKitSet; testI
   const rows: Array<{ key: string; label: string; asset: AdminAssetSummary; extra?: AdminAdSummary }> = [];
   if (set.logo) rows.push({ key: 'logo', label: 'Logo', asset: set.logo });
   if (set.wallpaper) rows.push({ key: 'wallpaper', label: 'Wallpaper', asset: set.wallpaper });
-  for (const ad of set.ads) rows.push({ key: ad.placement, label: `Ad: ${PLACEMENT[ad.placement]}`, asset: ad, extra: ad });
+  for (const ad of set.ads) {
+    const pos = ad.position ?? 0;
+    const several = set.ads.filter((x) => x.placement === ad.placement).length > 1; // an ad sequence: number them
+    rows.push({ key: pos === 0 ? ad.placement : `${ad.placement}-${pos}`, label: `Ad: ${PLACEMENT[ad.placement]}${several ? ` #${pos + 1}` : ''}`, asset: ad, extra: ad });
+  }
   return (
     <div className="admin-kit-set" data-testid={testId}>
       <h4>{name}</h4>

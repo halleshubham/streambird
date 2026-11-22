@@ -13,10 +13,13 @@ import type { BrandOrientation } from './brandSizes';
 export interface KitSet {
   logoAssetId: string | null;
   wallpaperAssetId: string | null;
+  /** The FIRST ad of each placement. */
   ads: BrandKitAd[];
 }
 
-export function kitSetFor(kit: Pick<BrandKit, 'logoAssetId' | 'logoAssetIdPortrait' | 'wallpaperAssetId' | 'wallpaperAssetIdPortrait' | 'ads' | 'adsPortrait'>, orientation: BrandOrientation): KitSet {
+type KitFields = Pick<BrandKit, 'logoAssetId' | 'logoAssetIdPortrait' | 'wallpaperAssetId' | 'wallpaperAssetIdPortrait' | 'ads' | 'adsPortrait'> & Partial<Pick<BrandKit, 'adsMore' | 'adsMorePortrait'>>;
+
+export function kitSetFor(kit: KitFields, orientation: BrandOrientation): KitSet {
   if (orientation === 'portrait') {
     return {
       logoAssetId: kit.logoAssetIdPortrait ?? kit.logoAssetId ?? null,
@@ -25,4 +28,15 @@ export function kitSetFor(kit: Pick<BrandKit, 'logoAssetId' | 'logoAssetIdPortra
     };
   }
   return { logoAssetId: kit.logoAssetId ?? null, wallpaperAssetId: kit.wallpaperAssetId ?? null, ads: kit.ads ?? [] };
+}
+
+/**
+ * The ads one placement of the kit plays, in play order: its first ad (`ads`) then its further ads (`adsMore`). Empty = the kit
+ * has none there. The sequence plays by the FIRST ad's mode and pause between showings (the server copies them onto the others).
+ */
+export function kitAdSequence(kit: KitFields, orientation: BrandOrientation, placement: BrandKitAd['placement']): BrandKitAd[] {
+  const portrait = orientation === 'portrait';
+  const first = kitSetFor(kit, orientation).ads.find((a) => a.placement === placement);
+  const more = (portrait ? kit.adsMorePortrait : kit.adsMore) ?? []; // ads 2..5, by placement then play order (missing from an older server)
+  return first ? [first, ...more.filter((a) => a.placement === placement)] : [];
 }

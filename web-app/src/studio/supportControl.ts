@@ -72,6 +72,10 @@ export interface SupportAdState {
   enabled: boolean;
   schedule: AdSchedule;
   manual: AdManual;
+  /** Ad sequence (read-only for support): every ad of the placement in play order. Only present when there is more than one. `enabled` above = at least one of them is on. */
+  sequence?: Array<{ name: string | null; enabled: boolean; showSec: number | null }>;
+  /** Index in `sequence` showing now / next; null = none on. */
+  current?: number | null;
 }
 
 /** The compact snapshot of the controllable settings (no secrets, no media, no tokens). */
@@ -102,7 +106,7 @@ export interface SnapshotInput {
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';
-  ads: Record<AdPlacement, { hasMedia: boolean; name: string | null; enabled: boolean; schedule: AdSchedule; manual: AdManual }>;
+  ads: Record<AdPlacement, { hasMedia: boolean; name: string | null; enabled: boolean; schedule: AdSchedule; manual: AdManual; showSec?: number; more?: ReadonlyArray<{ hasMedia: boolean; name: string | null; enabled: boolean; showSec?: number }>; current?: number | null }>;
   adsShrink: boolean;
   kits: ReadonlyArray<{ id: string; name: string }>;
   activeKitId: string | null;
@@ -124,7 +128,19 @@ export function buildSupportState(i: SnapshotInput): SupportState {
   const ads = {} as Record<AdPlacement, SupportAdState>;
   for (const p of AD_PLACEMENTS) {
     const a = i.ads[p];
-    ads[p] = { hasMedia: !!a.hasMedia, name: a.name ? String(a.name).slice(0, 80) : null, enabled: !!a.enabled, schedule: a.schedule.mode === 'interval' ? { mode: 'interval', showSec: a.schedule.showSec, everySec: a.schedule.everySec } : { mode: 'continuous' }, manual: a.manual };
+    const more = (a.more ?? []).filter((m) => m.hasMedia);
+    const sequence = a.hasMedia && more.length > 0 ? [a, ...more] : null;
+    ads[p] = {
+      hasMedia: !!a.hasMedia,
+      name: a.name ? String(a.name).slice(0, 80) : null,
+      enabled: sequence ? sequence.some((x) => x.enabled) : !!a.enabled,
+      schedule: a.schedule.mode === 'interval' ? { mode: 'interval', showSec: a.schedule.showSec, everySec: a.schedule.everySec } : { mode: 'continuous' },
+      manual: a.manual,
+    };
+    if (sequence) {
+      ads[p].sequence = sequence.slice(0, 5).map((x) => ({ name: x.name ? String(x.name).slice(0, 80) : null, enabled: !!x.enabled, showSec: typeof x.showSec === 'number' && Number.isInteger(x.showSec) && x.showSec > 0 && x.showSec <= 3600 ? x.showSec : null }));
+      ads[p].current = typeof a.current === 'number' && a.current >= 0 && a.current < sequence.length ? a.current : null;
+    }
   }
   return {
     v: 1,

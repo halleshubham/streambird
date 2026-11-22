@@ -5,16 +5,28 @@ import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, type AdPlacement } from './ads';
 /** How many ad names the status line lists before it says "and N more". */
 export const MAX_NAMED_OFF_ADS = 3;
 
-/** The inline warning on one ad card / kit slot: "L-shaped frame is switched off: tick On to use it". */
-export function adOffWarning(placement: AdPlacement): string {
-  return `${AD_PLACEMENT_LABEL[placement]} is switched off: tick On to use it`;
+/**
+ * The inline warning on one ad card / kit slot: "L-shaped frame is switched off: tick On to use it". `n` = the ad's number in
+ * its placement's sequence (1-based); give it for the 2nd..5th ad: "L-shaped frame ad 2 is switched off: tick On to use it".
+ */
+export function adOffWarning(placement: AdPlacement, n = 1): string {
+  return n > 1 ? `${AD_PLACEMENT_LABEL[placement]} ad ${n} is switched off: tick On to use it` : `${AD_PLACEMENT_LABEL[placement]} is switched off: tick On to use it`;
 }
 
-/** Placements that have a picture but are switched off, in the fixed placement order. */
-export function offAdPlacements(ads: Partial<Record<AdPlacement, { hasMedia: boolean; enabled: boolean } | null | undefined>>): AdPlacement[] {
+interface OffAd {
+  hasMedia: boolean;
+  enabled: boolean;
+  /** The rest of an ad sequence. */
+  more?: ReadonlyArray<{ hasMedia: boolean; enabled: boolean }>;
+}
+
+/** Placements that have a picture but nothing on (every ad of the sequence is switched off), in the fixed placement order. */
+export function offAdPlacements(ads: Partial<Record<AdPlacement, OffAd | null | undefined>>): AdPlacement[] {
   return AD_PLACEMENTS.filter((p) => {
     const a = ads[p];
-    return !!a && a.hasMedia && !a.enabled;
+    if (!a) return false;
+    const all = [a, ...(a.more ?? [])].filter((x) => x.hasMedia);
+    return all.length > 0 && all.every((x) => !x.enabled);
   });
 }
 

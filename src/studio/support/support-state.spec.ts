@@ -55,4 +55,28 @@ describe('sanitizeSupportState', () => {
     expect(sanitizeSupportState(cyclic)).toBeNull();
     expect(sanitizeSupportState(JSON.parse('{"__proto__":{"v":1}}'))).toBeNull();
   });
+
+  it('accepts an ad sequence (read-only list, current index) and strips what rides along; older snapshots without it still pass', () => {
+    const g: any = good();
+    g.ads.l_shape = { ...noAd, hasMedia: true, name: 'F1', enabled: true, sequence: [{ name: 'F1', enabled: true, showSec: 20 }, { name: 'F2', enabled: false, showSec: null, extra: 'x' }], current: 0 };
+    const out: any = sanitizeSupportState(g);
+    expect(out.ads.l_shape.sequence).toEqual([{ name: 'F1', enabled: true, showSec: 20 }, { name: 'F2', enabled: false, showSec: null }]);
+    expect(out.ads.l_shape.current).toBe(0);
+    expect(sanitizeSupportState(good())).toEqual(good()); // no sequence key appears
+  });
+
+  it('refuses a malformed ad sequence (too long, bad entry, bad current)', () => {
+    const mk = (seq: unknown, current: unknown = 0) => {
+      const g: any = good();
+      g.ads.l_shape = { ...noAd, hasMedia: true, name: 'F', enabled: true, sequence: seq, current };
+      return sanitizeSupportState(g);
+    };
+    const e = { name: 'x', enabled: true, showSec: 5 };
+    expect(mk([e, e, e, e, e, e])).toBeNull();
+    expect(mk('nope')).toBeNull();
+    expect(mk([{ name: 'x', enabled: 'yes', showSec: 5 }])).toBeNull();
+    expect(mk([{ name: 'x', enabled: true, showSec: 99999 }])).toBeNull();
+    expect(mk([e], 7)).toBeNull();
+    expect(mk([e, e])).not.toBeNull();
+  });
 });
