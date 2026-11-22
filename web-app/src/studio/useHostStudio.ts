@@ -10,10 +10,10 @@ import type { LowerThirdPreset, LowerThirdSettings } from './lowerThird';
 import { drawPoweredBy, poweredByBox } from './poweredBy';
 import { ClockOverlay, DEFAULT_CLOCK, LEGACY_CLOCK_LOOK, clockFromKit, clockNow, normalizeClock, type Box, type ClockSettings } from './clock';
 import { loadAnimatedLogo, type AnimatedFailReason, type AnimatedLogo } from './animatedLogo';
-import { kitSetFor } from './brandKitSet';
-import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
+import { kitAdSequence, kitSetFor } from './brandKitSet';
+import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdPlacementInfo, type AdSource } from './adLayer';
 import { adOverrideDiffs, adOverrideNote, adsOffStatus, offAdPlacements } from './adOff';
-import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
+import { AD_DWELL_DEFAULT, AD_DWELL_RANGE, AD_PLACEMENTS, AD_PLACEMENT_LABEL, AD_SHOW_SEC_RANGE, MAX_ADS_PER_PLACEMENT, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
 import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
 import {
@@ -278,6 +278,8 @@ interface PersistedStudioState {
   chroma: ChromaSettings;
   /** Per-stream ad overrides (on/off, schedule, where the file came from). The pictures themselves: adFilesKey / the asset library. */
   ads: Partial<Record<AdPlacement, PersistedAd>>;
+  /** The 2nd..5th ad of each placement (ad sequences), in play order. Absent in state saved before sequences. */
+  adsMore: Partial<Record<AdPlacement, PersistedAd[]>>;
   /** "Shrink picture while ads show" for this stream; undefined = the kit's choice (default on). */
   adsShrink: boolean;
   /** The on-air date and time for this stream. undefined = never decided: the stream's kit supplies it (off when there is none). Once set, it wins over the kit on every reload. */
@@ -291,31 +293,40 @@ interface PersistedAd {
   name: string;
   enabled: boolean;
   schedule: AdSchedule;
+  /** Seconds shown for (interval) / before the next ad (always on). Absent in state saved before sequences. */
+  showSec?: number;
 }
 // Ad pictures picked on this computer (small ones only) live under their own key, like the wallpaper.
 const adFilesKey = (streamId: string) => `streambird:studio:${streamId}:adfiles:v1`;
-function loadAdFiles(streamId: string): Partial<Record<AdPlacement, string>> {
+/** Where a computer-picked ad is kept: the placement for its first ad (the format from before sequences), `placement#n` for the n-th. */
+const adFileKey = (placement: AdPlacement, index: number) => (index === 0 ? placement : `${placement}#${index}`);
+function loadAdFiles(streamId: string): Record<string, string> {
   try {
     const raw = localStorage.getItem(adFilesKey(streamId));
-    return raw ? (JSON.parse(raw) as Partial<Record<AdPlacement, string>>) : {};
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
   } catch {
     return {};
   }
 }
-function saveAdFile(streamId: string, placement: AdPlacement, dataUrl: string | null) {
+function saveAdFiles(streamId: string, files: Record<string, string>) {
   try {
-    const all = loadAdFiles(streamId);
-    if (dataUrl) all[placement] = dataUrl;
-    else delete all[placement];
-    localStorage.setItem(adFilesKey(streamId), JSON.stringify(all));
+    localStorage.setItem(adFilesKey(streamId), JSON.stringify(files));
   } catch {
-    // Storage full/blocked: the picture just does not survive a reload.
+    // Storage full/blocked: the pictures just do not survive a reload.
   }
+}
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 /** Ads picked on this computer: pictures only, and not absurdly large (the canvas holds them in memory). */
 const MAX_AD_FILE_BYTES = 12 * 1024 * 1024;
 const AD_FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-const EMPTY_AD: AdInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, still: false, stillReason: null, window: null, aspect: null };
+const EMPTY_AD: AdPlacementInfo = { hasMedia: false, source: null, assetId: null, name: null, previewUrl: null, enabled: true, schedule: { mode: 'continuous' }, manual: null, showSec: AD_DWELL_DEFAULT, still: false, stillReason: null, window: null, aspect: null, more: [], current: null };
 const persistKey = (streamId: string) => `streambird:studio:${streamId}:v1`;
 // The host's green-screen background picture lives in its own key (a full quota must not drop the rest).
 const chromaBgKey = (streamId: string) => `streambird:studio:${streamId}:chromabg:v1`;
@@ -472,7 +483,7 @@ export function useHostStudio(streamId: string | undefined) {
   const clockOverlayRef = useRef<ClockOverlay | null>(null);
   if (!clockOverlayRef.current) clockOverlayRef.current = new ClockOverlay();
   const [adsPlan, setAdsPlan] = useState<'unknown' | 'free' | 'custom'>('unknown');
-  const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD, l_shape: EMPTY_AD });
+  const [adsUi, setAdsUi] = useState<Record<AdPlacement, AdPlacementInfo>>({ lower_third: EMPTY_AD, side_third: EMPTY_AD, full_screen: EMPTY_AD, l_shape: EMPTY_AD });
   /** Lower-third text and look (kept per stream in this browser), the banner on/off state, and saved texts. */
   const [lowerThird, setLowerThirdState] = useState<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
   const lowerThirdRef = useRef<LowerThirdSettings>({ ...DEFAULT_LOWER_THIRD });
@@ -1653,7 +1664,7 @@ export function useHostStudio(streamId: string | undefined) {
           setClockKitId(typeof saved.clockKitId === 'string' ? saved.clockKitId : null);
         }
 
-        restoreAds(streamRow.id, saved.ads);
+        restoreAds(streamRow.id, saved.ads, saved.adsMore);
         if (typeof saved.adsShrink === 'boolean') {
           adLayerRef.current?.setShrink(saved.adsShrink);
           setAdsShrinkState(saved.adsShrink);
@@ -2470,17 +2481,52 @@ export function useHostStudio(streamId: string | undefined) {
     setAdsUi({ lower_third: layer.info('lower_third'), side_third: layer.info('side_third'), full_screen: layer.info('full_screen'), l_shape: layer.info('l_shape') });
   }
 
-  /** Keeps what the host chose per stream (on/off, schedule, where the file came from). Manual Show/Hide is never kept. */
+  /** What one ad keeps for this stream (on/off, where the file came from, its time). */
+  function persistedOf(i: AdInfo): PersistedAd {
+    return { source: i.source!, assetId: i.assetId, name: i.name ?? '', enabled: i.enabled, schedule: i.schedule, showSec: i.showSec };
+  }
+
+  /**
+   * Keeps what the host chose per stream: the FIRST ad of each placement under `ads` (the format from before sequences, still readable)
+   * and the rest of the sequence under `adsMore`. Manual Show/Hide is never kept; the rotation position follows from the clock.
+   */
   function persistAds() {
     const id = streamIdRef.current;
     if (!id) return;
     const layer = adLayerRef.current!;
     const ads: Partial<Record<AdPlacement, PersistedAd>> = {};
+    const adsMore: Partial<Record<AdPlacement, PersistedAd[]>> = {};
     for (const p of AD_PLACEMENTS) {
       const i = layer.info(p);
-      if (i.hasMedia && i.source) ads[p] = { source: i.source, assetId: i.assetId, name: i.name ?? '', enabled: i.enabled, schedule: i.schedule };
+      const kept = [i, ...i.more].filter((a) => a.hasMedia && a.source);
+      if (kept.length > 0) ads[p] = persistedOf(kept[0]);
+      if (kept.length > 1) adsMore[p] = kept.slice(1).map(persistedOf);
     }
-    savePersisted(id, { ads });
+    savePersisted(id, { ads, adsMore });
+    void syncAdFiles();
+  }
+
+  /** Keeps the small pictures picked on this computer in this browser, under the key of their place in the sequence (writes the latest state only). */
+  const adFilesSeqRef = useRef(0);
+  async function syncAdFiles() {
+    const id = streamIdRef.current;
+    if (!id) return;
+    const mine = ++adFilesSeqRef.current;
+    const layer = adLayerRef.current!;
+    const rec: Record<string, string> = {};
+    for (const p of AD_PLACEMENTS) {
+      for (let i = 0; i < layer.count(p); i++) {
+        const blob = layer.mediaBlob(p, i);
+        if (!blob || layer.adInfo(p, i).source !== 'computer' || blob.size > 1_000_000) continue;
+        try {
+          rec[adFileKey(p, i)] = await blobToDataUrl(blob);
+        } catch {
+          // this picture just does not survive a reload
+        }
+      }
+    }
+    if (mine !== adFilesSeqRef.current) return; // a newer change wrote its own state
+    saveAdFiles(id, rec);
   }
 
   /** "Shrink picture while ads show": per stream, starts from the kit's choice (default on). */
@@ -2490,8 +2536,9 @@ export function useHostStudio(streamId: string | undefined) {
     if (streamIdRef.current) savePersisted(streamIdRef.current, { adsShrink: on });
   }
 
-  function setAdEnabled(p: AdPlacement, enabled: boolean) {
-    adLayerRef.current!.setEnabled(p, enabled);
+  /** `index` = one ad of the placement's sequence; omitted = every ad of it (the placement's On switch, a remote-support command). */
+  function setAdEnabled(p: AdPlacement, enabled: boolean, index?: number) {
+    adLayerRef.current!.setEnabled(p, enabled, index);
     refreshAds();
     persistAds();
   }
@@ -2503,9 +2550,24 @@ export function useHostStudio(streamId: string | undefined) {
     persistAds();
   }
 
+  /** One ad's own time: seconds it is shown for ("now and then") or before the next ad ("always on"). Out-of-range values are ignored. */
+  function setAdShowSec(p: AdPlacement, index: number, sec: number) {
+    const layer = adLayerRef.current!;
+    const range = layer.info(p).schedule.mode === 'interval' ? AD_SHOW_SEC_RANGE : AD_DWELL_RANGE;
+    if (!Number.isInteger(sec) || sec < range.min || sec > range.max) return;
+    layer.setShowSec(p, index, sec);
+    refreshAds();
+    persistAds();
+  }
+
   /** Where an ad's "now and then" schedule is (for the card's countdown). */
   function adTiming(p: AdPlacement) {
     return adLayerRef.current!.timing(p);
+  }
+
+  /** The ad of the placement showing now (or showing next, while a "now and then" sequence is hidden): its index in the sequence. */
+  function adCurrent(p: AdPlacement): number | null {
+    return adLayerRef.current!.info(p).current;
   }
 
   function setAdManual(p: AdPlacement, manual: AdManual) {
@@ -2513,15 +2575,33 @@ export function useHostStudio(streamId: string | undefined) {
     refreshAds();
   }
 
-  /** Replaces the file of one ad with a picture from this computer (kept in memory; small ones also in this browser, never uploaded). null removes it. */
-  async function setAdFile(p: AdPlacement, file: File | null) {
+  /** Moves an ad one place up or down in its placement's sequence. */
+  function moveAd(p: AdPlacement, from: number, to: number) {
+    adLayerRef.current!.moveAd(p, from, to);
+    refreshAds();
+    persistAds();
+  }
+
+  /** Takes one ad out of its sequence (the next ones move up). */
+  function removeAd(p: AdPlacement, index: number) {
+    adLayerRef.current!.removeAd(p, index);
+    refreshAds();
+    persistAds();
+  }
+
+  /**
+   * Replaces the picture of one ad with a file from this computer (kept in memory; small ones also in this browser, never uploaded).
+   * `index` = its place in the placement's sequence (0 = the first ad; the count of the sequence appends one more, up to 5).
+   * file = null removes that ad.
+   */
+  async function setAdFile(p: AdPlacement, file: File | null, index = 0) {
     const layer = adLayerRef.current!;
-    const id = streamIdRef.current;
     if (!file) {
-      layer.clearMedia(p);
-      if (id) saveAdFile(id, p, null);
-      refreshAds();
-      persistAds();
+      removeAd(p, index);
+      return;
+    }
+    if (index >= MAX_ADS_PER_PLACEMENT) {
+      setStatus({ text: `A place can play at most ${MAX_ADS_PER_PLACEMENT} ads in turn.`, isError: true });
       return;
     }
     if (!AD_FILE_TYPES.includes(file.type)) {
@@ -2532,63 +2612,67 @@ export function useHostStudio(streamId: string | undefined) {
       setStatus({ text: `That picture is too large for an ad -- the limit is ${MAX_AD_FILE_BYTES / 1024 / 1024} MB.`, isError: true });
       return;
     }
-    const ok = await layer.setMedia(p, file, { source: 'computer', name: file.name }, MAX_AD_SIDE);
+    const ok = await layer.setMedia(p, file, { source: 'computer', name: file.name }, MAX_AD_SIDE, index);
     if (ok === 'too-big') {
       setStatus({ text: `That picture is too big for an ad -- its longest side must be at most ${MAX_AD_SIDE}px.`, isError: true });
+      if (index > 0 && !layer.adInfo(p, index).hasMedia) layer.removeAd(p, index); // do not leave an empty slot behind
+      refreshAds();
       return;
     }
     if (ok !== true) {
       setStatus({ text: 'That picture could not be opened. Try a different file.', isError: true });
+      if (index > 0 && !layer.adInfo(p, index).hasMedia) layer.removeAd(p, index);
+      refreshAds();
       return;
-    }
-    if (id) {
-      if (file.size <= 1_000_000) {
-        const reader = new FileReader();
-        reader.onload = () => saveAdFile(id, p, String(reader.result));
-        reader.readAsDataURL(file);
-      } else {
-        saveAdFile(id, p, null);
-      }
     }
     refreshAds();
     persistAds();
   }
 
-  async function loadKitAd(p: AdPlacement, ad: BrandKit['ads'][number], kitName: string): Promise<void> {
+  async function loadKitAd(p: AdPlacement, ad: BrandKit['ads'][number], kitName: string, index = 0): Promise<void> {
     const layer = adLayerRef.current!;
-    const file = await fetchAssetFile(ad.assetId, `${kitName} ${p}`);
-    const ok = await layer.setMedia(p, file, { source: 'kit', assetId: ad.assetId, name: file.name });
+    const file = await fetchAssetFile(ad.assetId, `${kitName} ${p}${index > 0 ? ` ${index + 1}` : ''}`);
+    const ok = await layer.setMedia(p, file, { source: 'kit', assetId: ad.assetId, name: file.name }, undefined, index);
     if (ok !== true) throw new Error('ad picture');
     // A kit ad always starts ON in the studio: the kit's own On flag is a stored preference for the kit editor only (a stream's
     // saved choice still wins after a reload, see restoreAds). Hosts who switch an ad off here get the switched-off warnings.
-    layer.setEnabled(p, true);
-    layer.setSchedule(p, ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' });
-    layer.setManual(p, null);
-    if (streamIdRef.current) saveAdFile(streamIdRef.current, p, null); // the kit's file lives in the library, not in this browser
+    layer.setEnabled(p, true, index);
+    if (index === 0) {
+      // The placement plays by its first ad's mode and pause between showings.
+      layer.setSchedule(p, ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' });
+      layer.setManual(p, null);
+    }
+    if (ad.showSec && !(index === 0 && ad.mode === 'interval')) layer.setShowSec(p, index, ad.showSec);
+    else if (index === 0 && ad.mode !== 'interval') layer.setShowSec(p, 0, AD_DWELL_DEFAULT);
   }
 
-  /** One place of the kit's ads: the kit's ad fills the card; with none, a kit ad already there goes (a file picked on this computer stays). */
+  /** One place of the kit's ads: the kit's sequence fills the card; with none, kit ads already there go (files picked on this computer stay). */
   async function applyKitAd(kit: BrandKit, p: AdPlacement) {
-    const ad = kitSetFor(kit, orientationRef.current).ads.find((a) => a.placement === p);
-    if (ad) await loadKitAd(p, ad, kit.name);
-    else if (adLayerRef.current!.info(p).source === 'kit') adLayerRef.current!.clearMedia(p);
+    const layer = adLayerRef.current!;
+    const seq = kitAdSequence(kit, orientationRef.current, p);
+    if (seq.length === 0) {
+      layer.removeBySource(p, 'kit');
+      return;
+    }
+    layer.ensureSlots(p, seq.length); // slots first, so the ads keep their order while they load in parallel
+    await Promise.all(seq.map((ad, i) => loadKitAd(p, ad, kit.name, i)));
+    layer.trimTo(p, seq.length);
   }
 
   /** "Manual (no kit)": ads that came from a kit are taken off the canvas; ads the host picked from the computer stay. */
   function clearKitAds() {
     const layer = adLayerRef.current!;
-    for (const p of AD_PLACEMENTS) if (layer.info(p).source === 'kit') layer.clearMedia(p);
+    for (const p of AD_PLACEMENTS) layer.removeBySource(p, 'kit');
     refreshAds();
     persistAds();
   }
 
-  /** Goes back to the active brand kit's ad for this place (after a file was picked from the computer). */
+  /** Goes back to the active brand kit's ads for this place (after a file was picked from the computer). */
   async function useKitAd(p: AdPlacement) {
     const kit = brandKits.find((k) => k.id === activeKitId);
-    const ad = kit ? kitSetFor(kit, orientationRef.current).ads.find((a) => a.placement === p) : undefined;
-    if (!kit || !ad) return;
+    if (!kit || kitAdSequence(kit, orientationRef.current, p).length === 0) return;
     try {
-      await loadKitAd(p, ad, kit.name);
+      await applyKitAd(kit, p);
       refreshAds();
       persistAds();
     } catch {
@@ -2596,45 +2680,52 @@ export function useHostStudio(streamId: string | undefined) {
     }
   }
 
-  /** Reload: put the per-stream ad overrides back (pictures from this browser or the library). */
-  function restoreAds(streamId: string, saved: Partial<Record<AdPlacement, PersistedAd>> | undefined) {
+  /** Reload: put the per-stream ad overrides back (pictures from this browser or the library). `savedMore` = the rest of each sequence (absent in state saved before sequences). */
+  function restoreAds(streamId: string, saved: Partial<Record<AdPlacement, PersistedAd>> | undefined, savedMore?: Partial<Record<AdPlacement, PersistedAd[]>>) {
     if (!saved) return;
     const layer = adLayerRef.current!;
     const files = loadAdFiles(streamId);
     const note = { saved, pending: 0 };
     const settle = () => {
       note.pending -= 1;
+      if (note.pending === 0) for (const q of AD_PLACEMENTS) layer.compact(q); // a picture that could not be restored leaves no empty slot in a sequence
       refreshAds(); // also wakes the effect that shows the switched-off note once every picture has loaded (or failed)
     };
     restoredAdsRef.current = note;
     for (const p of AD_PLACEMENTS) {
-      const a = saved[p];
-      if (!a || typeof a !== 'object') continue;
-      // What the browser kept may be old or hand-edited: a bad schedule falls back to "always on", never breaks the draw loop.
-      const sched: AdSchedule =
-        a.schedule && (a.schedule.mode === 'continuous' || (a.schedule.mode === 'interval' && !scheduleError(a.schedule))) ? a.schedule : { mode: 'continuous' };
-      const apply = (ok: unknown) => {
-        if (ok !== true) return;
-        layer.setEnabled(p, a.enabled !== false);
-        layer.setSchedule(p, sched);
-        refreshAds();
-      };
-      if (a.source === 'kit' && a.assetId) {
-        note.pending += 1;
-        void fetchAssetFile(a.assetId, a.name)
-          .then((f) => layer.setMedia(p, f, { source: 'kit', assetId: a.assetId, name: a.name }))
-          .then(apply)
-          .catch(() => undefined)
-          .finally(settle);
-      } else if (a.source === 'computer' && files[p]) {
-        note.pending += 1;
-        void fetch(files[p]!)
-          .then((r) => r.blob())
-          .then((b) => layer.setMedia(p, b, { source: 'computer', name: a.name }, MAX_AD_SIDE))
-          .then(apply)
-          .catch(() => undefined)
-          .finally(settle);
-      }
+      const first = saved[p];
+      const rest = Array.isArray(savedMore?.[p]) ? savedMore![p]!.slice(0, MAX_ADS_PER_PLACEMENT - 1) : [];
+      const list = [first, ...rest].filter((a): a is PersistedAd => !!a && typeof a === 'object');
+      if (list.length === 0) continue;
+      layer.ensureSlots(p, list.length);
+      list.forEach((a, i) => {
+        // What the browser kept may be old or hand-edited: a bad schedule falls back to "always on", never breaks the draw loop.
+        const sched: AdSchedule =
+          a.schedule && (a.schedule.mode === 'continuous' || (a.schedule.mode === 'interval' && !scheduleError(a.schedule))) ? a.schedule : { mode: 'continuous' };
+        const apply = (ok: unknown) => {
+          if (ok !== true) return;
+          layer.setEnabled(p, a.enabled !== false, i);
+          if (i === 0) layer.setSchedule(p, sched);
+          if (typeof a.showSec === 'number' && Number.isInteger(a.showSec) && a.showSec > 0 && !(i === 0 && sched.mode === 'interval')) layer.setShowSec(p, i, a.showSec);
+          refreshAds();
+        };
+        if (a.source === 'kit' && a.assetId) {
+          note.pending += 1;
+          void fetchAssetFile(a.assetId, a.name)
+            .then((f) => layer.setMedia(p, f, { source: 'kit', assetId: a.assetId, name: a.name }, undefined, i))
+            .then(apply)
+            .catch(() => undefined)
+            .finally(settle);
+        } else if (a.source === 'computer' && files[adFileKey(p, i)]) {
+          note.pending += 1;
+          void fetch(files[adFileKey(p, i)]!)
+            .then((r) => r.blob())
+            .then((b) => layer.setMedia(p, b, { source: 'computer', name: a.name }, MAX_AD_SIDE, i))
+            .then(apply)
+            .catch(() => undefined)
+            .finally(settle);
+        }
+      });
     }
     if (note.pending === 0) restoredAdsRef.current = null;
   }
@@ -3586,8 +3677,11 @@ export function useHostStudio(streamId: string | undefined) {
       setAdEnabled,
       setAdsShrink,
       setAdSchedule,
+      setAdShowSec,
       setAdManual,
+      moveAd,
       adTiming,
+      adCurrent,
       setAdFile,
       useKitAd,
       setLogoSize,

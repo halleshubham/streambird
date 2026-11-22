@@ -3911,6 +3911,24 @@ video.chroma-preview {
 .kit-preview-ad-tag { position: absolute; top: 2px; right: 3px; font-size: 8px; line-height: 1; color: #fff; background: rgba(0, 0, 0, 0.55); padding: 2px 3px; border-radius: 3px; }
 .studio-tab { padding: 8px 9px; gap: 4px; }
 .ad-card > .icon-btn { align-self: flex-start; }
+/* Ad sequences: several ads of one placement played in turn (studio Ads tab and brand kit editor) */
+.ad-sequence { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ad-sequence > .icon-btn { align-self: flex-start; }
+.ad-seq-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ad-seq-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; min-width: 0; }
+.ad-seq-row--current { border-color: var(--accent, #2f6df6); }
+.ad-seq-thumb { flex: none; width: 40px; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(#8881 0% 25%, transparent 0% 50%) 50% / 8px 8px; }
+.ad-seq-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ad-seq-name { flex: 1 1 90px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.ad-seq-secs { display: inline-flex; align-items: center; gap: 4px; }
+.ad-seq-secs input[type='number'] { width: 64px; margin: 0; padding: 6px 8px; }
+.ad-seq-row .checkbox-row { margin: 0; }
+.ad-seq-row .ad-off-warning { flex: 1 0 100%; margin: 0; }
+.ad-seq-row .icon-btn { margin: 0; }
+.kit-ad-extra { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--border); padding-top: 8px; min-width: 0; }
+.ad-seq-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.ad-seq-controls .ha-quiet { padding: 4px 6px; }
+
 
 /* Unified brand kit editor: orientation tabs, graphic slots, size hints and warnings */
 .kit-orientation { display: flex; gap: 4px; margin: 12px 0 0; border-bottom: 1px solid var(--border); }

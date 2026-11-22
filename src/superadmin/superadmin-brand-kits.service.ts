@@ -185,10 +185,10 @@ export class SuperadminBrandKitsService {
     const wallId = o === 'portrait' ? k.wallpaperAssetIdPortrait : k.wallpaperAssetId;
     const rows = ctx.ads
       .filter((a) => a.brandKitId === k.id && (o === 'portrait' ? a.orientation === 'portrait' : a.orientation !== 'portrait'))
-      .sort((a, b) => PLACEMENT_ORDER.indexOf(a.placement) - PLACEMENT_ORDER.indexOf(b.placement));
+      .sort((a, b) => PLACEMENT_ORDER.indexOf(a.placement) - PLACEMENT_ORDER.indexOf(b.placement) || a.position - b.position);
     const ads: AdSummary[] = [];
     for (const a of rows) {
-      const ad: AdSummary = { placement: a.placement, ...this.summary(ctx, a.assetId), enabled: a.enabled, mode: a.mode, showSec: a.showSec, everySec: a.everySec };
+      const ad: AdSummary = { placement: a.placement, position: a.position, ...this.summary(ctx, a.assetId), enabled: a.enabled, mode: a.mode, showSec: a.showSec, everySec: a.everySec };
       if (a.placement === 'l_shape' && withChecks) ad.windowCheck = await this.frameCheck(ctx, a.assetId);
       ads.push(ad);
     }

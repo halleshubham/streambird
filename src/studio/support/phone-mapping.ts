@@ -9,7 +9,7 @@
  *    rebuilt field by field and then re-validated by `sanitizeSupportState`.
  */
 import { AD_PLACEMENT_IDS, type SupportCommand } from './support-command';
-import { sanitizeSupportState, SUPPORT_STATE_TEXT_MAX, type SanitizedSupportState } from './support-state';
+import { sanitizeSupportState, SUPPORT_SEQUENCE_MAX, SUPPORT_STATE_TEXT_MAX, type SanitizedSupportState } from './support-state';
 
 export const PHONE_UNSUPPORTED_ERROR = 'Not supported on the phone app';
 /** Support command types the phone app can apply. Everything else in the whitelist is answered by the server. */
@@ -137,6 +137,21 @@ function phoneCapabilities(raw: Record<string, unknown>): {
 }
 
 type SnapshotAd = SanitizedSupportState['ads'][string];
+
+/**
+ * Ad sequences (several ads of one placement): an Android build that supports them may add `sequence: [{ enabled, showSec? }]`
+ * (play order, at most 5) and `current` to a placement's ad. Read-only here; malformed or absent = no sequence (never a refusal).
+ */
+function phoneSequence(a: Record<string, unknown>): Pick<SnapshotAd, 'sequence' | 'current'> {
+  if (!Array.isArray(a.sequence) || a.sequence.length === 0 || a.sequence.length > SUPPORT_SEQUENCE_MAX) return {};
+  const sequence: NonNullable<SnapshotAd['sequence']> = [];
+  for (const e of a.sequence) {
+    if (!isObj(e) || typeof e.enabled !== 'boolean') return {};
+    sequence.push({ name: `Ad ${sequence.length + 1}`, enabled: e.enabled, showSec: intIn(e.showSec, 1, 3600) ? e.showSec : null });
+  }
+  const current = intIn(a.current, 0, sequence.length - 1) ? a.current : null;
+  return { sequence, current };
+}
 const absentAd = (): SnapshotAd => ({ hasMedia: false, name: null, enabled: false, schedule: { mode: 'continuous' }, manual: null });
 
 /** The phone's state PUT body `state` -> the control page's snapshot (with `platform:'android'`), or null when malformed. Never throws. */
@@ -161,7 +176,7 @@ export function phoneStateToSnapshot(raw: unknown): SanitizedSupportState | null
       if (a.mode === 'continuous') schedule = { mode: 'continuous' };
       else if (a.mode === 'interval' && intIn(a.showSec, 1, 3600) && intIn(a.everySec, 1, 86400)) schedule = { mode: 'interval', showSec: a.showSec, everySec: a.everySec };
       else return null;
-      ads[placement] = { hasMedia: true, name: a.source === 'kit' ? 'Kit ad' : 'Phone ad', enabled: a.enabled, schedule, manual: a.manual };
+      ads[placement] = { hasMedia: true, name: a.source === 'kit' ? 'Kit ad' : 'Phone ad', enabled: a.enabled, schedule, manual: a.manual, ...phoneSequence(a) };
     }
 
     if (!isObj(raw.ticker) || typeof raw.ticker.on !== 'boolean') return null;

@@ -563,7 +563,12 @@ export type LowerThirdStyleId = 'bar' | 'accent' | 'glass';
 
 export type AdPlacementId = 'lower_third' | 'side_third' | 'full_screen' | 'l_shape';
 
-/** One advertisement of a brand kit (one per placement). Continuous ads carry null schedule numbers; times are in seconds. */
+/**
+ * One advertisement of a brand kit. A placement can play up to 5 in turn (ad sequences): the FIRST ad of each placement is in
+ * `ads` / `adsPortrait`, the 2nd..5th in `adsMore` / `adsMorePortrait` (order = play order). Times are in seconds.
+ * showSec: interval mode = how long it is shown per cycle; continuous mode = how long before the next ad (5..300, null = 20);
+ * mode and everySec of a sequence are the first ad's (the server copies them onto the others).
+ */
 export interface BrandKitAd {
   placement: AdPlacementId;
   assetId: string;
@@ -609,10 +614,14 @@ export interface BrandKit {
   thumbnailAssetId: string | null;
   /** The channels/pages (platform connections) using this kit. */
   connectionIds: string[];
-  /** Landscape ads: at most one ad per placement. */
+  /** Landscape ads: the FIRST ad of each placement (at most one per placement; all an older client knows). */
   ads: BrandKitAd[];
-  /** Portrait ads: at most one ad per placement. */
+  /** Portrait ads: the first ad of each placement. */
   adsPortrait: BrandKitAd[];
+  /** Landscape ads 2..5 of each placement, by placement then play order. Missing from older servers. */
+  adsMore?: BrandKitAd[];
+  /** Portrait ads 2..5 of each placement. */
+  adsMorePortrait?: BrandKitAd[];
 }
 
 export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPosition' | 'logoSize' | 'wallpaperAssetId' | 'wallpaperDim' | 'lowerThirdStyle'> & {
@@ -635,6 +644,9 @@ export type BrandKitInput = Pick<BrandKit, 'name' | 'logoAssetId' | 'logoPositio
   isDefault?: boolean;
   ads?: BrandKitAd[];
   adsPortrait?: BrandKitAd[];
+  /** Ads 2..5 per placement. Send them whenever the first ads are sent; omitting leaves them as they are. */
+  adsMore?: BrandKitAd[];
+  adsMorePortrait?: BrandKitAd[];
 };
 
 /** The superadmin's registration switch and the signup history it is decided by. */

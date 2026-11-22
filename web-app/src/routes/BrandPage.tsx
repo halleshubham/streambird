@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ImagePlus, Lock, Pencil, Plus, Replace, Trash2, UploadCloud, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, ImagePlus, Lock, Pencil, Plus, Replace, Trash2, UploadCloud, X } from 'lucide-react';
 import * as assetsApi from '../api/assets';
 import { listConnections } from '../api/connections';
 import { ApiError } from '../api/client';
@@ -13,7 +13,7 @@ import { AdIntervalFields, NO_WINDOW_WARNING, ShrinkSwitch, WindowOutline } from
 import type { NormRect } from '../studio/adWindow';
 import { windowOfUrl } from '../studio/adWindowDom';
 import { getMyLimits } from '../api/plans';
-import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, describeSchedule, type AdPlacement } from '../studio/ads';
+import { AD_DWELL_DEFAULT, AD_DWELL_RANGE, AD_PLACEMENTS, AD_PLACEMENT_LABEL, AD_SHOW_SEC_RANGE, MAX_ADS_PER_PLACEMENT, describeSchedule, type AdPlacement } from '../studio/ads';
 import {
   BRAND_FILE_LIMITS,
   THUMBNAIL_LIMITS,
@@ -27,6 +27,7 @@ import {
   type BrandSlot,
 } from '../studio/brandSizes';
 import { kitSetFor } from '../studio/brandKitSet';
+import { SecondsField } from '../components/AdsPanel';
 import type { AssetKind, AssetLibrary, BrandKit, BrandKitAd, BrandKitInput, LibraryAsset, LowerThirdStyleId, PlatformConnection } from '../types/api';
 import { ClockFields } from '../components/ClockFields';
 import { alternatePhase, clockFromKit, clockNow, formatClock, isAlternating, kitPatchFromClock, type ClockSettings } from '../studio/clock';
@@ -67,6 +68,8 @@ const EMPTY_KIT: BrandKitInput = {
   description: null,
   ads: [],
   adsPortrait: [],
+  adsMore: [],
+  adsMorePortrait: [],
 };
 
 /** The limits of a stream's own title and description (the server checks the same, src/assets/dto/brand-kit.dto.ts). */
@@ -74,10 +77,44 @@ const MAX_KIT_TITLE = 200;
 const MAX_KIT_DESCRIPTION = 5000;
 
 /** Which form field holds each material of each orientation (landscape = the fields older clients know). */
-const FIELDS: Record<BrandOrientation, { logo: 'logoAssetId' | 'logoAssetIdPortrait'; wallpaper: 'wallpaperAssetId' | 'wallpaperAssetIdPortrait'; ads: 'ads' | 'adsPortrait' }> = {
-  landscape: { logo: 'logoAssetId', wallpaper: 'wallpaperAssetId', ads: 'ads' },
-  portrait: { logo: 'logoAssetIdPortrait', wallpaper: 'wallpaperAssetIdPortrait', ads: 'adsPortrait' },
+const FIELDS: Record<
+  BrandOrientation,
+  { logo: 'logoAssetId' | 'logoAssetIdPortrait'; wallpaper: 'wallpaperAssetId' | 'wallpaperAssetIdPortrait'; ads: 'ads' | 'adsPortrait'; more: 'adsMore' | 'adsMorePortrait' }
+> = {
+  landscape: { logo: 'logoAssetId', wallpaper: 'wallpaperAssetId', ads: 'ads', more: 'adsMore' },
+  portrait: { logo: 'logoAssetIdPortrait', wallpaper: 'wallpaperAssetIdPortrait', ads: 'adsPortrait', more: 'adsMorePortrait' },
 };
+
+/** The ads of one placement of the form in play order: its first ad, then the further ones. */
+function adSequenceOf(form: BrandKitInput, o: BrandOrientation, placement: AdPlacement): BrandKitAd[] {
+  const f = FIELDS[o];
+  const first = (form[f.ads] ?? []).find((a) => a.placement === placement);
+  return first ? [first, ...(form[f.more] ?? []).filter((a) => a.placement === placement)] : [];
+}
+
+/**
+ * Keeps a placement's ads consistent before they go into the form: one mode and pause between showings for all (the first ad's, as
+ * the server does), a show time on every ad of a timed sequence, and (always-on) a dwell between 5 and 300 s once there is more than
+ * one ad. A lone always-on ad keeps no numbers, as before sequences.
+ */
+function normaliseSequence(seq: BrandKitAd[]): BrandKitAd[] {
+  const head = seq[0];
+  if (!head) return [];
+  return seq.map((a) => {
+    if (head.mode === 'interval') return { ...a, mode: 'interval' as const, everySec: head.everySec ?? 180, showSec: a.showSec ?? 15 };
+    const dwell = a.showSec !== null && a.showSec >= AD_DWELL_RANGE.min && a.showSec <= AD_DWELL_RANGE.max ? a.showSec : AD_DWELL_DEFAULT;
+    return { ...a, mode: 'continuous' as const, everySec: null, showSec: seq.length > 1 ? dwell : null };
+  });
+}
+
+/** Writes one placement's sequence back into the form fields of an orientation (first ads in `ads`, the rest in `adsMore`). */
+function withSequence(form: BrandKitInput, o: BrandOrientation, placement: AdPlacement, seq: BrandKitAd[]): BrandKitInput {
+  const f = FIELDS[o];
+  const norm = normaliseSequence(seq);
+  const firsts = (form[f.ads] ?? []).filter((a) => a.placement !== placement);
+  const mores = (form[f.more] ?? []).filter((a) => a.placement !== placement);
+  return { ...form, [f.ads]: [...firsts, ...norm.slice(0, 1)], [f.more]: [...mores, ...norm.slice(1)] };
+}
 
 /**
  * Brand kits: one editor per kit where each graphic (logo, wallpaper, the three ads) is uploaded, previewed,
@@ -439,7 +476,7 @@ async function confirmAndDeleteKit(
 }
 
 function KitSummary({ kit, assets, channelNames, onEdit, onDelete }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void; onDelete: () => void }) {
-  const offChip = kitOffChip([...(kit.ads ?? []), ...(kit.adsPortrait ?? [])].filter((a) => !a.enabled).length);
+  const offChip = kitOffChip([...(kit.ads ?? []), ...(kit.adsPortrait ?? []), ...(kit.adsMore ?? []), ...(kit.adsMorePortrait ?? [])].filter((a) => !a.enabled).length);
   const hasPortrait = !!(kit.logoAssetIdPortrait || kit.wallpaperAssetIdPortrait || (kit.adsPortrait ?? []).length > 0);
   return (
     <Card as="div" className="ha-kit-card">
@@ -585,6 +622,8 @@ interface SlotPickerProps {
   /** Name used in labels, e.g. "Logo" or "Lower third ad". */
   label: string;
   assetId: string | null;
+  /** Added to this picker's test ids, so the 2nd..5th ad of a placement does not repeat the first one's ("-2"). */
+  testSuffix?: string;
   assets: LibraryAsset[];
   onChange: (assetId: string | null) => void;
   onLibraryChanged: () => Promise<void>;
@@ -597,7 +636,7 @@ interface SlotPickerProps {
  * remove it, or pick a file that is already uploaded. Shows the suggested size and warns (never blocks) when the
  * picture's shape is far from the suggestion.
  */
-function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLibraryChanged, onError, onSaid }: SlotPickerProps) {
+function SlotPicker({ slot, orientation, label, assetId, testSuffix = '', assets, onChange, onLibraryChanged, onError, onSaid }: SlotPickerProps) {
   const spec = SLOT_SPECS[orientation][slot];
   const kinds = SLOT_KIND[slot];
   const asset = assets.find((a) => a.id === assetId) ?? null;
@@ -643,7 +682,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
   const mismatch = asset ? aspectMismatch(asset.width, asset.height, spec) : false;
 
   return (
-    <div className="ha-slot" data-testid={`kit-slot-${slot}`} data-has-file={asset ? 'true' : 'false'}>
+    <div className="ha-slot" data-testid={`kit-slot-${slot}${testSuffix}`} data-has-file={asset ? 'true' : 'false'}>
       <label
         className={`ha-slot-thumb${over ? ' is-over' : ''}`}
         onDragOver={(e) => {
@@ -659,7 +698,7 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
       <div className="ha-slot-body">
         <div className="ha-slot-head">
           <strong>{label}</strong>
-          <span className="ha-slot-sug" data-testid={`slot-size-${slot}`}>Suggested {sizeText(spec)}</span>
+          <span className="ha-slot-sug" data-testid={`slot-size-${slot}${testSuffix}`}>Suggested {sizeText(spec)}</span>
         </div>
         {asset && (
           <p className="ha-sm">
@@ -669,11 +708,11 @@ function SlotPicker({ slot, orientation, label, assetId, assets, onChange, onLib
             </span>
           </p>
         )}
-        <p className="ha-hint" style={{ marginTop: 0 }} data-testid={`slot-help-${slot}`}>
+        <p className="ha-hint" style={{ marginTop: 0 }} data-testid={`slot-help-${slot}${testSuffix}`}>
           {slotHelp(orientation, slot)}
         </p>
         {mismatch && asset && (
-          <p className="ha-slot-warn kit-slot-warning" role="status" data-testid={`slot-warning-${slot}`}>
+          <p className="ha-slot-warn kit-slot-warning" role="status" data-testid={`slot-warning-${slot}${testSuffix}`}>
             <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> This picture is {asset.width} x {asset.height}, a different shape from the suggested {sizeText(spec)}.
             It still works, but it may look small or cropped.
           </p>
@@ -731,13 +770,14 @@ interface KitEditorProps {
 }
 
 const sameSet = (a: Set<string>, b: string[]) => a.size === b.length && b.every((x) => a.has(x));
+// First ads compare as a set by placement; further ads keep their play order within a placement (sort is stable).
 const sameAds = (a: BrandKitAd[], b: BrandKitAd[]) => JSON.stringify([...a].sort(byPlacement)) === JSON.stringify([...b].sort(byPlacement));
 const byPlacement = (x: BrandKitAd, y: BrandKitAd) => x.placement.localeCompare(y.placement);
 const PLAIN_KEYS = ['name', 'logoAssetId', 'logoAssetIdPortrait', 'logoPosition', 'logoSize', 'wallpaperAssetId', 'wallpaperAssetIdPortrait', 'wallpaperDim', 'lowerThirdStyle', 'adsShrinkPicture', 'thumbnailAssetId', 'clockEnabled', 'clockPosition', 'clockFormat', 'clockShowDate', 'clockShowSeconds', 'clockTimezone', 'clockSize', 'clockStyle', 'clockAlternate'] as const;
 
 /** One kit's editor (also the "new kit" form when `kit` is null): every graphic in place, per orientation, with a live preview. */
 function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, onLibraryChanged, onError, onSaid }: KitEditorProps) {
-  const initial: BrandKitInput = kit ? { ...EMPTY_KIT, ...kit, ads: kit.ads ?? [], adsPortrait: kit.adsPortrait ?? [] } : EMPTY_KIT;
+  const initial: BrandKitInput = kit ? { ...EMPTY_KIT, ...kit, ads: kit.ads ?? [], adsPortrait: kit.adsPortrait ?? [], adsMore: kit.adsMore ?? [], adsMorePortrait: kit.adsMorePortrait ?? [] } : EMPTY_KIT;
   const [form, setForm] = useState<BrandKitInput>(initial);
   const [orientation, setOrientation] = useState<BrandOrientation>('landscape');
   const [isDefault, setIsDefault] = useState(kit?.isDefault ?? false);
@@ -747,8 +787,6 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   const idPrefix = kit ? `kit-${kit.id}` : 'kit-new';
   const f = FIELDS[orientation];
   const spec = SLOT_SPECS[orientation];
-  const ads = form[f.ads] ?? [];
-
   const dirty =
     !kit ||
     PLAIN_KEYS.some((k) => form[k] !== initial[k]) ||
@@ -756,6 +794,8 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
     (form.description ?? '').trim() !== (initial.description ?? '').trim() ||
     !sameAds(form.ads ?? [], initial.ads ?? []) ||
     !sameAds(form.adsPortrait ?? [], initial.adsPortrait ?? []) ||
+    !sameAds(form.adsMore ?? [], initial.adsMore ?? []) ||
+    !sameAds(form.adsMorePortrait ?? [], initial.adsMorePortrait ?? []) ||
     isDefault !== kit.isDefault ||
     !sameSet(chosen, kit.connectionIds);
 
@@ -789,8 +829,9 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
         clockAlternate: form.clockAlternate !== false,
         title: form.title?.trim() || null,
         description: form.description?.trim() || null,
-        ...(sendAds(form.ads ?? []) ? { ads: form.ads ?? [] } : {}),
-        ...(sendAds(form.adsPortrait ?? []) ? { adsPortrait: form.adsPortrait ?? [] } : {}),
+        // The first ads and the further ones go together, so a removed further ad is removed (an older server would only know `ads`).
+        ...(sendAds(form.ads ?? []) && sendAds(form.adsMore ?? []) ? { ads: form.ads ?? [], adsMore: form.adsMore ?? [] } : {}),
+        ...(sendAds(form.adsPortrait ?? []) && sendAds(form.adsMorePortrait ?? []) ? { adsPortrait: form.adsPortrait ?? [], adsMorePortrait: form.adsMorePortrait ?? [] } : {}),
       };
       const saved = kit
         ? await assetsApi.updateBrandKit(kit.id, { ...body, ...(isDefault && !kit.isDefault ? { isDefault: true } : {}) })
@@ -823,7 +864,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
   const slotCommon = { orientation, assets, onLibraryChanged, onError, onSaid: () => undefined };
   // The set a vertical stream really gets: its own wallpaper/ads, the 16:9 logo only when it has no 9:16 one.
   const effective = kitSetFor(
-    { logoAssetId: form.logoAssetId, logoAssetIdPortrait: form.logoAssetIdPortrait ?? null, wallpaperAssetId: form.wallpaperAssetId, wallpaperAssetIdPortrait: form.wallpaperAssetIdPortrait ?? null, ads: form.ads ?? [], adsPortrait: form.adsPortrait ?? [] },
+    { logoAssetId: form.logoAssetId, logoAssetIdPortrait: form.logoAssetIdPortrait ?? null, wallpaperAssetId: form.wallpaperAssetId, wallpaperAssetIdPortrait: form.wallpaperAssetIdPortrait ?? null, ads: form.ads ?? [], adsPortrait: form.adsPortrait ?? [], adsMore: form.adsMore ?? [], adsMorePortrait: form.adsMorePortrait ?? [] },
     orientation,
   );
 
@@ -914,7 +955,7 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
           <fieldset className="ha-fieldset ha-slots" data-testid="kit-ads">
             <legend>Ads</legend>
             <p className="ha-hint" style={{ marginTop: 0 }}>
-              Up to four ads on the broadcast picture, one in each place (lower third, left third, full screen and an L-shaped frame). Studio hosts can still switch them off or replace them per stream.
+              Up to four ads on the broadcast picture, one in each place (lower third, left third, full screen and an L-shaped frame); each place can play up to {MAX_ADS_PER_PLACEMENT} ads one after the other (Add another). Studio hosts can still switch them off or replace them per stream.
             </p>
             {adsAllowed === null ? (
               <p className="ha-hint">Checking your plan…</p>
@@ -926,17 +967,22 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
                     See plans
                   </Link>
                 </Notice>
-                {(form.ads ?? []).length + (form.adsPortrait ?? []).length > 0 && (
+                {(form.ads ?? []).length + (form.adsPortrait ?? []).length + (form.adsMore ?? []).length + (form.adsMorePortrait ?? []).length > 0 && (
                   <div data-testid="kit-ads-readonly">
                     <p className="ha-hint">This kit still has ads from when your plan allowed them. They are not used on this plan. You can remove them (this also frees their files for deletion).</p>
                     <ul style={{ listStyle: 'disc', paddingLeft: 20, margin: '8px 0' }}>
-                      {[...(form.ads ?? []).map((ad) => ({ ad, o: 'landscape' as const })), ...(form.adsPortrait ?? []).map((ad) => ({ ad, o: 'portrait' as const }))].map(({ ad, o }) => (
-                        <li key={`${o}-${ad.placement}`}>
+                      {[
+                        ...(form.ads ?? []).map((ad) => ({ ad, o: 'landscape' as const })),
+                        ...(form.adsMore ?? []).map((ad) => ({ ad, o: 'landscape' as const })),
+                        ...(form.adsPortrait ?? []).map((ad) => ({ ad, o: 'portrait' as const })),
+                        ...(form.adsMorePortrait ?? []).map((ad) => ({ ad, o: 'portrait' as const })),
+                      ].map(({ ad, o }, i) => (
+                        <li key={`${o}-${ad.placement}-${i}`}>
                           {AD_PLACEMENT_LABEL[ad.placement]}{o === 'portrait' ? ' (9:16)' : ''}: {assets.find((a) => a.id === ad.assetId)?.name ?? 'a file'} ({describeSchedule(ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' })})
                         </li>
                       ))}
                     </ul>
-                    <Button variant="secondary" size="sm" icon={<Trash2 size={14} aria-hidden="true" />} onClick={() => setForm((v) => ({ ...v, ads: [], adsPortrait: [] }))}>
+                    <Button variant="secondary" size="sm" icon={<Trash2 size={14} aria-hidden="true" />} onClick={() => setForm((v) => ({ ...v, ads: [], adsPortrait: [], adsMore: [], adsMorePortrait: [] }))}>
                       Remove ads
                     </Button>
                   </div>
@@ -945,11 +991,11 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
             ) : (
               AD_PLACEMENTS.map((p) => (
                 <AdSlotEditor
-                  key={p}
+                  key={`${orientation}-${p}`}
                   placement={p}
-                  ad={ads.find((a) => a.placement === p) ?? null}
+                  seq={adSequenceOf(form, orientation, p)}
                   picker={slotCommon}
-                  onChange={(ad) => set(f.ads, [...ads.filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
+                  onChange={(seq) => setForm((v) => withSequence(v, orientation, p, seq))}
                 />
               ))
             )}
@@ -1071,22 +1117,36 @@ function FrameWindowPreview({ assetId, window: w, state, orientation }: { assetI
   );
 }
 
-/** One of a kit's four ad slots: the picture (uploaded in place), on/off and the schedule (stored in seconds). */
+/**
+ * One of a kit's four ad places: the picture (uploaded in place), on/off and the schedule (stored in seconds). A place can play up to
+ * five ads in turn: `seq` is its ads in play order (the first one has the controls the editor always had; the others get their own
+ * picture, On switch, seconds, order buttons and Remove below it).
+ */
 function AdSlotEditor({
   placement,
-  ad,
+  seq,
   picker,
   onChange,
 }: {
   placement: AdPlacement;
-  ad: BrandKitAd | null;
+  seq: BrandKitAd[];
   picker: Omit<SlotPickerProps, 'slot' | 'label' | 'assetId' | 'onChange'>;
-  onChange: (ad: BrandKitAd | null) => void;
+  onChange: (seq: BrandKitAd[]) => void;
 }) {
   const label = AD_PLACEMENT_LABEL[placement];
+  const ad = seq[0] ?? null;
+  const rest = seq.slice(1);
+  const [adding, setAdding] = useState(false);
   const frame = useFrameWindow(placement === 'l_shape' ? (ad?.assetId ?? null) : null);
   const timed = ad?.mode === 'interval';
-  const patch = (next: Partial<BrandKitAd>) => ad && onChange({ ...ad, ...next });
+  const sequence = seq.length > 1;
+  const patchAt = (i: number, next: Partial<BrandKitAd>) => onChange(seq.map((a, k) => (k === i ? { ...a, ...next } : a)));
+  const swap = (i: number, j: number) => {
+    const next = [...seq];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const newAd = (assetId: string): BrandKitAd => ({ placement, assetId, enabled: true, mode: ad?.mode ?? 'continuous', showSec: timed ? 15 : AD_DWELL_DEFAULT, everySec: ad?.everySec ?? null });
   return (
     <div className="kit-ad-slot ha-ad-slot" role="group" aria-label={`${label} ad`} data-testid={`kit-ad-${placement}`}>
       <SlotPicker
@@ -1094,9 +1154,10 @@ function AdSlotEditor({
         slot={placement}
         label={`${label} ad`}
         assetId={ad?.assetId ?? null}
-        onChange={(assetId) =>
-          onChange(assetId ? { placement, assetId, enabled: ad?.enabled ?? true, mode: ad?.mode ?? 'continuous', showSec: ad?.showSec ?? null, everySec: ad?.everySec ?? null } : null)
-        }
+        onChange={(assetId) => {
+          if (!assetId) onChange(seq.slice(1)); // removing the first ad: the next one moves up
+          else onChange(ad ? [{ ...ad, assetId }, ...rest] : [{ placement, assetId, enabled: true, mode: 'continuous', showSec: null, everySec: null }]);
+        }}
       />
       {placement === 'l_shape' && ad && (
         <div className="kit-frame-check" data-testid="kit-frame-check">
@@ -1117,7 +1178,7 @@ function AdSlotEditor({
       {ad && (
         <div className="ha-ad-controls">
           <label className="ha-check">
-            <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => patch({ enabled: e.target.checked })} /> On
+            <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => patchAt(0, { enabled: e.target.checked })} /> On
             {!ad.enabled && <span className="ha-tag ha-tag--warn ad-off-badge" data-testid={`kit-ad-off-badge-${placement}`}>Off</span>}
           </label>
           {!ad.enabled && (
@@ -1126,18 +1187,108 @@ function AdSlotEditor({
             </p>
           )}
           <div className="ha-seg" role="group" aria-label={`${label} ad: when`}>
-            <button type="button" aria-pressed={!timed} onClick={() => patch({ mode: 'continuous', showSec: null, everySec: null })}>
+            <button type="button" aria-pressed={!timed} onClick={() => onChange(seq.map((a) => ({ ...a, mode: 'continuous' as const })))}>
               Always on
             </button>
-            <button type="button" aria-pressed={timed} onClick={() => patch({ mode: 'interval', showSec: ad.showSec ?? 15, everySec: ad.everySec ?? 180 })}>
+            <button type="button" aria-pressed={timed} onClick={() => onChange(seq.map((a) => ({ ...a, mode: 'interval' as const, everySec: ad.everySec ?? 180, showSec: timed ? a.showSec : 15 })))}>
               Now and then
             </button>
           </div>
           {ad.mode === 'interval' && ad.showSec && ad.everySec && (
-            <AdIntervalFields label={label} schedule={{ mode: 'interval', showSec: ad.showSec, everySec: ad.everySec }} onChange={(sch) => sch.mode === 'interval' && patch({ showSec: sch.showSec, everySec: sch.everySec })} />
+            <AdIntervalFields
+              label={label}
+              schedule={{ mode: 'interval', showSec: ad.showSec, everySec: ad.everySec }}
+              hideShow={sequence}
+              onChange={(sch) => sch.mode === 'interval' && onChange(seq.map((a, k) => ({ ...a, everySec: sch.everySec, showSec: k === 0 ? sch.showSec : a.showSec })))}
+            />
+          )}
+          {sequence && (
+            <SeqControls label={label} n={1} ad={ad} timed={timed} first last={false} onSeconds={(sec) => patchAt(0, { showSec: sec })} onUp={() => undefined} onDown={() => swap(0, 1)} />
           )}
         </div>
+      )}
+      {rest.map((x, k) => {
+        const i = k + 1;
+        const n = i + 1;
+        return (
+          <div key={`${i}-${x.assetId}`} className="kit-ad-extra" role="group" aria-label={`${label} ad ${n}`} data-testid={`kit-ad-${placement}-${n}`}>
+            <SlotPicker
+              {...picker}
+              slot={placement}
+              testSuffix={`-${n}`}
+              label={`${label} ad ${n}`}
+              assetId={x.assetId}
+              onChange={(assetId) => (assetId ? patchAt(i, { assetId }) : onChange(seq.filter((_, idx) => idx !== i)))}
+            />
+            <div className="ha-ad-controls">
+              <label className="ha-check">
+                <input type="checkbox" checked={x.enabled} aria-label={`${label} ad ${n} on`} onChange={(e) => patchAt(i, { enabled: e.target.checked })} /> On
+                {!x.enabled && <span className="ha-tag ha-tag--warn ad-off-badge" data-testid={`kit-ad-off-badge-${placement}-${n}`}>Off</span>}
+              </label>
+              {!x.enabled && (
+                <p className="ha-slot-warn kit-slot-warning" role="status" data-testid={`kit-ad-off-${placement}-${n}`}>
+                  <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> {adOffWarning(placement, n)}
+                </p>
+              )}
+              <SeqControls label={label} n={n} ad={x} timed={timed} first={false} last={i === seq.length - 1} onSeconds={(sec) => patchAt(i, { showSec: sec })} onUp={() => swap(i, i - 1)} onDown={() => swap(i, i + 1)} />
+            </div>
+          </div>
+        );
+      })}
+      {adding && (
+        <div className="kit-ad-extra" role="group" aria-label={`${label} ad ${seq.length + 1}`} data-testid={`kit-ad-${placement}-${seq.length + 1}`}>
+          <SlotPicker
+            {...picker}
+            slot={placement}
+            testSuffix={`-${seq.length + 1}`}
+            label={`${label} ad ${seq.length + 1}`}
+            assetId={null}
+            onChange={(assetId) => {
+              if (!assetId) return;
+              setAdding(false);
+              onChange([...seq, newAd(assetId)]);
+            }}
+          />
+          <button type="button" className="ha-quiet" aria-label={`Cancel adding ${label} ad ${seq.length + 1}`} onClick={() => setAdding(false)}>
+            <X size={14} aria-hidden="true" /> Cancel
+          </button>
+        </div>
+      )}
+      {ad && !adding && seq.length < MAX_ADS_PER_PLACEMENT && (
+        <Button variant="secondary" size="sm" aria-label={`Add another ${label} ad`} icon={<Plus size={14} aria-hidden="true" />} onClick={() => setAdding(true)}>
+          Add another
+        </Button>
+      )}
+      {sequence && (
+        <p className="ha-hint" style={{ marginTop: 0 }} data-testid={`kit-ad-seq-help-${placement}`}>
+          {timed
+            ? `These ${seq.length} ads take turns: each time the show window comes round, the next one shows. The pause between showings is the first ad's. Seconds = how long each ad is shown.`
+            : `These ${seq.length} ads take turns, each shown for its own seconds (5 to 300), with a short cross-fade between them.`}
+        </p>
       )}
     </div>
   );
 }
+
+/** Seconds + order buttons of one ad of a sequence (the seconds mean "shown for" in a timed place and "before the next ad" in an always-on one). */
+function SeqControls({ label, n, ad, timed, first, last, onSeconds, onUp, onDown }: { label: string; n: number; ad: BrandKitAd; timed: boolean; first: boolean; last: boolean; onSeconds: (sec: number) => void; onUp: () => void; onDown: () => void }) {
+  return (
+    <div className="ad-seq-controls">
+      <SecondsField
+        ariaLabel={`${label} ad ${n}: seconds`}
+        title={timed ? 'Seconds this ad is shown each time' : 'Seconds this ad is shown before the next one'}
+        value={ad.showSec ?? (timed ? 15 : AD_DWELL_DEFAULT)}
+        min={timed ? AD_SHOW_SEC_RANGE.min : AD_DWELL_RANGE.min}
+        max={timed ? AD_SHOW_SEC_RANGE.max : AD_DWELL_RANGE.max}
+        onCommit={onSeconds}
+      />
+      <button type="button" className="ha-quiet" aria-label={`Move ${label} ad ${n} up`} disabled={first} onClick={onUp}>
+        <ChevronUp size={14} aria-hidden="true" />
+      </button>
+      <button type="button" className="ha-quiet" aria-label={`Move ${label} ad ${n} down`} disabled={last} onClick={onDown}>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+

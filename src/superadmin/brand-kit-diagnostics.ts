@@ -16,6 +16,8 @@ export interface AssetSummary {
 
 export interface AdSummary extends AssetSummary {
   placement: AdPlacementKey;
+  /** Place in the placement's sequence, 0 = first (several ads of one placement play in turn). */
+  position?: number;
   enabled: boolean;
   mode: 'continuous' | 'interval';
   showSec: number | null;
@@ -93,7 +95,14 @@ export function buildKitDiagnostics(k: DiagnosticsInput): Diagnostic[] {
   for (const s of sets) {
     const set = k[s];
     for (const ad of set.ads) {
-      const label = PLACEMENT_LABEL[ad.placement];
+      const total = set.ads.filter((x) => x.placement === ad.placement).length;
+      const label = total > 1 ? `${PLACEMENT_LABEL[ad.placement]} ad ${(ad.position ?? 0) + 1} of ${total}` : PLACEMENT_LABEL[ad.placement];
+      if (total > 1 && (ad.position ?? 0) === 0) {
+        add(
+          'info',
+          `${PLACEMENT_LABEL[ad.placement]} (${SET_LABEL[s]}) plays ${total} ads in turn (${ad.mode === 'interval' ? `each time it comes round the next one shows; the pause between showings is ${ad.everySec} s` : 'always on: each ad is shown for its own time, then the next'}).`,
+        );
+      }
       if (ad.placement === 'l_shape') {
         const size = ad.missing ? 'file missing' : `file ${ad.width}x${ad.height} ${typeName(ad.mime)}`;
         const bad = ad.windowCheck?.status === 'none';

@@ -118,6 +118,19 @@ describe('phoneStateToSnapshot (phone state -> control page snapshot)', () => {
     expect(s.logo.has).toBe(false);
     expect(s.phoneCaps).toEqual({ kit: false, logo: false, lowerThird: false }); // older phone: no optional blocks
   });
+  it('passes an optional ad sequence through read-only; a malformed one is ignored, never a refusal', () => {
+    const withSeq = (sequence: unknown, current: unknown) =>
+      phoneState({ ads: { lower_third: { present: true, enabled: true, manual: null, mode: 'continuous', source: 'kit', sequence, current } } });
+    const ok = phoneStateToSnapshot(withSeq([{ enabled: true, showSec: 20 }, { enabled: false }], 1))!;
+    expect(ok.ads.lower_third.sequence).toEqual([{ name: 'Ad 1', enabled: true, showSec: 20 }, { name: 'Ad 2', enabled: false, showSec: null }]);
+    expect(ok.ads.lower_third.current).toBe(1);
+    for (const bad of ['x', [], [{ enabled: 'yes' }], Array.from({ length: 6 }, () => ({ enabled: true }))]) {
+      const s = phoneStateToSnapshot(withSeq(bad, 0))!;
+      expect(s).not.toBeNull();
+      expect(s.ads.lower_third.sequence).toBeUndefined();
+    }
+    expect(phoneStateToSnapshot(phoneState())!.ads.lower_third.sequence).toBeUndefined();
+  });
   describe('optional capability blocks (kits, kit, logo, lowerThird)', () => {
     const K1 = '11111111-1111-4111-8111-111111111111';
     const K2 = '22222222-2222-4222-8222-222222222222';

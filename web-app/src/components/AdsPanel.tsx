@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Eye, EyeOff, ImagePlus, Megaphone, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Eye, EyeOff, ImagePlus, Megaphone, Plus, Trash2, Undo2 } from 'lucide-react';
 import {
+  AD_DWELL_RANGE,
   AD_EVERY_SEC_RANGE,
   AD_PLACEMENTS,
   AD_PLACEMENT_LABEL,
   AD_SHOW_SEC_RANGE,
   FREE_PLAN_AD_SCHEDULE,
+  MAX_ADS_PER_PLACEMENT,
   describeSchedule,
   formatCountdown,
   scheduleError,
@@ -16,9 +18,9 @@ import {
   type AdPlacement,
   type AdSchedule,
 } from '../studio/ads';
-import type { AdInfo } from '../studio/adLayer';
+import type { AdInfo, AdPlacementInfo } from '../studio/adLayer';
 import type { BrandKit } from '../types/api';
-import { kitSetFor } from '../studio/brandKitSet';
+import { kitAdSequence } from '../studio/brandKitSet';
 import { slotHelp, type BrandOrientation } from '../studio/brandSizes';
 import { animatedNotice } from '../studio/animatedImage';
 import { adOffWarning } from '../studio/adOff';
@@ -26,7 +28,7 @@ import { adOffWarning } from '../studio/adOff';
 interface Props {
   /** 'free' = the plan carries a StreamBird ad and cannot run its own. */
   plan: 'unknown' | 'free' | 'custom';
-  ads: Record<AdPlacement, AdInfo>;
+  ads: Record<AdPlacement, AdPlacementInfo>;
   /** The brand kit applied to this stream (its ads can be picked as the file source). */
   kit: BrandKit | null;
   /** The stream's orientation: decides which set of the kit's ads is offered and which sizes are suggested. */
@@ -35,11 +37,18 @@ interface Props {
   shrink: boolean;
   actions: {
     setAdsShrink: (on: boolean) => void;
-    setAdEnabled: (p: AdPlacement, enabled: boolean) => void;
+    /** `index` = one ad of the placement's sequence (0 = the first); omitted = all of them. */
+    setAdEnabled: (p: AdPlacement, enabled: boolean, index?: number) => void;
     setAdSchedule: (p: AdPlacement, schedule: AdSchedule) => void;
+    /** One ad's own seconds: shown for ("now and then") or before the next ad ("always on"). */
+    setAdShowSec: (p: AdPlacement, index: number, sec: number) => void;
     setAdManual: (p: AdPlacement, manual: AdManual) => void;
+    moveAd: (p: AdPlacement, from: number, to: number) => void;
     adTiming: (p: AdPlacement) => { visible: boolean; secondsLeft: number } | null;
-    setAdFile: (p: AdPlacement, file: File | null) => Promise<void>;
+    /** The ad of the placement showing now (or next, while a "now and then" sequence is hidden): its index in the sequence. */
+    adCurrent: (p: AdPlacement) => number | null;
+    /** `index` = its place in the sequence; the length of the sequence adds one more; null removes that ad. */
+    setAdFile: (p: AdPlacement, file: File | null, index?: number) => Promise<void>;
     useKitAd: (p: AdPlacement) => Promise<void>;
   };
 }
@@ -87,7 +96,7 @@ export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props
         <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
       </div>
       {AD_PLACEMENTS.map((p) => (
-        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} />
+        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAds={kit ? kitAdSequence(kit, orientation, p) : []} actions={actions} />
       ))}
     </div>
   );
@@ -109,31 +118,42 @@ function AdCard({
   placement,
   orientation,
   info,
-  kitAd,
+  kitAds,
   actions,
 }: {
   placement: AdPlacement;
   orientation: BrandOrientation;
-  info: AdInfo;
-  kitAd: BrandKit['ads'][number] | null;
+  info: AdPlacementInfo;
+  kitAds: BrandKit['ads'];
   actions: Props['actions'];
 }) {
+  const kitAd = kitAds[0] ?? null;
   const label = AD_PLACEMENT_LABEL[placement];
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const timed = info.schedule.mode === 'interval';
-  const switchedOff = info.hasMedia && !info.enabled;
+  const all: AdInfo[] = [info, ...info.more];
+  const live = all.map((a, i) => ({ a, i })).filter(({ a }) => a.hasMedia && a.enabled);
+  const sequence = info.hasMedia && info.more.length > 0;
+  /** Something of this placement is on: the Show now / Hide buttons need that. */
+  const placementOn = live.length > 0;
+  const addRef = useRef<HTMLInputElement>(null);
+  const switchedOff = info.hasMedia && (sequence ? !placementOn : !info.enabled);
   const noWindow = placement === 'l_shape' && info.hasMedia && !info.window;
   const manualNote = info.manual === 'shown' ? 'Showing now (by hand)' : info.manual === 'hidden' ? 'Hidden (by hand)' : info.hasMedia ? describeSchedule(info.schedule) : 'No picture yet';
 
   // A "now and then" ad is hidden until its first showing: say when that is, counting down live.
   const [, setTick] = useState(0);
   useEffect(() => {
-    if (!timed || !info.hasMedia) return;
+    if (!(timed || sequence) || !info.hasMedia) return;
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [timed, info.hasMedia]);
-  const timing = timed && info.hasMedia && info.enabled ? actions.adTiming(placement) : null;
+  }, [timed, sequence, info.hasMedia]);
+  const timing = timed && info.hasMedia && placementOn ? actions.adTiming(placement) : null;
+  const currentIdx = sequence ? actions.adCurrent(placement) : null;
+  const currentPos = currentIdx === null ? -1 : live.findIndex((x) => x.i === currentIdx);
+  const hiddenPhase = timed && !info.manual && !!timing && !timing.visible;
+  const nowNote = sequence && live.length > 1 && currentPos >= 0 ? `${hiddenPhase ? 'Next up' : 'Now showing'} ${currentPos + 1} of ${live.length}` : null;
   const timingNote =
     info.manual || !timing
       ? null
@@ -165,7 +185,7 @@ function AdCard({
             checked={info.enabled}
             disabled={!info.hasMedia}
             aria-label={`${label} ad on`}
-            onChange={(e) => actions.setAdEnabled(placement, e.target.checked)}
+            onChange={(e) => actions.setAdEnabled(placement, e.target.checked, 0)}
           />{' '}
           On
         </label>
@@ -197,6 +217,11 @@ function AdCard({
       {switchedOff && (
         <p className="ad-off-warning" role="status" data-testid={`ad-off-${placement}`}>
           <AlertTriangle size={14} aria-hidden="true" /> {adOffWarning(placement)}
+        </p>
+      )}
+      {sequence && !info.enabled && placementOn && (
+        <p className="ad-off-warning" role="status" data-testid={`ad-off-${placement}-1`}>
+          <AlertTriangle size={14} aria-hidden="true" /> {adOffWarning(placement)} (the other ads of this place still play)
         </p>
       )}
       {noWindow && (
@@ -235,6 +260,32 @@ function AdCard({
         </button>
       )}
 
+      {info.hasMedia && (
+        <AdSequence
+          placement={placement}
+          label={label}
+          all={all}
+          timed={timed}
+          currentIdx={currentIdx}
+          actions={actions}
+          onAdd={() => addRef.current?.click()}
+        />
+      )}
+      <input
+        ref={addRef}
+        id={`adFileMore-${placement}`}
+        className="ad-file-input"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        aria-label={`${label} another ad file (PNG, JPG, WebP or GIF)`}
+        tabIndex={-1}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void actions.setAdFile(placement, f, all.length);
+          e.target.value = '';
+        }}
+      />
+
       <div className="ad-schedule">
         <span className="ad-label" id={`ad-sched-${placement}`}>
           When
@@ -252,14 +303,14 @@ function AdCard({
             Now and then
           </button>
         </div>
-        {info.schedule.mode === 'interval' && <AdIntervalFields label={label} schedule={info.schedule} onChange={(s) => actions.setAdSchedule(placement, s)} />}
+        {info.schedule.mode === 'interval' && <AdIntervalFields label={label} schedule={info.schedule} hideShow={sequence} onChange={(s) => actions.setAdSchedule(placement, s)} />}
       </div>
 
       <div className="studio-toolbar ad-manual">
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !placementOn} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
           <Eye size={14} /> Show now
         </button>
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !placementOn} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
           <EyeOff size={14} /> Hide
         </button>
         {info.manual && (
@@ -271,6 +322,11 @@ function AdCard({
       <p className="field-hint" role="status" data-testid={`ad-status-${placement}`}>
         {switchedOff ? 'Switched off' : manualNote}
       </p>
+      {nowNote && (
+        <p className="field-hint" role="status" data-testid={`ad-now-${placement}`}>
+          {nowNote}
+        </p>
+      )}
       {timingNote && (
         <p className="field-hint" role="status" data-testid={`ad-timing-${placement}`}>
           {timingNote} Use Show now to see it straight away. This preview timer starts again when you go live.
@@ -294,7 +350,18 @@ export function WindowOutline({ window: w }: { window: { x: number; y: number; w
 type Unit = 'sec' | 'min';
 
 /** "Show for [n][sec|min] every [n][sec|min]": typed freely, applied as soon as the numbers are valid (stored in seconds). */
-export function AdIntervalFields({ label, schedule, onChange }: { label: string; schedule: Extract<AdSchedule, { mode: 'interval' }>; onChange: (s: AdSchedule) => void }) {
+export function AdIntervalFields({
+  label,
+  schedule,
+  hideShow = false,
+  onChange,
+}: {
+  label: string;
+  schedule: Extract<AdSchedule, { mode: 'interval' }>;
+  /** An ad sequence sets each ad's show time on its own row. */
+  hideShow?: boolean;
+  onChange: (s: AdSchedule) => void;
+}) {
   const show = splitSeconds(schedule.showSec);
   const every = splitSeconds(schedule.everySec);
   const [showVal, setShowVal] = useState(String(show.value));
@@ -324,6 +391,7 @@ export function AdIntervalFields({ label, schedule, onChange }: { label: string;
   const maxFor = (range: { max: number }, unit: Unit) => (unit === 'min' ? Math.floor(range.max / 60) : range.max);
   return (
     <div className="ad-interval">
+      {!hideShow && (
       <div className="ad-interval-row">
         <span className="ad-label">Show for</span>
         <input
@@ -350,6 +418,7 @@ export function AdIntervalFields({ label, schedule, onChange }: { label: string;
           <option value="min">minutes</option>
         </select>
       </div>
+      )}
       <div className="ad-interval-row">
         <span className="ad-label">Then hide for</span>
         <input
@@ -376,12 +445,128 @@ export function AdIntervalFields({ label, schedule, onChange }: { label: string;
           <option value="min">minutes</option>
         </select>
       </div>
-      <p className="field-hint">The first showing comes after the hidden time, counted from when you go live. Then it repeats.</p>
+      <p className="field-hint">
+        {hideShow
+          ? 'The first showing comes after the hidden time, counted from when you go live. Each time it comes round, the next ad of this place shows.'
+          : 'The first showing comes after the hidden time, counted from when you go live. Then it repeats.'}
+      </p>
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The ads of one placement as a list, once there is more than one, plus "Add another" up to the limit. Ad 1 is the main card
+ * above (its On switch and Remove button live there).
+ */
+function AdSequence({
+  placement,
+  label,
+  all,
+  timed,
+  currentIdx,
+  actions,
+  onAdd,
+}: {
+  placement: AdPlacement;
+  label: string;
+  all: AdInfo[];
+  timed: boolean;
+  currentIdx: number | null;
+  actions: Props['actions'];
+  onAdd: () => void;
+}) {
+  const many = all.length > 1;
+  return (
+    <div className="ad-sequence" data-testid={`ad-seq-${placement}`}>
+      {many && (
+        <>
+          <span className="ad-label">{`${all.length} ads, played in turn`}</span>
+          <ol className="ad-seq-list">
+            {all.map((a, i) => {
+              const n = i + 1;
+              return (
+                <li key={`${i}-${a.assetId ?? a.name ?? ''}`} className={`ad-seq-row${currentIdx === i ? ' ad-seq-row--current' : ''}`} data-testid={`ad-seq-row-${placement}-${n}`}>
+                  <span className="ad-seq-thumb" aria-hidden="true">
+                    {a.previewUrl ? <img src={a.previewUrl} alt="" /> : <ImagePlus size={14} />}
+                  </span>
+                  <span className="ad-seq-name" title={a.name ?? undefined}>
+                    {n}. {a.hasMedia ? a.name : 'No picture'}
+                  </span>
+                  {n > 1 && (
+                    <label className="checkbox-row ad-toggle">
+                      <input type="checkbox" checked={a.enabled} disabled={!a.hasMedia} aria-label={`${label} ad ${n} on`} onChange={(e) => actions.setAdEnabled(placement, e.target.checked, i)} /> On
+                    </label>
+                  )}
+                  <SecondsField
+                    ariaLabel={`${label} ad ${n}: seconds`}
+                    title={timed ? 'Seconds this ad is shown each time' : 'Seconds this ad is shown before the next one'}
+                    value={a.showSec}
+                    min={timed ? 1 : AD_DWELL_RANGE.min}
+                    max={timed ? 3600 : AD_DWELL_RANGE.max}
+                    onCommit={(sec) => actions.setAdShowSec(placement, i, sec)}
+                  />
+                  <button type="button" className="icon-btn icon-btn--small" aria-label={`Move ${label} ad ${n} up`} disabled={i === 0} onClick={() => actions.moveAd(placement, i, i - 1)}>
+                    <ChevronUp size={14} />
+                  </button>
+                  <button type="button" className="icon-btn icon-btn--small" aria-label={`Move ${label} ad ${n} down`} disabled={i === all.length - 1} onClick={() => actions.moveAd(placement, i, i + 1)}>
+                    <ChevronDown size={14} />
+                  </button>
+                  {n > 1 && (
+                    <button type="button" className="icon-btn icon-btn--small" aria-label={`Remove ${label} ad ${n}`} onClick={() => void actions.setAdFile(placement, null, i)}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                  {n > 1 && a.hasMedia && !a.enabled && (
+                    <p className="ad-off-warning" role="status" data-testid={`ad-off-${placement}-${n}`}>
+                      <AlertTriangle size={14} aria-hidden="true" /> {adOffWarning(placement, n)}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="field-hint">{timed ? 'Seconds = how long each ad is shown when its turn comes.' : 'Seconds = how long each ad is shown before the next one takes over.'}</p>
+        </>
+      )}
+      {all.length < MAX_ADS_PER_PLACEMENT && (
+        <button type="button" className="icon-btn icon-btn--small" aria-label={`Add another ${label} ad`} onClick={onAdd}>
+          <Plus size={14} /> Add another
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A small whole-number field (seconds) that commits when the value is valid and follows changes made elsewhere. */
+export function SecondsField({ ariaLabel, title, value, min, max, onCommit }: { ariaLabel: string; title: string; value: number; min: number; max: number; onCommit: (sec: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
+    setText((t) => (Number(t) === value ? t : String(value)));
+  }, [value]);
+  const bad = text.trim() === '' || !Number.isInteger(Number(text)) || Number(text) < min || Number(text) > max;
+  return (
+    <span className="ad-seq-secs" title={title}>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={text}
+        aria-label={ariaLabel}
+        aria-invalid={bad}
+        onChange={(e) => {
+          setText(e.target.value);
+          const n = Number(e.target.value);
+          if (e.target.value.trim() !== '' && Number.isInteger(n) && n >= min && n <= max) onCommit(n);
+        }}
+      />
+      <span className="field-hint">s</span>
+    </span>
   );
 }

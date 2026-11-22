@@ -14,6 +14,8 @@ export type AdminWindowCheck =
   | { status: 'not_checked'; reason: string };
 export interface AdminAdSummary extends AdminAssetSummary {
   placement: 'lower_third' | 'side_third' | 'full_screen' | 'l_shape';
+  /** Place in the placement's sequence (0 = first); optional for older servers. */
+  position?: number;
   enabled: boolean;
   mode: 'continuous' | 'interval';
   showSec: number | null;

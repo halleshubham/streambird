@@ -676,4 +676,59 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await a2.end();
     }
   });
+  it('0037 adds brand_kit_ads.position (0 for every existing ad), allows up to five ads per placement, keeps old-release inserts working, and is re-runnable', async () => {
+    const live = `sb_mig_${Date.now()}_seq`;
+    const a = new PgClient({ connectionString: adminUrl });
+    await a.connect();
+    await a.query(`CREATE DATABASE ${live}`);
+    await a.end();
+    try {
+      const url = urlFor(live);
+      await runMigrations(url, { upTo: '0036', quiet: true });
+      const db = new PgClient({ connectionString: url });
+      await db.connect();
+      // Production before 0037: a kit with a frame in both orientations and a lower third (one ad per placement).
+      const acct = (await db.query(`INSERT INTO accounts (name, api_key_hash, current_tier, included_hours_per_month) VALUES ('seq-acct', 'hseq', 'pro', 30) RETURNING id`)).rows[0].id;
+      const ad = (await db.query(`INSERT INTO assets (account_id, kind, name, content_type, size_bytes, width, height, storage_key) VALUES ($1, 'ad', 'ad', 'image/png', 10, 1, 1, 'seq1') RETURNING id`, [acct])).rows[0].id;
+      const kit = (await db.query(`INSERT INTO brand_kits (account_id, name, is_default) VALUES ($1, 'Main', true) RETURNING id`, [acct])).rows[0].id;
+      await db.query(
+        `INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation, mode, show_sec, every_sec) VALUES ($1, 'l_shape', $2, 'landscape', 'interval', 15, 180), ($1, 'l_shape', $2, 'portrait', 'continuous', NULL, NULL), ($1, 'lower_third', $2, 'landscape', 'continuous', NULL, NULL)`,
+        [kit, ad],
+      );
+      await expect(db.query(`SELECT position FROM brand_kit_ads`)).rejects.toThrow(); // column not there yet
+
+      await runMigrations(url, { quiet: true });
+      await runMigrations(url, { quiet: true }); // no-op
+      await db.query(`DELETE FROM schema_migrations WHERE filename LIKE '0037%'`);
+      await runMigrations(url, { quiet: true }); // forced re-apply stays fine
+
+      // Every existing ad is position 0 and otherwise unchanged.
+      const rows = (await db.query(`SELECT placement, orientation, position, mode, show_sec, every_sec FROM brand_kit_ads WHERE brand_kit_id = $1 ORDER BY orientation COLLATE "C", placement COLLATE "C"`, [kit])).rows;
+      expect(rows).toEqual([
+        { placement: 'l_shape', orientation: 'landscape', position: 0, mode: 'interval', show_sec: 15, every_sec: 180 },
+        { placement: 'lower_third', orientation: 'landscape', position: 0, mode: 'continuous', show_sec: null, every_sec: null },
+        { placement: 'l_shape', orientation: 'portrait', position: 0, mode: 'continuous', show_sec: null, every_sec: null },
+      ]);
+      // The old release's insert shape (no position column) still works and still lands on position 0 ...
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'side_third', $2)`, [kit, ad]);
+      // ... and it can never create two ads for one place: the key is (kit, orientation, placement, position).
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id) VALUES ($1, 'side_third', $2)`, [kit, ad])).rejects.toThrow();
+      // New: positions 1..4 of the same placement are allowed; 5 and duplicates are not.
+      for (let pos = 1; pos <= 4; pos++) await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, position) VALUES ($1, 'l_shape', $2, $3)`, [kit, ad, pos]);
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, position) VALUES ($1, 'l_shape', $2, 5)`, [kit, ad])).rejects.toThrow();
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, position) VALUES ($1, 'l_shape', $2, 2)`, [kit, ad])).rejects.toThrow();
+      await expect(db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, position) VALUES ($1, 'l_shape', $2, -1)`, [kit, ad])).rejects.toThrow();
+      // The same position in the other orientation is a different ad.
+      await db.query(`INSERT INTO brand_kit_ads (brand_kit_id, placement, asset_id, orientation, position) VALUES ($1, 'l_shape', $2, 'portrait', 1)`, [kit, ad]);
+      // Deleting the kit removes the whole sequence; the file is free again.
+      await db.query(`DELETE FROM brand_kits WHERE id = $1`, [kit]);
+      expect((await db.query(`SELECT count(*)::int AS n FROM brand_kit_ads`)).rows[0].n).toBe(0);
+      await db.end();
+    } finally {
+      const a2 = new PgClient({ connectionString: adminUrl });
+      await a2.connect();
+      await a2.query(`DROP DATABASE IF EXISTS ${live}`);
+      await a2.end();
+    }
+  });
 });

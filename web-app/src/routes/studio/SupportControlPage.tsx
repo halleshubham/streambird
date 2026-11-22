@@ -260,6 +260,13 @@ function AdCard({ placement, ad, send }: { placement: AdPlacement; ad: SupportSt
           <p className="field-hint">
             {ad.name ?? 'Ad picture'} · {ad.enabled ? describeSchedule(ad.schedule) : 'switched off'}
           </p>
+          {ad.sequence && ad.sequence.length > 1 && (
+            <p className="field-hint" data-testid={`support-ad-${placement}-sequence`}>
+              Plays {ad.sequence.length} ads in turn:{' '}
+              {ad.sequence.map((x, i) => `${i + 1}${x.enabled ? '' : ' (off)'}${x.showSec ? ` ${x.showSec}s` : ''}${ad.current === i ? ' *' : ''}`).join(', ')}
+              . On, Show now and Hide act on the whole place.
+            </p>
+          )}
           <label className="checkbox-row">
             <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => send('ads.enabled', { placement, enabled: e.target.checked }, `${label} ad ${e.target.checked ? 'on' : 'off'}`)} /> On
           </label>

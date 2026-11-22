@@ -13,6 +13,23 @@ const str = (v: unknown, max: number): string | null => (typeof v === 'string' &
 const oneOf = <T extends string>(v: unknown, values: readonly T[]): T | null => (typeof v === 'string' && (values as readonly string[]).includes(v) ? (v as T) : null);
 const int = (v: unknown, min: number, max: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : null);
 
+/**
+ * One placement's ad. When the placement plays a sequence, `hasMedia`/`name`/`enabled`/`schedule` describe the FIRST ad
+ * (`enabled`: at least one ad of the sequence is on) and `sequence` lists every ad in play order (read-only: remote
+ * writes act on the placement), `current` = the index in `sequence` showing now or next (null = none on).
+ */
+export interface SupportAdState {
+  hasMedia: boolean;
+  name: string | null;
+  enabled: boolean;
+  schedule: { mode: 'continuous' } | { mode: 'interval'; showSec: number; everySec: number };
+  manual: 'shown' | 'hidden' | null;
+  sequence?: Array<{ name: string | null; enabled: boolean; showSec: number | null }>;
+  current?: number | null;
+}
+
+export const SUPPORT_SEQUENCE_MAX = 5;
+
 export interface SanitizedSupportState {
   v: 1;
   /** Only ever set by the server for a phone-hosted stream (`phone-mapping.ts`); sanitizeSupportState (web hosts) never returns it. */
@@ -23,7 +40,7 @@ export interface SanitizedSupportState {
   layout: string;
   orientation: 'landscape' | 'portrait';
   adsPlan: 'unknown' | 'free' | 'custom';
-  ads: Record<string, { hasMedia: boolean; name: string | null; enabled: boolean; schedule: { mode: 'continuous' } | { mode: 'interval'; showSec: number; everySec: number }; manual: 'shown' | 'hidden' | null }>;
+  ads: Record<string, SupportAdState>;
   adsShrink: boolean;
   kits: Array<{ id: string; name: string }>;
   activeKitId: string | null;
@@ -70,6 +87,24 @@ export function sanitizeSupportState(raw: unknown): SanitizedSupportState | null
       } else return null;
       ads[p] = { hasMedia: a.hasMedia, name: a.name === null ? null : str(a.name, 80), enabled: a.enabled, schedule, manual };
       if (a.name !== null && ads[p].name === null) return null;
+      // Optional (older hosts omit them): the sequence, one entry per ad.
+      if (a.sequence !== undefined) {
+        if (!Array.isArray(a.sequence) || a.sequence.length > SUPPORT_SEQUENCE_MAX) return null;
+        const seq: NonNullable<SupportAdState['sequence']> = [];
+        for (const e of a.sequence) {
+          if (!isObj(e) || typeof e.enabled !== 'boolean') return null;
+          const name = e.name === null ? null : str(e.name, 80);
+          const showSec = e.showSec === null ? null : int(e.showSec, 1, 3600);
+          if ((e.name !== null && name === null) || (e.showSec !== null && showSec === null)) return null;
+          seq.push({ name, enabled: e.enabled, showSec });
+        }
+        ads[p].sequence = seq;
+        if (a.current !== undefined) {
+          const cur = a.current === null ? null : int(a.current, 0, SUPPORT_SEQUENCE_MAX - 1);
+          if (a.current !== null && cur === null) return null;
+          ads[p].current = cur;
+        }
+      }
     }
 
     if (!Array.isArray(raw.kits) || raw.kits.length > 50) return null;
