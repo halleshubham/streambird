@@ -1,0 +1,73 @@
+/* Upload loader (see components/UploadLoader.tsx): the branded "uploading" line on the card/button being uploaded. */
+.upload-loader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.upload-loader .bird-busy {
+  width: 24px;
+  height: 24px;
+}
+
+.upload-loader-text {
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-loader-pct {
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: right;
+}
+
+.upload-loader-bar {
+  flex: 1 1 100%;
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+}
+
+.upload-loader-fill {
+  display: block;
+  height: 100%;
+  width: 40%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+.upload-loader-bar[data-indeterminate] .upload-loader-fill {
+  position: absolute;
+  animation: upload-loader-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes upload-loader-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-loader-bar[data-indeterminate] .upload-loader-fill {
+    animation: none;
+    position: static;
+    width: 100%;
+    opacity: 0.5;
+  }
+  .upload-loader-fill {
+    transition: none;
+  }
+}

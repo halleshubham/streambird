@@ -5,12 +5,12 @@ export function listAssets(): Promise<AssetLibrary> {
   return api.get('/assets');
 }
 
-export function uploadAsset(file: File, kind: AssetKind, name?: string): Promise<{ id: string }> {
+export function uploadAsset(file: File, kind: AssetKind, name?: string, onProgress?: (percent: number) => void): Promise<{ id: string }> {
   const form = new FormData();
   form.append('kind', kind);
   if (name) form.append('name', name);
   form.append('file', file);
-  return api.postForm('/assets', form);
+  return api.postForm('/assets', form, onProgress);
 }
 
 export function renameAsset(id: string, name: string): Promise<{ id: string; name: string }> {

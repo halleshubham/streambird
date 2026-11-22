@@ -68,6 +68,8 @@ import { animatedNotice } from '../../studio/animatedImage';
 import { ClockFields } from '../../components/ClockFields';
 import { SupportControlPage } from './SupportControlPage';
 import { offAdPlacements } from '../../studio/adOff';
+import { UploadLoader } from '../../components/UploadLoader';
+import { useUpload } from '../../lib/useUpload';
 import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -125,6 +127,7 @@ export function HostStudioPage() {
 function HostStudio() {
   const { streamId } = useParams<{ streamId: string }>();
   const { impersonation } = useAuth();
+  const { upload: wallpaperLoading, uploading: wallpaperBusy, run: runWallpaper } = useUpload();
   const [thumbnailNotice, setThumbnailNotice] = useState<string[]>([]);
   useEffect(() => {
     if (!streamId) return;
@@ -965,11 +968,14 @@ function HostStudio() {
                       id="wallpaperInput"
                       type="file"
                       accept="image/*"
+                      disabled={wallpaperBusy}
                       onChange={(e) => {
-                        void actions.setWallpaperFile(e.target.files?.[0] ?? null);
+                        const file = e.target.files?.[0] ?? null;
                         e.target.value = '';
+                        if (file) void runWallpaper(file, () => actions.setWallpaperFile(file));
                       }}
                     />
+                    {wallpaperLoading && <UploadLoader fileName={wallpaperLoading.fileName} progress={wallpaperLoading.progress} />}
                     {wallpaper && (
                       <>
                         <p className="docs-hint" data-testid="wallpaper-fit">

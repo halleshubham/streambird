@@ -7,6 +7,8 @@ import { listConnections } from '../api/connections';
 import { ApiError } from '../api/client';
 import { BirdLoader } from '../components/BirdLoader';
 import { BirdBusy } from '../components/BirdBusy';
+import { UploadLoader } from '../components/UploadLoader';
+import { useUpload } from '../lib/useUpload';
 import { PlatformBadge } from '../components/PlatformBadge';
 import { adOffWarning, kitOffChip } from '../studio/adOff';
 import { AdIntervalFields, NO_WINDOW_WARNING, ShrinkSwitch, WindowOutline } from '../components/AdsPanel';
@@ -640,7 +642,7 @@ function SlotPicker({ slot, orientation, label, assetId, testSuffix = '', assets
   const spec = SLOT_SPECS[orientation][slot];
   const kinds = SLOT_KIND[slot];
   const asset = assets.find((a) => a.id === assetId) ?? null;
-  const [busy, setBusy] = useState(false);
+  const { upload, uploading: busy, run: runUpload } = useUpload();
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const allowGif = BRAND_FILE_LIMITS.gifSlots.includes(slot);
@@ -658,17 +660,14 @@ function SlotPicker({ slot, orientation, label, assetId, testSuffix = '', assets
       onError(`"${file.name}" is ${fmtSize(file.size)}; the limit is ${BRAND_FILE_LIMITS.maxBytes / MB} MB. Export a smaller picture and try again.`);
       return;
     }
-    setBusy(true);
     try {
       const name = file.name.replace(/\.[^.]+$/, '');
-      const created = await assetsApi.uploadAsset(file, kinds.upload, name);
+      const created = await runUpload(file, (onProgress) => assetsApi.uploadAsset(file, kinds.upload, name, onProgress));
       await onLibraryChanged(); // the new file is in the list (with its size) before the slot shows it
       onChange(created.id);
       onSaid(`Uploaded "${name}". Save the kit to keep it.`);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Upload failed.');
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -692,7 +691,7 @@ function SlotPicker({ slot, orientation, label, assetId, testSuffix = '', assets
         onDragLeave={() => setOver(false)}
         onDrop={onDrop}
       >
-        {busy ? <BirdBusy /> : asset ? <img src={assetsApi.assetFileUrl(asset.id)} alt="" className="brand-drop-preview" /> : <span>No image</span>}
+        {busy ? <BirdBusy overlay={false} /> : asset ? <img src={assetsApi.assetFileUrl(asset.id)} alt="" className="brand-drop-preview" /> : <span>No image</span>}
         <input ref={fileRef} type="file" accept={accept} aria-label={`${label} file`} disabled={busy} onChange={(e) => void take(e.target.files?.[0])} />
       </label>
       <div className="ha-slot-body">
@@ -717,14 +716,15 @@ function SlotPicker({ slot, orientation, label, assetId, testSuffix = '', assets
             It still works, but it may look small or cropped.
           </p>
         )}
+        {upload && <UploadLoader fileName={upload.fileName} progress={upload.progress} />}
         <div className="ha-slot-actions">
           {asset ? (
             <Button variant="secondary" size="sm" aria-label={`Replace ${label}`} disabled={busy} icon={<Replace size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
-              Replace
+              {busy ? 'Uploading…' : 'Replace'}
             </Button>
           ) : (
-            <Button variant="secondary" size="sm" disabled={busy} icon={<UploadCloud size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
-              Upload image
+            <Button variant="secondary" size="sm" aria-label="Upload image" disabled={busy} icon={<UploadCloud size={14} aria-hidden="true" />} onClick={() => fileRef.current?.click()}>
+              {busy ? 'Uploading…' : 'Upload image'}
             </Button>
           )}
           {options.length > 0 && (

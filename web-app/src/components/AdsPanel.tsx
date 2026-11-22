@@ -24,6 +24,8 @@ import { kitAdSequence } from '../studio/brandKitSet';
 import { slotHelp, type BrandOrientation } from '../studio/brandSizes';
 import { animatedNotice } from '../studio/animatedImage';
 import { adOffWarning } from '../studio/adOff';
+import { UploadLoader } from './UploadLoader';
+import { useUpload } from '../lib/useUpload';
 
 interface Props {
   /** 'free' = the plan carries a StreamBird ad and cannot run its own. */
@@ -130,7 +132,7 @@ function AdCard({
   const kitAd = kitAds[0] ?? null;
   const label = AD_PLACEMENT_LABEL[placement];
   const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
+  const { upload, uploading: busy, run: runUpload } = useUpload();
   const timed = info.schedule.mode === 'interval';
   const all: AdInfo[] = [info, ...info.more];
   const live = all.map((a, i) => ({ a, i })).filter(({ a }) => a.hasMedia && a.enabled);
@@ -163,11 +165,9 @@ function AdCard({
 
   async function pick(file: File | undefined) {
     if (!file) return;
-    setBusy(true);
     try {
-      await actions.setAdFile(placement, file);
+      await runUpload(file, () => actions.setAdFile(placement, file));
     } finally {
-      setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
     }
   }
@@ -240,10 +240,11 @@ function AdCard({
         >
           From brand kit
         </button>
-        <button type="button" className={info.source === 'computer' ? 'active' : ''} aria-pressed={info.source === 'computer'} disabled={busy} onClick={() => fileRef.current?.click()}>
-          From this computer
+        <button type="button" className={info.source === 'computer' ? 'active' : ''} aria-pressed={info.source === 'computer'} aria-label="From this computer" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? 'Uploading…' : 'From this computer'}
         </button>
       </div>
+      {upload && <UploadLoader fileName={upload.fileName} progress={upload.progress} />}
       <input
         ref={fileRef}
         id={`adFile-${placement}`}
@@ -281,8 +282,8 @@ function AdCard({
         tabIndex={-1}
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) void actions.setAdFile(placement, f, all.length);
           e.target.value = '';
+          if (f) void runUpload(f, () => actions.setAdFile(placement, f, all.length));
         }}
       />
 
