@@ -703,7 +703,7 @@ describeE2E('migrations: applying 0012+ on top of existing data', () => {
       await runMigrations(url, { quiet: true }); // forced re-apply stays fine
 
       // Every existing ad is position 0 and otherwise unchanged.
-      const rows = (await db.query(`SELECT placement, orientation, position, mode, show_sec, every_sec FROM brand_kit_ads WHERE brand_kit_id = $1 ORDER BY orientation, placement`, [kit])).rows;
+      const rows = (await db.query(`SELECT placement, orientation, position, mode, show_sec, every_sec FROM brand_kit_ads WHERE brand_kit_id = $1 ORDER BY orientation COLLATE "C", placement COLLATE "C"`, [kit])).rows;
       expect(rows).toEqual([
         { placement: 'l_shape', orientation: 'landscape', position: 0, mode: 'interval', show_sec: 15, every_sec: 180 },
         { placement: 'lower_third', orientation: 'landscape', position: 0, mode: 'continuous', show_sec: null, every_sec: null },
