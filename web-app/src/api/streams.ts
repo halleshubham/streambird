@@ -1,4 +1,4 @@
-import { api, ApiError, supportHeaders } from './client';
+import { api, uploadForm } from './client';
 import type { Destination, ScheduleDetail, Stream, StreamListResponse, StreamStatusResponse } from '../types/api';
 
 export function listStreams(limit = 20, offset = 0, view?: 'upcoming'): Promise<StreamListResponse> {
@@ -102,17 +102,11 @@ export function deleteScheduledStream(id: string): Promise<void> {
 export const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 export const THUMBNAIL_TYPES = ['image/jpeg', 'image/png'];
 
-/** Multipart upload -- api.* always sends JSON, so this one talks to fetch directly. */
-export async function uploadScheduleThumbnail(id: string, file: File): Promise<ScheduleDetail> {
+/** Multipart upload (XHR, so the caller can show progress). */
+export function uploadScheduleThumbnail(id: string, file: File, onProgress?: (percent: number) => void): Promise<ScheduleDetail> {
   const form = new FormData();
   form.set('file', file);
-  const res = await fetch(`/api/streams/${id}/schedule/thumbnail`, { method: 'PUT', credentials: 'include', headers: supportHeaders(), body: form });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) {
-    const raw = body?.message;
-    throw new ApiError(Array.isArray(raw) ? raw.join(', ') : (raw ?? `Upload failed (${res.status})`), res.status);
-  }
-  return body as ScheduleDetail;
+  return uploadForm<ScheduleDetail>('PUT', `/streams/${id}/schedule/thumbnail`, form, onProgress);
 }
 
 export function removeScheduleThumbnail(id: string): Promise<ScheduleDetail> {
@@ -126,16 +120,10 @@ export interface ThumbnailState {
 }
 
 /** Thumbnail upload for any not-yet-ended stream (also a 'go live now' one). */
-export async function uploadStreamThumbnail(id: string, file: File): Promise<ThumbnailState> {
+export function uploadStreamThumbnail(id: string, file: File, onProgress?: (percent: number) => void): Promise<ThumbnailState> {
   const form = new FormData();
   form.set('file', file);
-  const res = await fetch(`/api/streams/${id}/thumbnail`, { method: 'PUT', credentials: 'include', headers: supportHeaders(), body: form });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) {
-    const raw = body?.message;
-    throw new ApiError(Array.isArray(raw) ? raw.join(', ') : (raw ?? `Upload failed (${res.status})`), res.status);
-  }
-  return body as ThumbnailState;
+  return uploadForm<ThumbnailState>('PUT', `/streams/${id}/thumbnail`, form, onProgress);
 }
 
 export function streamThumbnailUrl(id: string, version: string | number): string {

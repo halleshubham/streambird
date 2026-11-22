@@ -24,6 +24,8 @@ import { KitThumbnailNote } from './KitThumbnailNote';
 import { DURATION_OPTIONS, formatWhen, parseEmails, toLocalInputValue } from '../lib/schedule';
 import type { ScheduleDetail } from '../types/api';
 import { BirdBusy } from './BirdBusy';
+import { UploadLoader } from './UploadLoader';
+import { useUpload } from '../lib/useUpload';
 import { Button, Card, Field, Input, SelectField, TextArea, buttonClass, confirm } from './ui';
 import { initialsFor } from './ui/helpers';
 
@@ -54,6 +56,7 @@ export function ScheduledStreamPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState(initialNotice ?? null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { upload, run: runUpload } = useUpload();
   const [editing, setEditing] = useState(false);
   const [newGuests, setNewGuests] = useState('');
   const [copyFallback, setCopyFallback] = useState<string | null>(null);
@@ -375,8 +378,8 @@ export function ScheduledStreamPanel({
               )}
               {!detail.hasThumbnail && <KitThumbnailNote connectionIds={detail.destinations.map((d) => d.platformConnectionId)} />}
               <div className="ha-actions">
-                <Button variant="secondary" busy={busy === 'thumb'} disabled={busy !== null} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => thumbInput.current?.click()}>
-                  {detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}
+                <Button variant="secondary" busy={busy === 'thumb'} disabled={busy !== null} aria-label={detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => thumbInput.current?.click()}>
+                  {busy === 'thumb' ? 'Uploading…' : detail.hasThumbnail ? 'Replace thumbnail' : 'Upload thumbnail'}
                 </Button>
                 {detail.hasThumbnail && (
                   <button type="button" className="ha-quiet ha-quiet--danger" disabled={busy !== null} onClick={() => void run('thumb-rm', () => removeScheduleThumbnail(streamId), () => 'Thumbnail removed.')}>
@@ -384,6 +387,7 @@ export function ScheduledStreamPanel({
                   </button>
                 )}
               </div>
+              {upload && <UploadLoader fileName={upload.fileName} progress={upload.progress} />}
               <input
                 ref={thumbInput}
                 type="file"
@@ -395,7 +399,7 @@ export function ScheduledStreamPanel({
                   if (!file) return;
                   const problem = thumbnailProblem(file);
                   if (problem) return setError(problem);
-                  void run('thumb', () => uploadScheduleThumbnail(streamId, file), () => 'Thumbnail saved and sent to the platforms.');
+                  void run('thumb', () => runUpload(file, (onProgress) => uploadScheduleThumbnail(streamId, file, onProgress)), () => 'Thumbnail saved and sent to the platforms.');
                 }}
               />
               <p className="ha-hint">

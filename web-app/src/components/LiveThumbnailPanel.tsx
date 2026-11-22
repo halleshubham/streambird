@@ -5,30 +5,29 @@ import { streamThumbnailUrl, uploadStreamThumbnail } from '../api/streams';
 import { Button, Card } from './ui';
 import { thumbnailProblem } from './ThumbnailPicker';
 import { KitThumbnailNote } from './KitThumbnailNote';
+import { UploadLoader } from './UploadLoader';
+import { useUpload } from '../lib/useUpload';
 
 /** Add/replace the thumbnail of a live (or otherwise not-yet-ended, non-scheduled) stream. */
 export function LiveThumbnailPanel({ streamId, connectionIds = [] }: { streamId: string; connectionIds?: readonly string[] }) {
   const input = useRef<HTMLInputElement>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [hasImage, setHasImage] = useState(true); // optimistic; the <img> onError flips it
-  const [busy, setBusy] = useState(false);
+  const { upload, uploading: busy, run: runUpload } = useUpload();
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null);
 
   async function pick(file: File) {
     const problem = thumbnailProblem(file);
     if (problem) return setMessage({ text: problem, isError: true });
-    setBusy(true);
     setMessage(null);
     try {
-      const result = await uploadStreamThumbnail(streamId, file);
+      const result = await runUpload(file, (onProgress) => uploadStreamThumbnail(streamId, file, onProgress));
       setVersion(Date.now());
       setHasImage(true);
       const warnings = result.platformWarnings ?? [];
       setMessage(warnings.length ? { text: warnings.join(' '), isError: true } : { text: 'Thumbnail saved and sent to the platforms.', isError: false });
     } catch (err) {
       setMessage({ text: err instanceof ApiError ? err.message : 'Upload failed.', isError: true });
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -45,10 +44,11 @@ export function LiveThumbnailPanel({ streamId, connectionIds = [] }: { streamId:
         )}
         {!hasImage && <KitThumbnailNote connectionIds={connectionIds} tense="is" />}
         <div className="ha-actions">
-          <Button variant="secondary" busy={busy} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => input.current?.click()}>
-            {hasImage ? 'Replace thumbnail' : 'Upload thumbnail'}
+          <Button variant="secondary" busy={busy} aria-label={hasImage ? 'Replace thumbnail' : 'Upload thumbnail'} icon={<ImagePlus size={16} aria-hidden="true" />} onClick={() => input.current?.click()}>
+            {busy ? 'Uploading…' : hasImage ? 'Replace thumbnail' : 'Upload thumbnail'}
           </Button>
         </div>
+        {upload && <UploadLoader fileName={upload.fileName} progress={upload.progress} />}
         <input
           ref={input}
           type="file"

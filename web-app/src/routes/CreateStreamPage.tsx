@@ -17,6 +17,8 @@ import { GuestEmailsField } from '../components/GuestEmailsField';
 import { DURATION_OPTIONS, browserTimeZone, parseEmails, toLocalInputValue } from '../lib/schedule';
 import { BirdLoader } from '../components/BirdLoader';
 import { ApiError } from '../api/client';
+import { UploadLoader } from '../components/UploadLoader';
+import { useUpload } from '../lib/useUpload';
 import type { BrandKit, EffectiveLimits, PlatformConnection, PresetConfig, Resolution, StreamPreset } from '../types/api';
 import { DocsLink } from '../components/DocsLink';
 import { DestinationPicker } from '../components/host/DestinationPicker';
@@ -42,6 +44,7 @@ export function CreateStreamPage() {
   const [invitePassword, setInvitePassword] = useState('');
   const timeZone = browserTimeZone();
   const [busy, setBusy] = useState(false);
+  const { upload, run: runUpload } = useUpload();
   const [error, setError] = useState<string | null>(null);
   // "More options": the look and quality choices, folded away so the first screen is just a title and destinations.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -191,7 +194,7 @@ export function CreateStreamPage() {
         const warnings = [...(detail.platformWarnings ?? [])];
         if (thumbnail) {
           try {
-            const withThumb = await uploadScheduleThumbnail(detail.id, thumbnail);
+            const withThumb = await runUpload(thumbnail, (onProgress) => uploadScheduleThumbnail(detail.id, thumbnail, onProgress));
             warnings.push(...(withThumb.platformWarnings ?? []));
           } catch (err) {
             warnings.push(`The thumbnail wasn't saved (${err instanceof ApiError ? err.message : 'upload failed'}) -- add it on the next page.`);
@@ -559,6 +562,7 @@ export function CreateStreamPage() {
               {error}
             </p>
           )}
+          {upload && <UploadLoader fileName={upload.fileName} progress={upload.progress} />}
           <div className="ha-submit">
             {mode === 'schedule' ? (
               <Button type="submit" size="lg" busy={busy} icon={<CalendarClock size={16} aria-hidden="true" />}>
