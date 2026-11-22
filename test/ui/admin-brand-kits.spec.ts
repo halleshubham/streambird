@@ -49,7 +49,8 @@ test.describe('admin: brand kits (read-only)', () => {
     const diag = card.getByTestId('kit-diagnostics');
     await expect(diag).toContainText('L-shaped frame (landscape (16:9)): file 1280x720 PNG; window check: found 80% x 80%');
     await expect(diag).toContainText('hidden for the first 180 s of each cycle');
-    await expect(diag).toContainText('Shrink picture while ads show is OFF: the L-shaped frame will not run.');
+    await expect(diag).toContainText('Shrink picture while ads show is OFF: this only affects Lower third and Left third ads');
+    await expect(diag).not.toContainText('will not run');
     await expect(diag).toContainText('Portrait (9:16) set has no L-shaped frame');
     await expect(diag.locator('li.is-warning').first()).toBeVisible();
     await expect(card.getByTestId('kit-set-landscape').getByRole('row', { name: /L-shaped frame/ })).toContainText('News frame');

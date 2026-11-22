@@ -64,11 +64,14 @@ describe('buildKitDiagnostics', () => {
     expect(texts(d)).toContain('Now and then: hidden for the first 180 s of each cycle, then shown for 20 s (cycle 200 s)');
   });
 
-  it('warns that the frame will not run when shrinking is off, but not without a frame', () => {
+  it('shrink OFF is only a neutral note: the frame still runs (no warning, no "will not run")', () => {
     const withFrame = buildKitDiagnostics(kit({ adsShrinkPicture: false, landscape: set([asset()]) }));
-    expect(withFrame.find((x) => x.text.includes('Shrink picture while ads show is OFF: the L-shaped frame will not run.'))!.level).toBe('warning');
-    const noFrame = buildKitDiagnostics(kit({ adsShrinkPicture: false, landscape: set([asset({ placement: 'lower_third' })]) }));
-    expect(texts(noFrame)).not.toContain('Shrink picture');
+    const note = withFrame.find((x) => x.text.includes('Shrink picture while ads show is OFF'))!;
+    expect(note.level).toBe('info');
+    expect(note.text).toContain('only affects Lower third and Left third ads');
+    expect(texts(withFrame)).not.toContain('will not run');
+    const shrinkOn = buildKitDiagnostics(kit({ adsShrinkPicture: true, landscape: set([asset()]) }));
+    expect(texts(shrinkOn)).not.toContain('Shrink picture');
   });
 
   it('notices a missing frame in the other set, both ways', () => {
@@ -80,7 +83,7 @@ describe('buildKitDiagnostics', () => {
 
   it('notes a switched off ad and a logo only in one set', () => {
     const d = buildKitDiagnostics(kit({ landscape: set([asset({ enabled: false })], { logo: { assetId: 'l', fileName: 'l.png', mime: 'image/png', sizeBytes: 1, width: 1, height: 1 } }) }));
-    expect(texts(d)).toContain('is switched off');
+    expect(texts(d)).toContain('is switched off: tick On to use it');
     expect(texts(d)).toContain('Portrait (9:16) set has no logo.');
   });
 
@@ -106,8 +109,8 @@ describe('buildStreamDiagnostics', () => {
     expect(t).toContain('The portrait set has no L-shaped frame');
   });
 
-  it('warns on shrink off and on a frame without a window', () => {
-    expect(texts(buildStreamDiagnostics({ orientation: 'landscape', kit: k({ adsShrinkPicture: false }), kitSource: 'channel', plan }))).toContain('will not run on this stream');
+  it('shrink off is not a problem for the frame; a frame without a window still warns', () => {
+    expect(texts(buildStreamDiagnostics({ orientation: 'landscape', kit: k({ adsShrinkPicture: false }), kitSource: 'channel', plan }))).not.toContain('will not run');
     const noWin = k({ landscape: set([asset({ windowCheck: { status: 'none' } })]) });
     expect(texts(buildStreamDiagnostics({ orientation: 'landscape', kit: noWin, kitSource: 'channel', plan }))).toContain('no clear window');
   });

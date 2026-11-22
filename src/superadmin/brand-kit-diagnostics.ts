@@ -85,9 +85,9 @@ export function buildKitDiagnostics(k: DiagnosticsInput): Diagnostic[] {
   const anyAd = sets.some((s) => k[s].ads.length > 0);
   if (!anyAd) add('info', 'No ads in either set.');
 
-  const frameEnabledSomewhere = sets.some((s) => k[s].ads.some((a) => a.placement === 'l_shape' && a.enabled));
-  if (!k.adsShrinkPicture && frameEnabledSomewhere) {
-    add('warning', 'Shrink picture while ads show is OFF: the L-shaped frame will not run.');
+  // The shrink switch only governs the lower and left thirds; the L-shaped frame always fits the picture in its window.
+  if (!k.adsShrinkPicture && anyAd) {
+    add('info', 'Shrink picture while ads show is OFF: this only affects Lower third and Left third ads; the L-shaped frame always fits the picture in its window.');
   }
 
   for (const s of sets) {
@@ -99,7 +99,7 @@ export function buildKitDiagnostics(k: DiagnosticsInput): Diagnostic[] {
         const bad = ad.windowCheck?.status === 'none';
         add(bad ? 'warning' : 'info', `${label} (${SET_LABEL[s]}): ${size}; window check: ${describeWindowCheck(ad.windowCheck)}${bad ? ' (the frame is drawn as a plain overlay and the picture is not shrunk)' : ''}.`);
       }
-      if (!ad.enabled) add('warning', `${label} (${SET_LABEL[s]}) is switched off.`);
+      if (!ad.enabled) add('warning', `${label} (${SET_LABEL[s]}) is switched off: tick On to use it.`);
       if (ad.mode === 'interval' && ad.showSec !== null && ad.everySec !== null) {
         add(
           'info',
@@ -146,7 +146,6 @@ export function buildStreamDiagnostics(opts: {
   if (opts.plan.watermark) out.push({ level: 'warning', text: `Plan ${opts.plan.name} carries the Powered-by StreamBird mark: custom ads do not run.` });
   const frame = set.ads.find((a) => a.placement === 'l_shape');
   if (!frame) out.push({ level: 'info', text: `The ${opts.orientation} set has no L-shaped frame, so this stream shows none.` });
-  else if (!opts.kit.adsShrinkPicture) out.push({ level: 'warning', text: 'The kit has Shrink picture while ads show OFF: the L-shaped frame will not run on this stream.' });
   else if (frame.windowCheck?.status === 'none') out.push({ level: 'warning', text: 'The L-shaped frame has no clear window, so it cannot shrink the picture on this stream.' });
   return out;
 }

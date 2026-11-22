@@ -4103,3 +4103,10 @@ video.chroma-preview {
 
 .clock-check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
 .clock-check input[type="checkbox"] { width: auto; flex: none; margin: 0; }
+
+/* "This ad is switched off" warnings (studio Ads card, kit editor slot, status line) */
+.ad-off-warning { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--text-h); font-size: 13px; font-weight: 600; }
+.ad-off-warning svg { flex: none; margin-top: 2px; color: var(--warning); }
+.ad-off-badge { margin-left: 8px; vertical-align: middle; font-size: 11px; }
+.studio-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); display: inline-block; }
+.studio-status-toast p.warn { border-color: var(--warning); }

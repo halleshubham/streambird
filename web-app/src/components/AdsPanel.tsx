@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, ImagePlus, Megaphone, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, ImagePlus, Megaphone, Trash2, Undo2 } from 'lucide-react';
 import {
   AD_EVERY_SEC_RANGE,
   AD_PLACEMENTS,
@@ -21,6 +21,7 @@ import type { BrandKit } from '../types/api';
 import { kitSetFor } from '../studio/brandKitSet';
 import { slotHelp, type BrandOrientation } from '../studio/brandSizes';
 import { animatedNotice } from '../studio/animatedImage';
+import { adOffWarning } from '../studio/adOff';
 
 interface Props {
   /** 'free' = the plan carries a StreamBird ad and cannot run its own. */
@@ -47,11 +48,10 @@ const WHERE: Record<AdPlacement, string> = {
   lower_third: 'The bottom third of the picture (above the ticker).',
   side_third: 'The left third of the picture, full height.',
   full_screen: 'The whole picture. It hides the other ads while it is on.',
-  l_shape: 'A frame around the picture (a column and/or band with a clear window). The live picture shrinks into the window; lower and left third ads wait while it shows.',
+  l_shape: 'A frame around the picture (a column and/or band with a clear window). The live picture fits into the window (whatever the shrink switch says); lower and left third ads wait while it shows.',
 };
 
 export const NO_WINDOW_WARNING = 'No clear window found in this graphic: the picture will not be placed';
-export const L_SHAPE_NEEDS_SHRINK = 'L-shaped ads always resize the picture. Turn on "Shrink picture while ads show" to use this ad.';
 
 /** The studio's Ads tab: up to four ads on the broadcast picture, each with its own file, schedule and manual control. */
 export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props) {
@@ -87,7 +87,7 @@ export function AdsPanel({ plan, ads, kit, orientation, shrink, actions }: Props
         <ShrinkSwitch shrink={shrink} onChange={actions.setAdsShrink} />
       </div>
       {AD_PLACEMENTS.map((p) => (
-        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} shrink={shrink} />
+        <AdCard key={p} placement={p} orientation={orientation} info={ads[p]} kitAd={kit ? (kitSetFor(kit, orientation).ads.find((a) => a.placement === p) ?? null) : null} actions={actions} />
       ))}
     </div>
   );
@@ -98,9 +98,9 @@ export function ShrinkSwitch({ shrink, onChange }: { shrink: boolean; onChange: 
   return (
     <div className="ad-shrink">
       <label className="ad-shrink-row">
-        <input type="checkbox" checked={shrink} aria-label="Shrink picture while ads show" onChange={(e) => onChange(e.target.checked)} /> Shrink picture while ads show
+        <input type="checkbox" checked={shrink} aria-label="Shrink picture while ads show" onChange={(e) => onChange(e.target.checked)} /> Shrink picture while lower-third and left-third ads show
       </label>
-      <p className="field-hint">The live picture is made smaller to fit beside or above a lower-third or left-third ad, so nothing important is hidden. L-shaped frame ads always resize the picture into their window (they need this switch on). Full-screen ads always cover the picture.</p>
+      <p className="field-hint">The live picture is made smaller to fit above or beside them, so nothing important is hidden. The L-shaped frame always fits the picture in its window, whatever this switch says. Full-screen ads always cover the picture.</p>
     </div>
   );
 }
@@ -111,20 +111,18 @@ function AdCard({
   info,
   kitAd,
   actions,
-  shrink,
 }: {
   placement: AdPlacement;
   orientation: BrandOrientation;
   info: AdInfo;
   kitAd: BrandKit['ads'][number] | null;
   actions: Props['actions'];
-  shrink: boolean;
 }) {
   const label = AD_PLACEMENT_LABEL[placement];
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const timed = info.schedule.mode === 'interval';
-  const frameBlocked = placement === 'l_shape' && !shrink; // an L-shaped frame cannot run with the picture-shrink switch off
+  const switchedOff = info.hasMedia && !info.enabled;
   const noWindow = placement === 'l_shape' && info.hasMedia && !info.window;
   const manualNote = info.manual === 'shown' ? 'Showing now (by hand)' : info.manual === 'hidden' ? 'Hidden (by hand)' : info.hasMedia ? describeSchedule(info.schedule) : 'No picture yet';
 
@@ -135,7 +133,7 @@ function AdCard({
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);
   }, [timed, info.hasMedia]);
-  const timing = timed && info.hasMedia && info.enabled && !frameBlocked ? actions.adTiming(placement) : null;
+  const timing = timed && info.hasMedia && info.enabled ? actions.adTiming(placement) : null;
   const timingNote =
     info.manual || !timing
       ? null
@@ -157,7 +155,10 @@ function AdCard({
   return (
     <div className="panel ad-card" role="group" aria-label={`${label} ad`} data-testid={`ad-card-${placement}`} data-state={info.manual ?? (info.enabled ? 'on' : 'off')}>
       <div className="ad-card-head">
-        <h3>{label}</h3>
+        <h3>
+          {label}
+          {switchedOff && <span className="badge badge-warning ad-off-badge" data-testid={`ad-off-badge-${placement}`}>Off</span>}
+        </h3>
         <label className="checkbox-row ad-toggle">
           <input
             type="checkbox"
@@ -193,8 +194,10 @@ function AdCard({
         </div>
       </div>
 
-      {placement === 'l_shape' && frameBlocked && (
-        <p className="field-hint" role="status" data-testid="ad-lshape-needs-shrink">{L_SHAPE_NEEDS_SHRINK}</p>
+      {switchedOff && (
+        <p className="ad-off-warning" role="status" data-testid={`ad-off-${placement}`}>
+          <AlertTriangle size={14} aria-hidden="true" /> {adOffWarning(placement)}
+        </p>
       )}
       {noWindow && (
         <p className="field-hint error" role="status" data-testid="ad-nowindow-l_shape">{NO_WINDOW_WARNING}. It will cover the whole picture like a full-screen ad.</p>
@@ -253,10 +256,10 @@ function AdCard({
       </div>
 
       <div className="studio-toolbar ad-manual">
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled || frameBlocked} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'shown' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'shown'} aria-label={`Show the ${label} ad now`} onClick={() => actions.setAdManual(placement, 'shown')}>
           <Eye size={14} /> Show now
         </button>
-        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled || frameBlocked} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
+        <button type="button" className={`icon-btn icon-btn--small${info.manual === 'hidden' ? ' icon-btn--accent' : ''}`} disabled={!info.hasMedia || !info.enabled} aria-pressed={info.manual === 'hidden'} aria-label={`Hide the ${label} ad`} onClick={() => actions.setAdManual(placement, 'hidden')}>
           <EyeOff size={14} /> Hide
         </button>
         {info.manual && (
@@ -266,7 +269,7 @@ function AdCard({
         )}
       </div>
       <p className="field-hint" role="status" data-testid={`ad-status-${placement}`}>
-        {frameBlocked && info.hasMedia ? 'Off while the picture does not shrink' : info.hasMedia && !info.enabled ? 'Switched off' : manualNote}
+        {switchedOff ? 'Switched off' : manualNote}
       </p>
       {timingNote && (
         <p className="field-hint" role="status" data-testid={`ad-timing-${placement}`}>

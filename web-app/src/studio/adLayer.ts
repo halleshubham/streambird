@@ -331,8 +331,8 @@ export class AdLayer {
     for (let i = 0; i < this.slotList.length; i++) {
       const slot = this.slotList[i];
       const r = this.rt[slot.placement];
-      // The L-shaped frame always resizes the picture, so it cannot run while "Shrink picture while ads show" is off.
-      slot.enabled = !!r.img && r.enabled && (slot.placement !== 'l_shape' || this.shrinkOn);
+      // The L-shaped frame runs whether or not "Shrink picture while ads show" is on (that switch only governs the thirds).
+      slot.enabled = !!r.img && r.enabled;
       slot.schedule = r.schedule;
       slot.manual = r.manual;
       if (slot.enabled || r.alpha > 0) any = true;
@@ -393,19 +393,19 @@ export class AdLayer {
   }
 
   /**
-   * Where the scene is drawn right now (as of the last `step`), or null when it fills the canvas (switch off, no
-   * shrinking ad visible). See the SHRINK RULE in ads.ts.
+   * Where the scene is drawn right now (as of the last `step`), or null when it fills the canvas (no shrinking ad
+   * visible). The switch only affects lower_third / side_third; the L-shaped frame always fits the scene into its
+   * window. See the SHRINK RULE in ads.ts.
    */
   sceneRect(w: number, h: number): AdRect | null {
-    if (!this.shrinkOn) return null;
     const input = this.shrinkInput;
     if (this.freePlan) {
-      input.lower_third = { alpha: this.free.img ? this.free.alpha : 0, fitted: this.free.rect };
+      input.lower_third = { alpha: this.shrinkOn && this.free.img ? this.free.alpha : 0, fitted: this.free.rect };
       input.side_third = { alpha: 0, fitted: null };
     } else {
       for (const p of SHRINKING) {
         const r = this.rt[p];
-        input[p] = { alpha: r.img ? r.alpha : 0, fitted: r.rect };
+        input[p] = { alpha: this.shrinkOn && r.img ? r.alpha : 0, fitted: r.rect };
       }
     }
     const frame = this.rt.l_shape;

@@ -67,6 +67,7 @@ import { useAuth } from '../../context/AuthContext';
 import { animatedNotice } from '../../studio/animatedImage';
 import { ClockFields } from '../../components/ClockFields';
 import { SupportControlPage } from './SupportControlPage';
+import { offAdPlacements } from '../../studio/adOff';
 import '../../styles/studio.css';
 
 const RESOLUTION_ORDER: StreamResolution[] = ['sd', 'hd', 'fhd', 'qhd'];
@@ -205,6 +206,7 @@ function HostStudio() {
     startingScheduled,
     actions,
   } = useHostStudio(streamId);
+  const adsOffCount = adsPlan === 'custom' ? offAdPlacements(ads).length : 0; // dot on the Ads tab while a loaded ad is switched off
   const canvasSize = canvasSizeFor(RESOLUTIONS[resolution], orientation);
   const localMuted = participants.find((p) => p.id === 'local')?.audioEnabled === false;
   // On a phone the side panels sit behind one "Customize" button (a sheet above the bar); on wide screens they stay beside the picture.
@@ -800,6 +802,9 @@ function HostStudio() {
               >
                 <t.icon size={15} aria-hidden="true" /> {t.label}
                 {t.id === 'people' && participants.length > 0 && <span className="studio-tab-count">{participants.length}</span>}
+                {t.id === 'ads' && adsOffCount > 0 && (
+                  <span className="studio-tab-dot" data-testid="ads-off-badge" role="img" aria-label={`${adsOffCount} ${adsOffCount === 1 ? 'ad is' : 'ads are'} switched off`} title="An ad is switched off" />
+                )}
               </button>
             ))}
           </div>
@@ -1157,7 +1162,7 @@ function HostStudio() {
           {(status || inviteMessage) && (
             <div className="studio-status-toast">
               {status && (
-                <p className={`status${status.isError ? ' error' : ''}`}>
+                <p className={`status${status.isError ? ' error' : status.warn ? ' warn' : ''}`} role={status.warn ? 'status' : undefined} data-testid={status.warn ? 'studio-status-warn' : undefined}>
                   {isInProgress(status.text) && <BirdBusy overlay={!!status.busy} />}
                   {status.text}
                 </p>
