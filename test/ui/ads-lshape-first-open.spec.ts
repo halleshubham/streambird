@@ -177,7 +177,7 @@ test.describe('a new stream applies its kit\'s ads on the first open', () => {
     await expect(page.getByTestId('ad-window-outline')).toBeVisible();
   });
 
-  test('a hand-picked kit whose frame is switched off, or whose "shrink picture" is off: the card is listed and says why nothing shows', async ({ page, context }) => {
+  test('a NEW stream with a kit whose frame is flagged Off starts with it ON; a kit with "shrink picture" off still shows the frame', async ({ page, context }) => {
     const { api } = await signIn(context);
     const frame = await uploadAd(api, 'frame', framePng(FRAME));
     const off = await (await api.post(`${APP}/api/brand-kits`, { data: { name: 'Off', ads: [{ placement: 'l_shape', assetId: frame, enabled: false }] }, headers: apiHeaders })).json();
@@ -188,8 +188,10 @@ test.describe('a new stream applies its kit\'s ads on the first open', () => {
     await page.locator('canvas.studio-canvas').waitFor();
     await studioTab(page, 'Ads');
     await expect(page.getByTestId('ad-card-l_shape')).toContainText('From the brand kit');
-    await expect(page.getByTestId('ad-status-l_shape')).toHaveText('Switched off');
-    expect(await redColumn(page)).toBe(false);
+    // The kit's own On flag is ignored on a new stream: the ad is on, nothing is flagged, the frame is drawn.
+    await expect(page.getByTestId('ad-card-l_shape')).toHaveAttribute('data-state', 'on');
+    await expect(page.getByTestId('ad-off-l_shape')).toHaveCount(0);
+    await expectFrameUp(page);
 
     const b = await newStream(api);
     await seedPickedKit(page, b, noShrink.id);
@@ -197,7 +199,7 @@ test.describe('a new stream applies its kit\'s ads on the first open', () => {
     await page.locator('canvas.studio-canvas').waitFor();
     await studioTab(page, 'Ads');
     await expect(page.getByTestId('ad-card-l_shape')).toContainText('From the brand kit');
-    await expect(page.getByTestId('ad-lshape-needs-shrink')).toBeVisible();
-    expect(await redColumn(page)).toBe(false);
+    await expect(page.getByTestId('ad-lshape-needs-shrink')).toHaveCount(0);
+    await expectFrameUp(page);
   });
 });

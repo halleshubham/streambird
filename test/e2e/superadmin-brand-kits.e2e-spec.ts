@@ -88,7 +88,8 @@ describeE2E('superadmin: read-only brand kit view for support', () => {
     expect(m.landscape.ads[0].windowCheck.status).toBe('found');
     expect(m.landscape.ads[0].windowCheck.w).toBeCloseTo(0.8, 1);
     const texts = m.diagnostics.map((d: any) => d.text).join('\n');
-    expect(texts).toContain('Shrink picture while ads show is OFF: the L-shaped frame will not run.');
+    expect(texts).toContain('Shrink picture while ads show is OFF: this only affects Lower third and Left third ads');
+    expect(texts).not.toContain('will not run');
     expect(texts).toContain('hidden for the first 180 s of each cycle');
     expect(texts).toContain('Portrait (9:16) set has no L-shaped frame');
 

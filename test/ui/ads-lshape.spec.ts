@@ -357,24 +357,27 @@ test.describe('L-shaped frame in the studio (plan without the Powered-by mark)',
     expect(isBlue(await canvasPixel(page, W - 30, H / 2))).toBe(true);
   });
 
-  test('"Shrink picture while ads show" off: the frame does not run (and the card says why); on again it comes back', async ({ page, context }) => {
+  test('"Shrink picture while ads show" off: the frame STILL runs (scene in its window, frame colours around it); the switch only governs the thirds', async ({ page, context }) => {
     const { api } = await signIn(context);
     await openStudio(page, await newStream(api));
     const { width: W, height: H } = await canvasSize(page);
     const before = await settledBox(page);
     await pinAdClock(page, 0);
-    await addFrame(page, FRAME);
-    await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * 0.8, 3)).toBe(true);
+    await studioTab(page, 'Ads');
     const toggle = page.getByLabel('Shrink picture while ads show');
     await toggle.uncheck();
-    await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w, 3)).toBe(true); // full picture, nothing covers it
+    await addFrame(page, FRAME);
     const red = (p: [number, number, number]) => p[0] > 150 && p[1] < 60 && p[2] < 60;
-    expect(red(await canvasPixel(page, 0.1 * W, H / 2))).toBe(false); // no frame column
-    await expect(page.getByTestId('ad-lshape-needs-shrink')).toContainText('L-shaped ads always resize the picture');
-    await expect(page.getByRole('button', { name: 'Show the L-shaped frame ad now' })).toBeDisabled();
+    // Shrink OFF, frame set: the scene is in the window (80% of the picture) and the frame column/band are drawn.
+    await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * 0.8, 3)).toBe(true);
+    await expect.poll(async () => red(await canvasPixel(page, 0.1 * W, H / 2))).toBe(true);
+    await expect.poll(async () => red(await canvasPixel(page, W / 2, H - 10))).toBe(true);
+    await expect(page.getByTestId('ad-lshape-needs-shrink')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Show the L-shaped frame ad now' })).toBeEnabled();
+    // Toggling the switch changes nothing for the frame.
     await toggle.check();
     await expect.poll(async () => near((await blueBox(page))?.w ?? 0, before.w * 0.8, 3)).toBe(true);
-    await expect(page.getByTestId('ad-lshape-needs-shrink')).toHaveCount(0);
+    expect(red(await canvasPixel(page, 0.1 * W, H / 2))).toBe(true);
   });
 
   test('a graphic with no clear window: a visible warning, drawn as a full-screen overlay, the scene is not shrunk', async ({ page, context }) => {
@@ -477,11 +480,12 @@ test.describe('L-shaped frame in the brand kit editor and from a kit in the stud
     await form.getByLabel('L-shaped frame ad file').setInputFiles({ name: 'frame.png', mimeType: 'image/png', buffer: framePng(FRAME) });
     await expect(form.getByTestId('kit-frame-window')).toBeVisible();
 
-    // "Shrink picture while ads show" off: the editor says L-shaped ads always resize the picture.
+    // "Shrink picture while ads show" off no longer matters for the frame: no "needs shrink" note, the window is still found.
     await form.getByLabel('Shrink picture while ads show').uncheck();
-    await expect(form.getByTestId('kit-frame-needs-shrink')).toContainText('L-shaped ads always resize the picture');
-    await form.getByLabel('Shrink picture while ads show').check();
     await expect(form.getByTestId('kit-frame-needs-shrink')).toHaveCount(0);
+    await expect(form.getByTestId('kit-frame-window')).toBeVisible();
+    await expect(form.getByTestId('kit-preview-scene')).toBeVisible();
+    await form.getByLabel('Shrink picture while ads show').check();
 
     // The 9:16 tab is its own set with its own suggestion.
     await form.getByRole('tab', { name: '9:16 vertical' }).click();

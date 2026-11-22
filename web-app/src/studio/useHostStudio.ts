@@ -12,6 +12,7 @@ import { ClockOverlay, DEFAULT_CLOCK, LEGACY_CLOCK_LOOK, clockFromKit, clockNow,
 import { loadAnimatedLogo, type AnimatedFailReason, type AnimatedLogo } from './animatedLogo';
 import { kitSetFor } from './brandKitSet';
 import { AdLayer, MAX_AD_SIDE, type AdInfo, type AdSource } from './adLayer';
+import { adOverrideDiffs, adOverrideNote, adsOffStatus, offAdPlacements } from './adOff';
 import { AD_PLACEMENTS, AD_PLACEMENT_LABEL, scheduleError, type AdManual, type AdPlacement, type AdSchedule } from './ads';
 import { bitrateBetween, classifySendQuality, readOutboundVideo, type PicturePriority, type SendQuality } from './sendQuality';
 import { createPersonSegmenter, type PersonSegmenter } from './personSegmenter';
@@ -438,7 +439,9 @@ export function useHostStudio(streamId: string | undefined) {
   const [stream, setStream] = useState<Stream | null>(null);
   // `busy` marks a status for an ACTION the host is waiting on (going live, ending): only those get the big bird in
   // the middle of the screen. Other "…" statuses (a guest joining, reconnecting) are information, never a blocker.
-  const [status, setStatus] = useState<{ text: string; isError: boolean; busy?: boolean } | null>(null);
+  const [status, setStatus] = useState<{ text: string; isError: boolean; busy?: boolean; warn?: boolean } | null>(null);
+  /** After a reload: the ads put back from this stream's saved state, until the switched-off / differs-from-kit note has been shown. */
+  const restoredAdsRef = useRef<{ saved: Partial<Record<AdPlacement, PersistedAd>>; pending: number } | null>(null);
   const [inviteMessage, setInviteMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [participantsView, setParticipantsView] = useState<ParticipantView[]>([]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
@@ -1476,7 +1479,7 @@ export function useHostStudio(streamId: string | undefined) {
     });
     socketRef.current = socket;
 
-    socket.on('joined', () => setStatus({ text: 'Connected to the studio as host.', isError: false }));
+    socket.on('joined', () => setStatus((cur) => (cur?.warn ? cur : { text: 'Connected to the studio as host.', isError: false })));
 
     socket.on('disconnect', (reason) => {
       if (endingStreamRef.current) return;
@@ -2431,7 +2434,13 @@ export function useHostStudio(streamId: string | undefined) {
     } else if (!opts.silent) {
       if (streamIdRef.current) savePersisted(streamIdRef.current, { kitPending: false });
       const timed = set.ads.some((a) => a.mode === 'interval');
-      setStatus({ text: `Applied brand kit "${kit.name}".${timed ? ' Ads set to "now and then" show on their timer; it starts again when you go live (see the Ads tab).' : ''}`, isError: false });
+      const layer = adLayerRef.current!;
+      const offWarning = adsOffStatus(offAdPlacements({ lower_third: layer.info('lower_third'), side_third: layer.info('side_third'), full_screen: layer.info('full_screen'), l_shape: layer.info('l_shape') }));
+      setStatus({
+        text: `Applied brand kit "${kit.name}".${timed ? ' Ads set to "now and then" show on their timer; it starts again when you go live (see the Ads tab).' : ''}${offWarning ? ` ${offWarning}` : ''}`,
+        isError: false,
+        warn: !!offWarning,
+      });
     }
   }
 
@@ -2550,7 +2559,9 @@ export function useHostStudio(streamId: string | undefined) {
     const file = await fetchAssetFile(ad.assetId, `${kitName} ${p}`);
     const ok = await layer.setMedia(p, file, { source: 'kit', assetId: ad.assetId, name: file.name });
     if (ok !== true) throw new Error('ad picture');
-    layer.setEnabled(p, ad.enabled);
+    // A kit ad always starts ON in the studio: the kit's own On flag is a stored preference for the kit editor only (a stream's
+    // saved choice still wins after a reload, see restoreAds). Hosts who switch an ad off here get the switched-off warnings.
+    layer.setEnabled(p, true);
     layer.setSchedule(p, ad.mode === 'interval' && ad.showSec && ad.everySec ? { mode: 'interval', showSec: ad.showSec, everySec: ad.everySec } : { mode: 'continuous' });
     layer.setManual(p, null);
     if (streamIdRef.current) saveAdFile(streamIdRef.current, p, null); // the kit's file lives in the library, not in this browser
@@ -2590,6 +2601,12 @@ export function useHostStudio(streamId: string | undefined) {
     if (!saved) return;
     const layer = adLayerRef.current!;
     const files = loadAdFiles(streamId);
+    const note = { saved, pending: 0 };
+    const settle = () => {
+      note.pending -= 1;
+      refreshAds(); // also wakes the effect that shows the switched-off note once every picture has loaded (or failed)
+    };
+    restoredAdsRef.current = note;
     for (const p of AD_PLACEMENTS) {
       const a = saved[p];
       if (!a || typeof a !== 'object') continue;
@@ -2603,19 +2620,37 @@ export function useHostStudio(streamId: string | undefined) {
         refreshAds();
       };
       if (a.source === 'kit' && a.assetId) {
+        note.pending += 1;
         void fetchAssetFile(a.assetId, a.name)
           .then((f) => layer.setMedia(p, f, { source: 'kit', assetId: a.assetId, name: a.name }))
           .then(apply)
-          .catch(() => undefined);
+          .catch(() => undefined)
+          .finally(settle);
       } else if (a.source === 'computer' && files[p]) {
+        note.pending += 1;
         void fetch(files[p]!)
           .then((r) => r.blob())
           .then((b) => layer.setMedia(p, b, { source: 'computer', name: a.name }, MAX_AD_SIDE))
           .then(apply)
-          .catch(() => undefined);
+          .catch(() => undefined)
+          .finally(settle);
       }
     }
+    if (note.pending === 0) restoredAdsRef.current = null;
   }
+
+  // After a reload restored the ads: say which are switched off, and where the stream's remembered On/Off differs from the kit.
+  useEffect(() => {
+    const r = restoredAdsRef.current;
+    if (!r || r.pending > 0 || !brandKitsLoaded || !stream || adsPlan === 'free') return;
+    restoredAdsRef.current = null;
+    const off = adsOffStatus(offAdPlacements(adsUi));
+    const kitId = loadPersisted(stream.id).brandKitId;
+    const kit = typeof kitId === 'string' ? brandKits.find((k) => k.id === kitId) : undefined;
+    const diff = kit ? adOverrideNote(adOverrideDiffs(r.saved, kitSetFor(kit, stream.orientation ?? 'landscape').ads.map((x) => ({ placement: x.placement, enabled: true })))) : null;
+    const text = [off, diff].filter(Boolean).join(' ');
+    if (text) setStatus((cur) => (cur?.isError ? cur : { text, isError: false, warn: true }));
+  }, [adsUi, brandKitsLoaded, brandKits, stream, adsPlan]);
 
   useEffect(() => {
     const layer = adLayerRef.current;

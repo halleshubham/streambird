@@ -837,3 +837,15 @@
     animation: none;
   }
 }
+.studio-shell .studio-status-toast p.warn {
+  background: #451a03;
+  color: #fde68a;
+  border: 1px solid #d97706;
+}
+.studio-shell .studio-tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fbbf24;
+  display: inline-block;
+}

@@ -474,7 +474,7 @@ test.describe('brand kit ads', () => {
     await expect.poll(async () => isRed(await canvasPixel(page, lx, ly))).toBe(true);
   });
 
-  test('a kit ad that is switched off in the kit stays off in the studio', async ({ page, context }) => {
+  test('a kit ad that is flagged Off in the kit still starts ON in a new stream (the kit On flag is ignored there)', async ({ page, context }) => {
     const { api } = await signIn(context);
     const assetId = (await (await api.post(`${APP}/api/assets`, { multipart: { kind: 'ad', name: 'off-ad', file: { name: 'off.png', mimeType: 'image/png', buffer: solidPng(255, 0, 0, 128, 24) } }, headers: { Origin: APP } })).json()).id as string;
     const kit = await api.post(`${APP}/api/brand-kits`, { data: { name: 'Off', ads: [{ placement: 'lower_third', assetId, enabled: false }] }, headers: apiHeaders });
@@ -485,9 +485,12 @@ test.describe('brand kit ads', () => {
     await studioTab(page, 'Ads');
     const lower = card(page, 'lower_third');
     await expect(lower.locator('.ad-file-name')).toContainText('Off lower_third');
-    await expect(lower.getByLabel('Lower third ad on')).not.toBeChecked();
-    await page.waitForTimeout(800);
-    expect(isRed(await canvasPixel(page, W * 0.75, centre('lower_third', W, H)[1]))).toBe(false);
+    await expect(lower.getByLabel('Lower third ad on')).toBeChecked();
+    await expect.poll(async () => isRed(await canvasPixel(page, W * 0.75, centre('lower_third', W, H)[1]))).toBe(true);
+    // The host can still switch it off: the ad goes and the warning shows.
+    await lower.getByLabel('Lower third ad on').uncheck();
+    await expect(page.getByTestId('ad-off-lower_third')).toHaveText('Lower third is switched off: tick On to use it');
+    await expect.poll(async () => isRed(await canvasPixel(page, W * 0.75, centre('lower_third', W, H)[1]))).toBe(false);
   });
   test('a kit whose logo file is missing still applies its ads, and a missing ad file is reported by place; Manual takes kit ads off the canvas but keeps computer ones', async ({ page, context }) => {
     const { api } = await signIn(context);
@@ -517,6 +520,9 @@ test.describe('brand kit ads', () => {
     await expect(card(page, 'lower_third').locator('.ad-file-name')).toContainText('Mixed lower_third');
     await expect(card(page, 'full_screen').locator('.ad-file-name')).toContainText('Mixed full_screen');
     await expect(card(page, 'side_third').locator('.ad-file-name')).toHaveText('No picture chosen');
+    // The kit's full-screen ad is flagged Off in the kit but starts ON in the studio (and would cover the lower third): switch it off by hand.
+    await expect(card(page, 'full_screen').getByLabel('Full screen ad on')).toBeChecked();
+    await card(page, 'full_screen').getByLabel('Full screen ad on').uncheck();
     await expect.poll(async () => isRed(await canvasPixel(page, ...centre('lower_third', W, H)))).toBe(true);
 
     // A picture from this computer for the left third, then "Manual (no kit)": the kit's lower third leaves, the computer one stays.

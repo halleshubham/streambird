@@ -40,7 +40,8 @@
  *   ads: landscape set for 16:9 streams, portrait set for 9:16) and the scene is scaled, aspect kept, into the window.
  *   The window is detected from the image itself (adWindow.ts `detectWindow`): the clear region (transparent or white)
  *   around the image centre, as a 0..1 rectangle. If none is found the graphic is drawn as a full-screen overlay and
- *   the scene is not shrunk. It needs the switch "Shrink picture while ads show": with it off the placement is disabled.
+ *   the scene is not shrunk. The switch "Shrink picture while ads show"
+ *   does NOT affect the frame (it only governs lower_third and side_third): the frame always fits the scene into its window.
  *   Window on the canvas = fitAd rect origin + window * fitAd size; scene = `lShapeSceneRect` (contain, centred).
  */
 

@@ -8,7 +8,8 @@ import { ApiError } from '../api/client';
 import { BirdLoader } from '../components/BirdLoader';
 import { BirdBusy } from '../components/BirdBusy';
 import { PlatformBadge } from '../components/PlatformBadge';
-import { AdIntervalFields, L_SHAPE_NEEDS_SHRINK, NO_WINDOW_WARNING, ShrinkSwitch, WindowOutline } from '../components/AdsPanel';
+import { adOffWarning, kitOffChip } from '../studio/adOff';
+import { AdIntervalFields, NO_WINDOW_WARNING, ShrinkSwitch, WindowOutline } from '../components/AdsPanel';
 import type { NormRect } from '../studio/adWindow';
 import { windowOfUrl } from '../studio/adWindowDom';
 import { getMyLimits } from '../api/plans';
@@ -362,7 +363,7 @@ function KitPreview({ kit, assets, orientation }: { kit: BrandKitInput; assets: 
   const [logoCx, setLogoCx] = useState<number | null>(null); // the logo's horizontal centre, in percent of the preview (for the compact clock under it)
   const canvasH = orientation === 'portrait' ? 1920 : 720;
   const frameAd = ads.find((a) => a.placement === 'l_shape');
-  const frame = useFrameWindow(frameAd && kit.adsShrinkPicture !== false ? frameAd.assetId : null);
+  const frame = useFrameWindow(frameAd ? frameAd.assetId : null);
   const framed = !!frameAd && frame.state === 'ok' && !!frame.window;
   const sceneStyle = framed && frame.window ? { left: `${frame.window.x * 100}%`, top: `${frame.window.y * 100}%`, width: `${frame.window.w * 100}%`, height: `${frame.window.h * 100}%` } : undefined;
   const scene = (
@@ -438,6 +439,7 @@ async function confirmAndDeleteKit(
 }
 
 function KitSummary({ kit, assets, channelNames, onEdit, onDelete }: { kit: BrandKit; assets: LibraryAsset[]; channelNames: string[]; onEdit: () => void; onDelete: () => void }) {
+  const offChip = kitOffChip([...(kit.ads ?? []), ...(kit.adsPortrait ?? [])].filter((a) => !a.enabled).length);
   const hasPortrait = !!(kit.logoAssetIdPortrait || kit.wallpaperAssetIdPortrait || (kit.adsPortrait ?? []).length > 0);
   return (
     <Card as="div" className="ha-kit-card">
@@ -448,6 +450,7 @@ function KitSummary({ kit, assets, channelNames, onEdit, onDelete }: { kit: Bran
       <div className="ha-row ha-row--wrap" style={{ gap: 8 }}>
         <h3>{kit.name}</h3>
         {kit.isDefault && <span className="ha-tag ha-tag--ok">Account default</span>}
+        {offChip && <span className="ha-tag ha-tag--warn" data-testid="kit-off-chip">{offChip}</span>}
       </div>
       <p className="ha-sm ha-muted">
         {channelNames.length > 0 ? `Used by ${channelNames.join(', ')}` : kit.isDefault ? 'Used by every channel without a kit of its own' : 'Not used by any channel yet'}
@@ -947,7 +950,6 @@ function KitEditor({ kit, assets, connections, adsAllowed, onClose, onChanged, o
                   ad={ads.find((a) => a.placement === p) ?? null}
                   picker={slotCommon}
                   onChange={(ad) => set(f.ads, [...ads.filter((a) => a.placement !== p), ...(ad ? [ad] : [])])}
-                  shrink={form.adsShrinkPicture !== false}
                 />
               ))
             )}
@@ -1075,14 +1077,11 @@ function AdSlotEditor({
   ad,
   picker,
   onChange,
-  shrink,
 }: {
   placement: AdPlacement;
   ad: BrandKitAd | null;
   picker: Omit<SlotPickerProps, 'slot' | 'label' | 'assetId' | 'onChange'>;
   onChange: (ad: BrandKitAd | null) => void;
-  /** The kit's "Shrink picture while ads show" switch: the L-shaped frame needs it on. */
-  shrink: boolean;
 }) {
   const label = AD_PLACEMENT_LABEL[placement];
   const frame = useFrameWindow(placement === 'l_shape' ? (ad?.assetId ?? null) : null);
@@ -1113,18 +1112,19 @@ function AdSlotEditor({
           ) : (
             <p className="ha-hint" style={{ marginTop: 0 }}>Looking for the window…</p>
           )}
-          {!shrink && (
-            <p className="ha-slot-warn kit-slot-warning" role="status" data-testid="kit-frame-needs-shrink">
-              <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> {L_SHAPE_NEEDS_SHRINK}
-            </p>
-          )}
         </div>
       )}
       {ad && (
         <div className="ha-ad-controls">
           <label className="ha-check">
             <input type="checkbox" checked={ad.enabled} aria-label={`${label} ad on`} onChange={(e) => patch({ enabled: e.target.checked })} /> On
+            {!ad.enabled && <span className="ha-tag ha-tag--warn ad-off-badge" data-testid={`kit-ad-off-badge-${placement}`}>Off</span>}
           </label>
+          {!ad.enabled && (
+            <p className="ha-slot-warn kit-slot-warning" role="status" data-testid={`kit-ad-off-${placement}`}>
+              <AlertTriangle size={14} aria-hidden="true" style={{ flex: 'none', marginTop: 2 }} /> {adOffWarning(placement)}
+            </p>
+          )}
           <div className="ha-seg" role="group" aria-label={`${label} ad: when`}>
             <button type="button" aria-pressed={!timed} onClick={() => patch({ mode: 'continuous', showSec: null, everySec: null })}>
               Always on
